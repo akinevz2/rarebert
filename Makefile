@@ -5,7 +5,7 @@ ARG ?=
 ARGS ?=
 MODULE ?=
 
-PY_TARGETS := agent check-hosts dev devlib hyper-analysis hyper-tag query visualise-data wow-discussion wow-list-sessions
+PY_TARGETS := agent check-hosts dev devlib hyper-analysis hyper-tag query visualise-data
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -17,7 +17,7 @@ help:
 	@echo "Or multiple: make <target> ARGS='KEY1=VALUE1 KEY2=VALUE2'"
 	@echo "Bootstrap/rebuild: make bootstrap"
 	@echo "Create module: make add MODULE=<name>"
-	@echo "Examples: make query | make wow-discussion | make hyper-tag"
+	@echo "Examples: make query | make hyper-tag | make hyper-analysis"
 
 bootstrap:
 	$(PYTHON) dev.py
@@ -49,9 +49,3 @@ query:
 
 visualise-data:
 	$(PYTHON) visualise-data.py $(ARGS) $(ARG)
-
-wow-discussion:
-	$(PYTHON) wow-discussion.py $(ARGS) $(ARG)
-
-wow-list-sessions:
-	$(PYTHON) wow-list-sessions.py $(ARGS) $(ARG)

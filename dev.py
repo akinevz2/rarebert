@@ -58,7 +58,7 @@ def build_makefile_content(modules: list[Path]) -> str:
         [
             "\t@echo \"Bootstrap/rebuild: make bootstrap\"",
             "\t@echo \"Create module: make add MODULE=<name>\"",
-            "\t@echo \"Examples: make query | make wow-discussion | make hyper-tag\"",
+            "\t@echo \"Examples: make query | make hyper-tag | make hyper-analysis\"",
             "",
             "bootstrap:",
             "\t$(PYTHON) dev.py",
