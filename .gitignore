@@ -1,0 +1,10 @@
+# Local runtime artifacts
+.nltk_data/
+.rarebert_deps/
+__pycache__/
+*.pyc
+rarebert.db
+
+# OS/editor clutter
+.DS_Store
+.vscode/
