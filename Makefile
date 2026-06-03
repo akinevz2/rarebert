@@ -5,7 +5,7 @@ ARG ?=
 ARGS ?=
 MODULE ?=
 
-PY_TARGETS := agent check-hosts dev devlib hyper-analysis hyper-tag query visualise-data
+PY_TARGETS := agent check-hosts dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag query visualise-data
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -20,32 +20,41 @@ help:
 	@echo "Examples: make query | make hyper-tag | make hyper-analysis"
 
 bootstrap:
-	$(PYTHON) dev.py
+	@$(PYTHON) dev.py
 
 add:
 	@test -n "$(MODULE)" || (echo "Usage: make add MODULE=<name>" && exit 1)
-	$(PYTHON) dev.py add --module "$(MODULE)"
+	@$(PYTHON) dev.py add --module "$(MODULE)"
 
 agent:
-	$(PYTHON) agent.py $(ARGS) $(ARG)
+	@$(PYTHON) agent.py $(ARGS) $(ARG)
 
 check-hosts:
-	$(PYTHON) check-hosts.py $(ARGS) $(ARG)
+	@$(PYTHON) check-hosts.py $(ARGS) $(ARG)
 
 dev:
-	$(PYTHON) dev.py $(ARGS) $(ARG)
+	@$(PYTHON) dev.py $(ARGS) $(ARG)
 
 devlib:
-	$(PYTHON) devlib.py $(ARGS) $(ARG)
+	@$(PYTHON) devlib.py $(ARGS) $(ARG)
+
+get-knowledge-file:
+	@$(PYTHON) get-knowledge-file.py $(ARGS) $(ARG)
+
+get-training-set:
+	@$(PYTHON) get-training-set.py $(ARGS) $(ARG)
+
+get-usable-hosts:
+	@$(PYTHON) get-usable-hosts.py $(ARGS) $(ARG)
 
 hyper-analysis:
-	$(PYTHON) hyper-analysis.py $(ARGS) $(ARG)
+	@$(PYTHON) hyper-analysis.py $(ARGS) $(ARG)
 
 hyper-tag:
-	$(PYTHON) hyper-tag.py $(ARGS) $(ARG)
+	@$(PYTHON) hyper-tag.py $(ARGS) $(ARG)
 
 query:
-	$(PYTHON) query.py $(ARGS) $(ARG)
+	@$(PYTHON) query.py $(ARGS) $(ARG)
 
 visualise-data:
-	$(PYTHON) visualise-data.py $(ARGS) $(ARG)
+	@$(PYTHON) visualise-data.py $(ARGS) $(ARG)

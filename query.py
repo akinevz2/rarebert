@@ -15,13 +15,13 @@ from urllib.request import Request, urlopen
 
 from devlib import (
     env_or_arg,
-    list_available_ollama_hosts,
     parse_kv_args,
-    prompt_text,
     require_arg_or_prompt,
+    resolve_ollama_host,
     run,
     run_with_spinner,
     select_ollama_host_tui,
+    select_ollama_model_tui,
 )
 
 
@@ -73,30 +73,18 @@ def query_ollama(base_url: str, model: str, prompt: str) -> str:
     raise RuntimeError(f"unexpected response shape from {endpoint}")
 
 
-def discovered_model_suggestions() -> list[str]:
-    """Collect model suggestions from persisted Ollama host scans."""
-    names: list[str] = []
-    seen: set[str] = set()
-    for host in list_available_ollama_hosts():
-        for model in host.get("models", []):
-            candidate = str(model).strip()
-            if candidate and candidate not in seen:
-                seen.add(candidate)
-                names.append(candidate)
-    return names
-
-
 def main() -> int:
     try:
         args = parse_kv_args(sys.argv[1:])
         where_value = env_or_arg(args, "WHERE")
-        if not where_value:
+        if where_value:
+            where_value = resolve_ollama_host(where_value)
+        else:
             where_value = select_ollama_host_tui("Select an Ollama host for query")
 
-        model_suggestions = discovered_model_suggestions()
         whom = env_or_arg(args, "WHOM")
         if not whom:
-            whom = prompt_text("Model (WHOM)", suggestions=model_suggestions)
+            whom = select_ollama_model_tui(where_value, prompt="Select model (WHOM)")
 
         ask = require_arg_or_prompt(args, "ASK", "Prompt (ASK)")
         base_url = normalize_base_url(where_value)

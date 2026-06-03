@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import ipaddress
 import json
 import os
 import readline
+import re
 import sqlite3
 import subprocess
 import sys
@@ -19,11 +21,15 @@ from contextlib import contextmanager
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 
 DB_FILENAME = "rarebert.db"
 LOCAL_DEPS_DIRNAME = ".rarebert_deps"
 OLLAMA_HOSTS_NAMESPACE = "available_hosts"
+USABLE_OLLAMA_HOSTS_NAMESPACE = "usable_hosts"
+OLLAMA_HOST_ALIASES_NAMESPACE = "ollama_host_aliases"
 
 
 def todo(feature: str) -> None:
@@ -169,7 +175,12 @@ def tui_select(
         if not query:
             return options
         lowered = query.lower()
-        return [item for item in options if lowered in item.lower()]
+        # Prioritize prefix matches, then fallback to generic substring matches.
+        prefix = [item for item in options if item.lower().startswith(lowered)]
+        contains = [
+            item for item in options if lowered in item.lower() and not item.lower().startswith(lowered)
+        ]
+        return prefix + contains
 
     while True:
         matches = filtered()
@@ -254,28 +265,21 @@ def render_marquee_bar(stop_event: threading.Event, label: str = "Working") -> N
 
     width = 28
     block = 7
-    pos = 0
-    direction = 1
+    offset = 0
 
     while not stop_event.is_set():
         cells = [" "] * width
         for idx in range(block):
-            at = pos + idx
-            if 0 <= at < width:
-                cells[at] = "="
+            # Wrap so the block continuously moves left-to-right without bouncing.
+            at = (offset + idx) % width
+            cells[at] = "="
 
         bar = "".join(cells)
         sys.stdout.write(f"\r{label} [{bar}]")
         sys.stdout.flush()
 
         time.sleep(0.08)
-        pos += direction
-        if pos <= 0:
-            pos = 0
-            direction = 1
-        elif pos >= width - block:
-            pos = width - block
-            direction = -1
+        offset = (offset + 1) % width
 
     sys.stdout.write("\r" + " " * (len(label) + width + 3) + "\r")
     sys.stdout.flush()
@@ -483,14 +487,120 @@ def save_available_ollama_host(host: str, port: int, models: list[str] | None = 
         "models": sorted(models or []),
         "last_seen_utc": datetime.now(timezone.utc).isoformat(),
     }
+    # Keep legacy namespace for backward compatibility.
     save_data(OLLAMA_HOSTS_NAMESPACE, key, payload)
+    save_data(USABLE_OLLAMA_HOSTS_NAMESPACE, key, payload)
+
+
+def request_ollama_models(host: str, port: int, timeout: float = 3.0) -> list[str]:
+    """Return model names from an Ollama instance or raise an informative error."""
+    url = f"http://{host}:{port}/api/tags"
+    try:
+        with urlopen(url, timeout=timeout) as response:  # nosec B310: internal utility
+            data = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise RuntimeError(f"HTTP {exc.code} from {url}") from exc
+    except URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        raise RuntimeError(f"unable to reach {url}: {reason}") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid JSON returned from {url}") from exc
+
+    models = data.get("models")
+    if not isinstance(models, list):
+        raise RuntimeError(f"unexpected response shape from {url}")
+
+    names: list[str] = []
+    for entry in models:
+        if isinstance(entry, dict):
+            name = entry.get("name")
+            if isinstance(name, str) and name:
+                names.append(name)
+
+    return names
+
+
+def register_usable_ollama_host(host: str, port: int, timeout: float = 3.0) -> list[str]:
+    """Verify Ollama availability for host:port and persist as a usable host."""
+    models = request_ollama_models(host=host, port=port, timeout=timeout)
+    save_available_ollama_host(host=host, port=port, models=models)
+    return models
+
+
+def _parse_host_port(value: str, default_port: int = 11434) -> tuple[str, int]:
+    """Parse host[:port] into a normalised tuple."""
+    text = value.strip()
+    if not text:
+        raise ValueError("host must not be empty")
+
+    # Strip scheme/path if user passed a URL-like value.
+    text = re.sub(r"^https?://", "", text, flags=re.IGNORECASE)
+    text = text.split("/", 1)[0].strip()
+
+    host = text
+    port = default_port
+    if re.search(r":\d+$", text):
+        host, raw_port = text.rsplit(":", 1)
+        try:
+            port = int(raw_port)
+        except ValueError as exc:
+            raise ValueError(f"invalid port in host value: {value}") from exc
+
+    host = host.strip()
+    if not host:
+        raise ValueError(f"invalid host value: {value}")
+    if port < 1 or port > 65535:
+        raise ValueError(f"invalid port in host value: {value}")
+    return host, port
+
+
+def _is_ip_address(value: str) -> bool:
+    """Return True when value is an IPv4/IPv6 address string."""
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _save_host_alias(alias: str, host: str, port: int) -> None:
+    """Persist hostname -> usable host mapping."""
+    key = alias.strip().lower()
+    if not key:
+        raise ValueError("alias must not be empty")
+    save_data(
+        OLLAMA_HOST_ALIASES_NAMESPACE,
+        key,
+        {
+            "alias": alias.strip(),
+            "host": host.strip(),
+            "port": int(port),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+def _load_host_alias(alias: str) -> dict[str, Any] | None:
+    """Load hostname -> usable host mapping."""
+    key = alias.strip().lower()
+    if not key:
+        return None
+    record = load_data(OLLAMA_HOST_ALIASES_NAMESPACE, key)
+    if not isinstance(record, dict):
+        return None
+    return record
 
 
 def list_available_ollama_hosts() -> list[dict[str, Any]]:
     """Return persisted Ollama hosts sorted by most recently seen first."""
+    all_keys: set[str] = set(list_keys(USABLE_OLLAMA_HOSTS_NAMESPACE))
+    all_keys.update(list_keys(OLLAMA_HOSTS_NAMESPACE))
+
     hosts: list[dict[str, Any]] = []
-    for key in list_keys(OLLAMA_HOSTS_NAMESPACE):
-        record = load_data(OLLAMA_HOSTS_NAMESPACE, key)
+    for key in sorted(all_keys):
+        record = load_data(USABLE_OLLAMA_HOSTS_NAMESPACE, key)
+        if not isinstance(record, dict):
+            record = load_data(OLLAMA_HOSTS_NAMESPACE, key)
         if not isinstance(record, dict):
             continue
         host = str(record.get("host", "")).strip()
@@ -519,6 +629,65 @@ def list_available_ollama_hosts() -> list[dict[str, Any]]:
     return hosts
 
 
+def resolve_ollama_host(where_value: str, timeout: float = 3.0) -> str:
+    """Resolve WHERE into a usable host:port endpoint.
+
+    Behavior:
+    - IP input: verify Ollama is reachable and persist as usable host.
+    - Hostname input: if unknown alias, prompt to map it to a known usable host.
+    """
+    host, port = _parse_host_port(where_value, default_port=11434)
+
+    if _is_ip_address(host):
+        register_usable_ollama_host(host=host, port=port, timeout=timeout)
+        return f"{host}:{port}"
+
+    known = list_available_ollama_hosts()
+    for item in known:
+        if item.get("host") == host and int(item.get("port", 11434)) == port:
+            return f"{host}:{port}"
+
+    alias = _load_host_alias(host)
+    if isinstance(alias, dict):
+        mapped_host = str(alias.get("host", "")).strip()
+        mapped_port = int(alias.get("port", 11434))
+        if mapped_host:
+            return f"{mapped_host}:{mapped_port}"
+
+    if not known:
+        raise ValueError(
+            "no usable hosts in database; run check-hosts with an IP to register one first"
+        )
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ValueError(
+            f"no mapping for hostname '{host}'; run interactively to select a usable host "
+            "or set WHERE=<usable-host:port>"
+        )
+
+    choices: list[str] = []
+    endpoint_by_choice: dict[str, str] = {}
+    for item in known:
+        endpoint = f"{item['host']}:{item['port']}"
+        models = item["models"]
+        model_text = ", ".join(models[:3]) if models else "no models listed"
+        if len(models) > 3:
+            model_text += ", ..."
+        display = f"{endpoint} ({model_text})"
+        choices.append(display)
+        endpoint_by_choice[display] = endpoint
+
+    selected = tui_select(
+        choices,
+        prompt=f"No mapping for hostname '{host}'. Select a usable host",
+        default_index=0,
+    )
+    endpoint = endpoint_by_choice[selected]
+    mapped_host, mapped_port = _parse_host_port(endpoint, default_port=11434)
+    _save_host_alias(alias=host, host=mapped_host, port=mapped_port)
+    return endpoint
+
+
 def select_ollama_host_tui(prompt: str = "Select an Ollama host") -> str:
     """Interactively select one persisted Ollama host and return host:port."""
     hosts = list_available_ollama_hosts()
@@ -541,3 +710,37 @@ def select_ollama_host_tui(prompt: str = "Select an Ollama host") -> str:
 
     selected = tui_select(choices, prompt=prompt, default_index=0)
     return endpoint_by_choice[selected]
+
+
+def select_ollama_model_tui(
+    where_value: str,
+    prompt: str = "Select a model (WHOM)",
+    allow_empty: bool = False,
+) -> str:
+    """Fetch available models from WHERE host and select one interactively."""
+    host, port = _parse_host_port(where_value, default_port=11434)
+    models = request_ollama_models(host=host, port=port)
+    save_available_ollama_host(host=host, port=port, models=models)
+
+    choices = sorted({model.strip() for model in models if model.strip()})
+    if allow_empty:
+        choices.insert(0, "(skip enrichment)")
+
+    if not choices:
+        if allow_empty:
+            return ""
+        raise ValueError(f"no models available on {host}:{port}")
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        if allow_empty:
+            return ""
+        return choices[0]
+
+    selected = tui_select(
+        choices,
+        prompt=f"{prompt} from {host}:{port}",
+        default_index=0,
+    )
+    if allow_empty and selected == "(skip enrichment)":
+        return ""
+    return selected

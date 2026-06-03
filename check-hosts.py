@@ -7,13 +7,16 @@ Usage examples:
 
 from __future__ import annotations
 
-import json
 import sys
-from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
 
-from devlib import env_or_arg, parse_kv_args, prompt_text, run, save_available_ollama_host
+from devlib import (
+    env_or_arg,
+    parse_kv_args,
+    prompt_text,
+    request_ollama_models,
+    run,
+    save_available_ollama_host,
+)
 
 
 def parse_hosts(args: dict[str, str]) -> list[str]:
@@ -51,34 +54,6 @@ def parse_port(args: dict[str, str]) -> int:
         raise ValueError(f"PORT must be in range 1-65535, got '{raw_port}'")
 
     return port
-
-
-def request_ollama_models(host: str, port: int, timeout: float = 3.0) -> list[str]:
-    """Return model names from an Ollama instance or raise an informative error."""
-    url = f"http://{host}:{port}/api/tags"
-    try:
-        with urlopen(url, timeout=timeout) as response:  # nosec B310: internal utility
-            data = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        raise RuntimeError(f"HTTP {exc.code} from {url}") from exc
-    except URLError as exc:
-        reason = getattr(exc, "reason", exc)
-        raise RuntimeError(f"unable to reach {url}: {reason}") from exc
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"invalid JSON returned from {url}") from exc
-
-    models = data.get("models")
-    if not isinstance(models, list):
-        raise RuntimeError(f"unexpected response shape from {url}")
-
-    names: list[str] = []
-    for entry in models:
-        if isinstance(entry, dict):
-            name = entry.get("name")
-            if isinstance(name, str) and name:
-                names.append(name)
-
-    return names
 
 
 def print_host_report(host: str, port: int) -> list[str] | None:

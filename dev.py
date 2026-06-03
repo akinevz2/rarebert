@@ -61,18 +61,18 @@ def build_makefile_content(modules: list[Path]) -> str:
             "\t@echo \"Examples: make query | make hyper-tag | make hyper-analysis\"",
             "",
             "bootstrap:",
-            "\t$(PYTHON) dev.py",
+            "\t@$(PYTHON) dev.py",
             "",
             "add:",
             "\t@test -n \"$(MODULE)\" || (echo \"Usage: make add MODULE=<name>\" && exit 1)",
-            "\t$(PYTHON) dev.py add --module \"$(MODULE)\"",
+            "\t@$(PYTHON) dev.py add --module \"$(MODULE)\"",
             "",
         ]
     )
 
     for module in modules:
         target = make_target_name(module)
-        recipe = f"\t$(PYTHON) {module.name} $(ARGS) $(ARG)"
+        recipe = f"\t@$(PYTHON) {module.name} $(ARGS) $(ARG)"
 
         lines.extend(
             [

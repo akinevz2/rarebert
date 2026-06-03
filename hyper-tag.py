@@ -14,13 +14,14 @@ from urllib.request import Request, urlopen
 from devlib import (
     ensure_local_packages,
     env_or_arg,
-    list_available_ollama_hosts,
     parse_kv_args,
     prompt_text,
     require_arg_or_prompt,
+    resolve_ollama_host,
     run,
     save_data,
     select_ollama_host_tui,
+    select_ollama_model_tui,
 )
 
 
@@ -206,19 +207,6 @@ def tsv_suggestions() -> list[str]:
     return [str(path) for path in found[:80]]
 
 
-def discovered_model_suggestions() -> list[str]:
-    """Collect model suggestions from persisted Ollama hosts."""
-    names: list[str] = []
-    seen: set[str] = set()
-    for host in list_available_ollama_hosts():
-        for model in host.get("models", []):
-            candidate = str(model).strip()
-            if candidate and candidate not in seen:
-                seen.add(candidate)
-                names.append(candidate)
-    return names
-
-
 def main() -> int:
     try:
         args = parse_kv_args(sys.argv[1:])
@@ -238,17 +226,21 @@ def main() -> int:
         args["LIMIT"] = limit_raw
         limit = parse_int_arg(args, "LIMIT", 50)
 
+        where = env_or_arg(args, "WHERE") or None
+        if where:
+            where = resolve_ollama_host(where)
+
         model = env_or_arg(args, "WHOM") or None
         if model is None:
-            model_entered = prompt_text(
-                "Model for enrichment (WHOM, blank to skip)",
-                suggestions=discovered_model_suggestions(),
+            if not where:
+                where = select_ollama_host_tui("Select an Ollama host for hyper-tag enrichment")
+            model_entered = select_ollama_model_tui(
+                where,
+                prompt="Select model for enrichment (WHOM)",
                 allow_empty=True,
             )
             model = model_entered or None
-
-        where = env_or_arg(args, "WHERE") or None
-        if model and not where:
+        elif model and not where:
             where = select_ollama_host_tui("Select an Ollama host for hyper-tag enrichment")
 
         processed, enriched = process_file(file_path, limit=limit, model=model, where=where)
