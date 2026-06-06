@@ -5,7 +5,7 @@ ARG ?=
 ARGS ?=
 MODULE ?=
 
-PY_TARGETS := agent check-hosts dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag query visualise-data
+PY_TARGETS := add-java agent check-hosts dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag query visualise-data
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -25,6 +25,9 @@ bootstrap:
 add:
 	@test -n "$(MODULE)" || (echo "Usage: make add MODULE=<name>" && exit 1)
 	@$(PYTHON) dev.py add --module "$(MODULE)"
+
+add-java:
+	@$(PYTHON) add-java.py $(ARGS) $(ARG)
 
 agent:
 	@$(PYTHON) agent.py $(ARGS) $(ARG)

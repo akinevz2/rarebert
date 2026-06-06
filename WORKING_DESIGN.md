@@ -92,11 +92,16 @@ Reference: [devlib.py](devlib.py), [hyper-tag.py](hyper-tag.py).
   - run wrapper.
   - SQLite helpers: init_db, save_data, load_data, list_keys, delete_data.
   - Local dependency installation helper.
+  - Ollama host utilities:
+    - reachable host registration and model cache.
+    - host alias mapping (`hostname -> usable host`).
+    - interactive host/model TUI selectors with prefix-first filtering.
 
 ### 3.3 Diagnostics and runtime helpers
 
 - [check-hosts.py](check-hosts.py): probes Ollama `/api/tags` across hosts.
-- [query.py](query.py): prompt interface for Ollama models.
+- [query.py](query.py): prompt interface for Ollama models with host-resolution and interactive model selection.
+- [get-usable-hosts.py](get-usable-hosts.py): lists known usable Ollama hosts and cached model lists.
 
 ### 3.4 Data exploration
 
@@ -112,6 +117,17 @@ Reference: [devlib.py](devlib.py), [hyper-tag.py](hyper-tag.py).
   - Word-sense assignment (Lesk + WordNet).
   - Optional Ollama enrichment.
   - SQLite persistence under namespace hyper_features.
+
+### 3.6 Training-set preparation
+
+- [get-training-set.py](get-training-set.py)
+  - Reads propaganda TSV input.
+  - Exports JSON array records with: `classification`, `raw_data`, `span`, `clean`.
+  - Supports `FILE=...` argument and interactive FILE prompt when omitted.
+
+### 3.7 Scaffolds pending implementation
+
+- [get-knowledge-file.py](get-knowledge-file.py): scaffold only (no runtime logic yet).
 
 ## 4. Findings To Date
 
@@ -131,8 +147,10 @@ Reference: [devlib.py](devlib.py), [hyper-tag.py](hyper-tag.py).
 
 ### 4.3 Service reachability
 
-- Host checks and query tooling can reach configured remote hosts when DNS/host mapping is correct.
-- Endpoint behavior can differ by route/model and must be treated as runtime variability.
+- Reachable Ollama endpoints are persisted as usable hosts in SQLite.
+- IP-based WHERE values are validated for Ollama reachability before use.
+- Unknown hostname WHERE values require interactive mapping to a known usable host.
+- Endpoint behavior can differ by route/model and should be treated as runtime variability.
 
 ## 5. Reproducible Commands
 
@@ -141,9 +159,12 @@ From [uni/rarebert](.) root:
 ```sh
 make help
 make check-hosts HOSTS=192.168.137.133
+make get-usable-hosts
+make get-training-set FILE=propaganda_dataset_v2/propaganda_train.tsv
 make visualise-data FILE=propaganda_dataset_v2/propaganda_train.tsv
 make hyper-tag FILE=propaganda_dataset_v2/propaganda_val.tsv LIMIT=20
-make hyper-tag FILE=propaganda_dataset_v2/propaganda_val.tsv LIMIT=20 WHOM=gemma4:latest WHERE=ws-raretower
+make hyper-tag FILE=propaganda_dataset_v2/propaganda_val.tsv LIMIT=20 WHOM=gemma4:latest WHERE=192.168.137.133:11434
+make query WHERE=192.168.137.133:11434 ASK="Hello"
 ```
 
 ## 6. Open Design Items
@@ -158,3 +179,33 @@ make hyper-tag FILE=propaganda_dataset_v2/propaganda_val.tsv LIMIT=20 WHOM=gemma
 1. Implement initial Quarkus resources (init/classify/mutate/recombine) matching contracts.
 2. Implement Python training ground loop using persisted gene snapshots.
 3. Add evaluation pipeline over train/val splits and export graphs/tables for report insertion.
+
+## 8. dev-java.py — Java Module Scaffolder (Makefile Extension)
+
+Mirrors the pattern of `dev.py` for the Java/Quarkus side of the project.
+Java source lives under `./rarebert-host/` and is managed by Maven.
+
+### 8.1 dev-java.py behaviour
+
+- [ ] Accept `add` subcommand with `--module`, `--package` (optional), `--copy` (optional) arguments
+- [ ] Resolve target path as `./rarebert-host/src/main/java/<package>/<Module>.java`
+- [ ] If `--package` omitted, place class in root source directory
+- [ ] If `--copy` provided, read from `./rarebert-host/src/templates/<copy>.java` as scaffold base
+- [ ] If `--copy` omitted, generate a minimal class scaffold with package declaration, class stub, and a `TODO` comment
+- [ ] Substitute template placeholders: at minimum `{{CLASS_NAME}}` and `{{PACKAGE}}`
+- [ ] Refuse to overwrite existing files, print clear error matching `dev.py` style
+- [ ] Print created file path on success, matching `dev.py` output style
+
+### 8.2 Template conventions (`./rarebert-host/src/templates/`)
+
+- [ ] Create `./rarebert-host/src/templates/` folder
+- [ ] Add `Resource.java` — template for a Quarkus REST resource class
+- [ ] Add `Service.java` — template for a plain service/logic class
+- [ ] Add `Interface.java` — template for a pluggable interface (primary use case for GA character scorer and agent family contracts)
+- [ ] All templates use `{{CLASS_NAME}}` and `{{PACKAGE}}` as substitution tokens
+
+### 8.3 Integration notes
+
+- Complements existing `dev.py` pattern; does not modify it
+- Template folder is the canonical source for new Quarkus agent family stubs (ref: Section 6 open items)
+- `COPY=Interface` is the expected default when scaffolding new agent resources matching classify/mutate/recombine contracts
