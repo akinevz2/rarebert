@@ -70,9 +70,33 @@ def build_makefile_content(modules: list[Path]) -> str:
         ]
     )
 
+    passthrough_keys = [
+        "HOST",
+        "HOSTS",
+        "PORT",
+        "WHOM",
+        "WHERE",
+        "ASK",
+        "TOPIC",
+        "SESSION",
+        "RESET",
+        "SEARCH",
+        "RECALL",
+        "LIST",
+        "DB",
+        "FILE",
+        "URL",
+        "LIMIT",
+        "THRESHOLD",
+        "BINDING",
+        "TOKENS",
+    ]
+    compat_parts = [f"$(if $({key}),\"{key}=$({key})\",)" for key in passthrough_keys]
+    compat_args = " ".join(compat_parts)
+
     for module in modules:
         target = make_target_name(module)
-        recipe = f"\t$(PYTHON) {module.name} $(ARGS) $(ARG)"
+        recipe = f"\t$(PYTHON) {module.name} $(ARGS) $(ARG) {compat_args}"
 
         lines.extend(
             [
