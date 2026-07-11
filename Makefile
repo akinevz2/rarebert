@@ -5,7 +5,7 @@ ARG ?=
 ARGS ?=
 MODULE ?=
 
-PY_TARGETS := agent check-hosts dev devlib hyper-analysis hyper-tag query rip-internet-movie visualise-data wow-discussion wow-list-sessions
+PY_TARGETS := add-java add-notification add-repo-error agent check-hosts dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag notify query reminders rip-internet-movie scan visualise-data wow-discussion wow-list-sessions
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -26,6 +26,15 @@ add:
 	@test -n "$(MODULE)" || (echo "Usage: make add MODULE=<name>" && exit 1)
 	$(PYTHON) dev.py add --module "$(MODULE)"
 
+add-java:
+	$(PYTHON) add-java.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
+add-notification:
+	$(PYTHON) add-notification.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
+add-repo-error:
+	$(PYTHON) add-repo-error.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
 agent:
 	$(PYTHON) agent.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
 
@@ -38,17 +47,35 @@ dev:
 devlib:
 	$(PYTHON) devlib.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
 
+get-knowledge-file:
+	$(PYTHON) get-knowledge-file.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
+get-training-set:
+	$(PYTHON) get-training-set.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
+get-usable-hosts:
+	$(PYTHON) get-usable-hosts.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
 hyper-analysis:
 	$(PYTHON) hyper-analysis.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
 
 hyper-tag:
 	$(PYTHON) hyper-tag.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
 
+notify:
+	$(PYTHON) notify.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
 query:
 	$(PYTHON) query.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
 
+reminders:
+	$(PYTHON) reminders.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
 rip-internet-movie:
 	$(PYTHON) rip-internet-movie.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
+scan:
+	$(PYTHON) scan.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
 
 visualise-data:
 	$(PYTHON) visualise-data.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
