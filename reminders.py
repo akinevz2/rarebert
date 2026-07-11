@@ -19,6 +19,7 @@ REMINDERS = [
     "URGENT: commit changes to rarebert, automate home profile maintenance cycle",
     "URGENT: commit changes to rarebert, automate home profile maintenance cycle",
     "URGENT: commit changes to rarebert, automate home profile maintenance cycle",
+    "URGENT: case test uppercase",
 ]
 REMINDERS_PATH = Path("reminders.rs")
 

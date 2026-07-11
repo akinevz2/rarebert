@@ -136,5 +136,3 @@ Suggested operating sequence:
 - Pushed main to origin (https://github.com/akinevz2/rarebert) at commit 96896fd.
 
 - Cloned .log to README.md and launched: code --wait --new-window README.md
-
-- Restored README.md from git and cloned .log to makefile.md
