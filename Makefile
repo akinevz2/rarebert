@@ -5,7 +5,7 @@ ARG ?=
 ARGS ?=
 MODULE ?=
 
-PY_TARGETS := add-java agent check-hosts dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag query visualise-data
+PY_TARGETS := add-java add-notification add-repo-error agent check-hosts dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag notify query reminders scan visualise-data
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -28,6 +28,12 @@ add:
 
 add-java:
 	@$(PYTHON) add-java.py $(ARGS) $(ARG)
+
+add-notification:
+	@$(PYTHON) add-notification.py $(ARGS) $(ARG)
+
+add-repo-error:
+	@$(PYTHON) add-repo-error.py $(ARGS) $(ARG)
 
 agent:
 	@$(PYTHON) agent.py $(ARGS) $(ARG)
@@ -56,8 +62,17 @@ hyper-analysis:
 hyper-tag:
 	@$(PYTHON) hyper-tag.py $(ARGS) $(ARG)
 
+notify:
+	@$(PYTHON) notify.py $(ARGS) $(ARG)
+
 query:
 	@$(PYTHON) query.py $(ARGS) $(ARG)
+
+reminders:
+	@$(PYTHON) reminders.py $(ARGS) $(ARG)
+
+scan:
+	@$(PYTHON) scan.py $(ARGS) $(ARG)
 
 visualise-data:
 	@$(PYTHON) visualise-data.py $(ARGS) $(ARG)
