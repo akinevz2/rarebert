@@ -8,3 +8,4 @@ rarebert.db
 # OS/editor clutter
 .DS_Store
 .vscode/
+Make.HELPFILE.md

@@ -7,7 +7,9 @@ MODULE ?=
 
 PY_TARGETS := add-java add-notification add-repo-error agent check-hosts dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag notify query reminders scan visualise-data
 
-.PHONY: help bootstrap add $(PY_TARGETS)
+.PHONY: all help bootstrap add print install $(PY_TARGETS)
+
+all: help
 
 help:
 	@echo "Available Python module targets:"
@@ -18,6 +20,14 @@ help:
 	@echo "Bootstrap/rebuild: make bootstrap"
 	@echo "Create module: make add MODULE=<name>"
 	@echo "Examples: make query | make hyper-tag | make hyper-analysis"
+
+examples:
+	@echo "# Makefile Usage Examples"
+	@echo "make scan"
+	@echo "make print"
+	@echo "make add-notification URGENT='commit changes to rarebert'"
+	@echo "make add-repo-error ARG='REPO=/home/kine/dots ERROR=/path/to/ERROR.ws'"
+	@echo "make query ARGS='WHERE=localhost WHOM=llama3.2 ASK=hello'"
 
 bootstrap:
 	@$(PYTHON) dev.py
@@ -30,7 +40,7 @@ add-java:
 	@$(PYTHON) add-java.py $(ARGS) $(ARG)
 
 add-notification:
-	@$(PYTHON) add-notification.py $(ARGS) $(ARG)
+	@$(PYTHON) add-notification.py URGENT="$(URGENT)" $(ARGS) $(ARG)
 
 add-repo-error:
 	@$(PYTHON) add-repo-error.py $(ARGS) $(ARG)
@@ -76,3 +86,22 @@ scan:
 
 visualise-data:
 	@$(PYTHON) visualise-data.py $(ARGS) $(ARG)
+
+print:
+	@if [ -f ERROR.ntfy ]; then \
+		stat ERROR.ntfy | grep -F 'ERROR.ntfy' || true; \
+		cat ERROR.ntfy; \
+	else \
+		echo "ERROR.ntfy not found"; \
+	fi
+
+install:
+	@if [ ! -f Makefile.log ]; then echo "Makefile.log not found"; exit 1; fi
+	@if [ -f Makefile ]; then \
+		cat Makefile.log >> Makefile; \
+		rm Makefile.log; \
+		echo "Merged Makefile.log recipes into existing Makefile"; \
+	else \
+		mv Makefile.log Makefile; \
+		echo "Renamed Makefile.log to Makefile"; \
+	fi

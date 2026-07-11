@@ -16,6 +16,9 @@ REMINDERS = [
     "Create a socket-network-enabled notification daemon that communicates and executes RPC messages sent to a Windows executable to launch a VBS script in the user's profile directory, showing a dismissible window in the bottom right corner of the screen.",
     "URGENT: test urgent notification",
     "URGENT: second urgent call",
+    "URGENT: commit changes to rarebert, automate home profile maintenance cycle",
+    "URGENT: commit changes to rarebert, automate home profile maintenance cycle",
+    "URGENT: commit changes to rarebert, automate home profile maintenance cycle",
 ]
 REMINDERS_PATH = Path("reminders.rs")
 

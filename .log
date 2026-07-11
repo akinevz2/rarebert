@@ -1,0 +1,34 @@
+# rarebert module touch log
+# updated: 2026-07-11
+
+Python modules touched:
+- agent.py (edited: revoked execution path)
+- add-repo-error.py (read and executed via make target)
+- notify.py (read)
+- query.py (read)
+- reminders.py (read)
+- scan.py (read)
+- visualise-data.py (read)
+- dev.py (read)
+- devlib.py (read)
+- add-notification.py (inspected via grep)
+- add-java.py (inspected via grep)
+
+Notes:
+
+Go updates:
+
+
+
+
+
+
+- Executed local scan tool via `make scan` to perform ~/dots/home-path sweep using in-repo tooling only.
+- Scan result: no ERROR.ws files found and no NOTIFY.ntfy files found.
+
+- Added Makefile-native command examples via new `examples` target.
+- Updated help output to advertise `make examples`.
+- Verified `make examples` prints scan, print, add-notification, add-repo-error, and query command examples.
+
+- Resolved remote ntfy flow: make add-repo-error is the command path that creates/uses remote ERROR.ws and appends remote ERROR.ntfy.
+- Confirmed supporting visibility path: make print reads local ERROR.ntfy when present.

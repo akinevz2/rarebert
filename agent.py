@@ -144,6 +144,9 @@ def extract_gene(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
+    print("agent.py has been revoked and is no longer executable via make agent.")
+    return 2
+
     try:
         args = parse_kv_args(sys.argv[1:])
         binding = env_or_arg(args, "BINDING", "http://localhost:8080/rule-agent")
