@@ -5,7 +5,7 @@ ARG ?=
 ARGS ?=
 MODULE ?=
 
-PY_TARGETS := add-java add-notification add-repo-error agent check-hosts dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag notify query reminders rip-internet-movie scan visualise-data wow-discussion wow-list-sessions
+PY_TARGETS := add-java add-notification add-repo-error agent check-hosts data-loader dev devlib get-knowledge-file get-training-set get-usable-hosts hyper-analysis hyper-tag notify query reminders rip-internet-movie scan visualise-data wow-discussion wow-list-sessions
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -40,6 +40,9 @@ agent:
 
 check-hosts:
 	@$(PYTHON) check-hosts.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
+
+data-loader:
+	@$(PYTHON) data-loader.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)
 
 dev:
 	@$(PYTHON) dev.py $(ARGS) $(ARG) $(if $(HOST),"HOST=$(HOST)",) $(if $(HOSTS),"HOSTS=$(HOSTS)",) $(if $(PORT),"PORT=$(PORT)",) $(if $(WHOM),"WHOM=$(WHOM)",) $(if $(WHERE),"WHERE=$(WHERE)",) $(if $(ASK),"ASK=$(ASK)",) $(if $(TOPIC),"TOPIC=$(TOPIC)",) $(if $(SESSION),"SESSION=$(SESSION)",) $(if $(RESET),"RESET=$(RESET)",) $(if $(SEARCH),"SEARCH=$(SEARCH)",) $(if $(RECALL),"RECALL=$(RECALL)",) $(if $(LIST),"LIST=$(LIST)",) $(if $(DB),"DB=$(DB)",) $(if $(FILE),"FILE=$(FILE)",) $(if $(URL),"URL=$(URL)",) $(if $(LIMIT),"LIMIT=$(LIMIT)",) $(if $(THRESHOLD),"THRESHOLD=$(THRESHOLD)",) $(if $(BINDING),"BINDING=$(BINDING)",) $(if $(TOKENS),"TOKENS=$(TOKENS)",)

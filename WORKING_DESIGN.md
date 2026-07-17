@@ -48,38 +48,28 @@ Decision:
 Rationale:
 
 - Clear observability of backend failures.
-- Predictable behavior under training-loop retries.
 
-Reference: [agent.py](agent.py), [agent.py.md](agent.py.md).
+## 3. Implementation Plan
 
-### 2.4 Repository-local persistence via SQLite
+- [ ] **data loading** — read the training documents and their gold-standard span labels (start index, end index, class)
 
-Decision:
+- [ ] **tokenisation** — split text into tokens you can index spans over
 
-- Use rarebert.db in repository root for generic key-value persistence.
-- Use namespaced JSON payloads for module interoperability.
+- [ ] **feature extraction** — for each candidate span, pull string-level features (you're doing this without numerics, so things like word shape, surrounding tokens, n-grams, capitalisation etc.)
 
-Rationale:
+- [ ] **span candidate generation** — decide which chunks of text are even worth classifying (sliding window, or sentence-bounded)
 
-- Zero external database dependency for development and coursework.
-- Easy auditability of saved artifacts.
+- [ ] **classifier** — your coevolution thing: LCS rules + token weight "perceptrons" competing to label a span as one of the 10 propaganda classes (or none)
 
-Reference: [devlib.py](devlib.py).
+- [ ] **evolution loop** — the genetic/coevolution cycle that improves the rules/weights over generations against training data
 
-### 2.5 Local dependency isolation
+- [ ] **prediction output** — given a document, produce a list of (start, end, class) predictions
 
-Decision:
+- [ ] **evaluation** — compare predictions to gold labels, compute span-level F1 (partial overlap handling matters here)
 
-- Auto-install module dependencies into .rarebert_deps, not global shell paths.
+- [ ] **benchmarking harness** — run eval across the full test set, report per-class and macro scores
 
-Rationale:
-
-- Reproducible behavior in devcontainer without mutating user shell startup.
-- Keeps per-project package constraints isolated.
-
-Reference: [devlib.py](devlib.py), [hyper-tag.py](hyper-tag.py).
-
-## 3. Implemented Components
+- [ ] **visualisation** — show annotated spans on text, probably in the quarkus web layer
 
 ### 3.1 Build/bootstrap tooling
 
