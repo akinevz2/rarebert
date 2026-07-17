@@ -1,0 +1,19 @@
+{
+  "name": "nlp-pipeline-viewer",
+  "version": "1.0.0",
+  "description": "NLP Pipeline Viewer with TypeScript types",
+  "scripts": {
+    "dev": "http-server -p 3000 -o",
+    "build": "echo 'No build needed for static HTML app'",
+    "test": "echo 'No tests defined'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  },
+  "dependencies": {
+    "@types/node": "^20.0.0"
+  }
+}
