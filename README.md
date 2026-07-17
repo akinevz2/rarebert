@@ -27,6 +27,12 @@ This directory contains various Python modules for the propaganda detection syst
 #### agent.py
 HTTP-bound agent interface for propaganda detection experiments.
 
+#### data-loader.py
+Load propaganda detection datasets (training or validation) with color-coded output.
+Supports both --training and --val command line flags, or TRAINING=true environment variable.
+Output is formatted as label<TAB>text for easy piping to other utilities.
+Colors are applied to different propaganda types (white for not_propaganda, others in various colors).
+
 #### query.py
 Send a prompt to an Ollama model.
 
