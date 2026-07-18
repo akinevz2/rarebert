@@ -1,5 +1,5 @@
 {
-  "pipeline": [
+  "data": [
     {
       "module": "data-loader",
       "runtime": "make",
