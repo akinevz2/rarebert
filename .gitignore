@@ -3,4 +3,5 @@
 !*.py
 !Makefile
 !pyproject.toml
-node_modules/
+!nlp-pipeline-viewer/
+**/node_modules/
