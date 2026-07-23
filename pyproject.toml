@@ -1,0 +1,20 @@
+[project]
+name = "rarebert"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Kirill",email = "kine> Nevzorov <akinevz@outlook.com"}
+]
+requires-python = ">=3.14"
+package-mode=false
+dependencies = [
+    "streamlit (>=1.60.0,<2.0.0)"
+]
+
+[project.scripts]
+visualise = "visualise:main"
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
