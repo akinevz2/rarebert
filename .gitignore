@@ -1,14 +1,15 @@
 # Created by venv; see https://docs.python.org/3/library/venv.html
 *
-!*.py
-!*.ts
-!*.vue
-!nlp-pipeline-viewer/**/*.json
-!nlp-pipeline-viewer/public/**/*.*
-!Makefile
 
 # Include nlp-pipeline-viewer contents in commits for rarebert
-!nlp-pipeline-viewer/
+!Makefile
+!nlp-pipeline-viewer
 !pipeline.json
 
 **/node_modules/
+
+!*.py
+!**/*.ts
+!**/*.vue
+!nlp-pipeline-viewer/**/*.json
+!nlp-pipeline-viewer/public/**/*.*
