@@ -2,7 +2,7 @@
 
 PYTHON ?= python3
 
-PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow get-training-set join-stages runtime top-max visualise
+PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow get-training-set join-stages runtime top-max
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -58,6 +58,3 @@ runtime:
 
 top-max:
 	@$(PYTHON) top-max.py
-
-visualise:
-	@$(PYTHON) visualise.py
