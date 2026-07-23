@@ -5,11 +5,13 @@
 !Makefile
 !nlp-pipeline-viewer
 !pipeline.json
-
-**/node_modules/
-
-!*.py
+!**/src/
+!**/public/
+!**/*.json
 !**/*.ts
 !**/*.vue
+!*.py
+**/node_modules/
+
 !nlp-pipeline-viewer/**/*.json
 !nlp-pipeline-viewer/public/**/*.*

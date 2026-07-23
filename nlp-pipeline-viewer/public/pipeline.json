@@ -1,0 +1,50 @@
+{
+  "stages": [
+    {
+      "module": "data-loader",
+      "runtime": "make",
+      "args": {
+        "training": true
+      },
+      "printout": "Load training dataset from TSV files"
+    },
+    {
+      "module": "tokeniser",
+      "runtime": "make",
+      "args": {},
+      "printout": "Split text into tokens for span analysis"
+    },
+    {
+      "module": "feature-extractor",
+      "runtime": "make",
+      "args": {
+        "window_size": 5,
+        "include_ngrams": true
+      },
+      "printout": "Extract string-level features from candidate spans"
+    },
+    {
+      "module": "classifier",
+      "runtime": "java",
+      "args": {
+        "algorithm": "coevolution",
+        "classes": 10
+      },
+      "printout": "Apply coevolutionary rules and perceptrons to classify spans"
+    },
+    {
+      "module": "evaluator",
+      "runtime": "make",
+      "args": {
+        "metric": "f1_score",
+        "threshold": 0.5
+      },
+      "printout": "Compare predictions against gold labels for evaluation"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created_at": "2026-07-17",
+    "description": "Propaganda detection pipeline using genetic coevolution approach"
+  }
+}
