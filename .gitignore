@@ -3,6 +3,7 @@
 
 # Include nlp-pipeline-viewer contents in commits for rarebert
 !Makefile
+!pyproject.toml
 !nlp-pipeline-viewer
 !pipeline.json
 !**/src/
