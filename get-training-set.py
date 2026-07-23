@@ -11,6 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Iterator, TextIO
 
+# Import piped input detection utility from devlib
+sys.path.insert(0, str(Path(__file__).parent))
+from devlib import has_piped_input
+
 
 # Suppress broken pipe errors (common when piping to commands that exit early)
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
@@ -173,11 +177,6 @@ class TrainingSetCLI:
     def __init__(self):
         pass
     
-    def _has_stdin_input(self) -> bool:
-        """Check if stdin has piped input available."""
-        import select
-        return select.select([sys.stdin], [], [], 0.0)[0] == [sys.stdin]
-    
     def run(self, argv: Optional[List[str]] = None) -> int:
         """Main entry point for CLI execution.
         
@@ -200,8 +199,8 @@ class TrainingSetCLI:
             if file_path:
                 payload = builder.build_from_file(Path(file_path))
             else:
-                # Check for stdin input
-                if not self._has_stdin_input():
+                # Check for stdin input - fail fast if nothing is piped
+                if not has_piped_input():
                     print("Error: No FILE argument provided and no stdin input available", 
                           file=sys.stderr)
                     print("Usage: python3 get-training-set.py FILE=<path/to.tsv>", 
@@ -237,6 +236,23 @@ class TrainingSetCLI:
             if arg.startswith("FILE="):
                 return arg.split("=", 1)[1]
         return None
+
+
+def mark_as_pipeline_middleware() -> bool:
+    """Mark this script as a pipeline middleware component.
+
+    Returns True when stdin has piped input available, enabling the script
+    to participate in Unix-style pipelines. When called without piped input,
+    returns False indicating standalone execution mode.
+
+    This function helps scripts distinguish between direct invocation and
+    pipeline usage, allowing graceful handling of both scenarios.
+
+    Returns:
+        True if data is being piped via stdin, False otherwise.
+    """
+    import select
+    return bool(select.select([sys.stdin], [], [], 0.0)[0])
 
 
 if __name__ == "__main__":

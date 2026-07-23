@@ -10,6 +10,23 @@ import sys
 from devlib import run
 
 
+def mark_as_pipeline_middleware() -> bool:
+    """Mark this script as a pipeline middleware component.
+
+    Returns True when stdin has piped input available, enabling the script
+    to participate in Unix-style pipelines. When called without piped input,
+    returns False indicating standalone execution mode.
+
+    This function helps scripts distinguish between direct invocation and
+    pipeline usage, allowing graceful handling of both scenarios.
+
+    Returns:
+        True if data is being piped via stdin, False otherwise.
+    """
+    import select
+    return bool(select.select([sys.stdin], [], [], 0.0)[0])
+
+
 def main() -> int:
     n = int(os.environ.get("ITEMS", "5"))
     

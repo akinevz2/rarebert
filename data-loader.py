@@ -7,6 +7,7 @@ import csv
 import signal
 from typing import List, Tuple, Optional
 
+provided_columns = ['label', 'tagged_in_context']
 
 class ColorScheme:
     """ANSI color codes for different label types."""
@@ -37,9 +38,9 @@ class ColorScheme:
 class DataRecord:
     """Represents a single data record with label and text."""
     
-    def __init__(self, label: str, tagged_text: str):
+    def __init__(self, label: str, tagged_in_context: str):
         self.label = label.strip()
-        self.tagged_text = tagged_text.strip()
+        self.tagged_in_context = tagged_in_context.strip()
     
     @property
     def colored_label(self) -> str:
@@ -48,7 +49,7 @@ class DataRecord:
     
     def __str__(self) -> str:
         """Format as tab-separated output for piping."""
-        return f"{self.colored_label}\t{self.tagged_text}"
+        return f"{self.colored_label}\t{self.tagged_in_context}"
 
 
 class TSVLoader:
@@ -87,11 +88,12 @@ class TSVLoader:
         col_idx = {}
         for i, col in enumerate(header):
             col_name = col.strip().lower()
-            if col_name == 'label':
-                col_idx['label'] = i
-            elif col_name == 'tagged_in_context':
-                col_idx['tagged_text'] = i
+            if col_name in provided_columns:
+                col_idx[col_name] = i
+            else:
+                raise ValueError(f"Unexpected column {col_name}")
         
+        print(f"debug: {self.REQUIRED_COLUMNS=}, {col_idx.keys()=}")
         missing = self.REQUIRED_COLUMNS - set(col_idx.keys())
         if missing:
             raise ValueError(f"Required columns {missing} not found in TSV")
@@ -100,13 +102,13 @@ class TSVLoader:
     
     def _parse_row(self, row: List[str], col_indices: dict) -> Optional[DataRecord]:
         """Parse a single row into a DataRecord."""
-        max_idx = max(col_indices['label'], col_indices['tagged_text'])
+        max_idx = max(col_indices['label'], col_indices['tagged_in_context'])
         if len(row) <= max_idx:
             return None
         
         label = row[col_indices['label']].strip()
-        tagged_text = row[col_indices['tagged_text']].strip()
-        return DataRecord(label, tagged_text)
+        tagged_in_context = row[col_indices['tagged_in_context']].strip()
+        return DataRecord(label, tagged_in_context)
 
 
 class DataLoader:
@@ -170,6 +172,23 @@ class DataLoaderCLI:
         args = self.parser.parse_args()
         loader = DataLoader.from_args(args)
         return loader.run()
+
+
+def mark_as_pipeline_middleware() -> bool:
+    """Mark this script as a pipeline middleware component.
+
+    Returns True when stdin has piped input available, enabling the script
+    to participate in Unix-style pipelines. When called without piped input,
+    returns False indicating standalone execution mode.
+
+    This function helps scripts distinguish between direct invocation and
+    pipeline usage, allowing graceful handling of both scenarios.
+
+    Returns:
+        True if data is being piped via stdin, False otherwise.
+    """
+    import select
+    return bool(select.select([sys.stdin], [], [], 0.0)[0])
 
 
 if __name__ == "__main__":
