@@ -11,6 +11,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import signal
 import termios
 import threading
 import time
@@ -31,6 +32,7 @@ OLLAMA_HOSTS_NAMESPACE = "available_hosts"
 USABLE_OLLAMA_HOSTS_NAMESPACE = "usable_hosts"
 OLLAMA_HOST_ALIASES_NAMESPACE = "ollama_host_aliases"
 
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 def todo(feature: str) -> None:
     """Raise a clear placeholder error for unfinished functionality."""
@@ -744,3 +746,16 @@ def select_ollama_model_tui(
     if allow_empty and selected == "(skip enrichment)":
         return ""
     return selected
+
+
+def has_piped_input() -> bool:
+    """Check if stdin has piped input available.
+
+    Uses select to non-blocking check for data on stdin. Returns True when
+    stdin is not a TTY (i.e., data was redirected from a file or pipe).
+
+    Returns:
+        True if piped/redirected input is available, False otherwise.
+    """
+    import select
+    return bool(select.select([sys.stdin], [], [], 0.0)[0])
