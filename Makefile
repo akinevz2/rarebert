@@ -2,7 +2,7 @@
 
 PYTHON ?= python3
 
-PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow extra-rare-agentic-bert get-training-set join-stages runtime top-max
+PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow extra-rare-agentic-bert get-training-set join-stages runtime stream_subprocess top-max
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -58,6 +58,9 @@ join-stages:
 
 runtime:
 	@$(PYTHON) src/python/runtime.py
+
+stream_subprocess:
+	@$(PYTHON) src/python/stream_subprocess.py
 
 top-max:
 	@$(PYTHON) src/python/top-max.py

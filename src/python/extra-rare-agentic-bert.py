@@ -1,139 +1,248 @@
-"""extra-rare-agentic-bert: REST server that executes makefile targets via HTTP."""
-# NOT READY FOR PRODUCTION LOL
+"""extra-rare-agentic-bert: stack launcher for the rarebert desktop shell.
+
+Responsibilities (simplified scope):
+    1. Read the ``rest_server`` + new ``streaming`` blocks from ``config.json``.
+    2. Launch the Python SSE bridge (formerly inline HTTP; now extracted into
+       the same module as ``stream_subprocess.py``).
+    3. Launch the Vite dev server for the Vue frontend.
+    4. Tee both children's stdout/stderr to this process's stdout so the Scala
+       Swing host can capture and display them in its log panel.
+    5. Forward SIGINT/SIGTERM to both children, shut them down cleanly on exit.
+
+Endpoints previously implemented here (``POST /``, ``/stream``, ``/repl``,
+``/api/targets``, ``/health``) now live in ``stream_subprocess.py``, which is
+launched as a child process below.
+"""
+
+from __future__ import annotations
 
 import json
+import os
+import shutil
 import signal
 import subprocess
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from typing import Any
 
 
-# Global state for server management
-should_terminate = threading.Event()
+# ─── Paths ───────────────────────────────────────────────────────────────────
+
+_HERE = Path(__file__).resolve().parent
+_REPO_ROOT = _HERE.parent.parent
+CONFIG_PATH = _REPO_ROOT / "config.json"
+
+BRIDGE_SCRIPT = _HERE / "stream_subprocess.py"
+VIEWER_DIR = _REPO_ROOT / "nlp-pipeline-viewer"
 
 
-def run_make_target(target: str) -> tuple[bool, str]:
-    """Run a makefile target and return (success, output)."""
+# ─── Configuration ───────────────────────────────────────────────────────────
+
+DEFAULTS: dict[str, Any] = {
+    "host": "127.0.0.1",
+    "port": 8338,
+    "shutdown_grace_seconds": 0.0,
+    "vite_port": 5173,
+    "log_prefix_vite": "[vite]",
+    "log_prefix_bridge": "[bridge]",
+}
+
+
+def load_config() -> dict[str, Any]:
+    cfg = dict(DEFAULTS)
     try:
-        result = subprocess.run(
-            ["make", target],
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
-        )
-        success = result.returncode == 0
+        with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            for section in ("rest_server", "streaming"):
+                if isinstance(data.get(section), dict):
+                    for k, v in data[section].items():
+                        if isinstance(v, (str, int, float)):
+                            cfg[k] = v
+    except FileNotFoundError:
+        print(f"[launcher] config.json not found at {CONFIG_PATH}; using defaults",
+              file=sys.stderr)
+    except json.JSONDecodeError as exc:
+        print(f"[launcher] config.json invalid: {exc}; using defaults",
+              file=sys.stderr)
+    return cfg
 
-        if not success:
-            return (False, f"Make error for '{target}': {result.stderr}")
 
-        return (success, result.stdout)
-    except subprocess.TimeoutExpired:
-        return (False, f"Timeout executing make {target}")
-    except Exception as e:
-        return (False, str(e))
+CONFIG = load_config()
 
 
-class RESTRequestHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for the agentic BERT server."""
+# ─── Child process management ────────────────────────────────────────────────
 
-    def log_message(self, format: str, *args: object) -> None:
-        """Override to suppress default logging."""
-        pass
+class Child:
+    """Wraps a subprocess with a line-level log forwarder."""
 
-    def _send_json_response(self, status_code: int, data: dict[str, object]) -> None:
-        """Send a JSON response with the given status code and data."""
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+    def __init__(self, name: str, proc: subprocess.Popen, prefix: str) -> None:
+        self.name = name
+        self.proc = proc
+        self.prefix = prefix
+        self._stop = threading.Event()
+        self._threads: list[threading.Thread] = []
 
-    def do_POST(self) -> None:
-        """Handle POST requests with make_target JSON body."""
-        # Only handle root path
-        if self.path != "/":
-            self._send_json_response(404, {"error": "Not found"})
-            return
+    def start_logging(self) -> None:
+        for stream, label in ((self.proc.stdout, "out"), (self.proc.stderr, "err")):
+            if stream is None:
+                continue
+            t = threading.Thread(
+                target=self._pump,
+                args=(stream, label),
+                name=f"{self.name}-{label}",
+                daemon=True,
+            )
+            t.start()
+            self._threads.append(t)
 
+    def _pump(self, stream, label: str) -> None:
+        for line in iter(stream.readline, b""):
+            if self._stop.is_set():
+                break
+            try:
+                text = line.decode("utf-8", errors="replace").rstrip()
+            except Exception:
+                text = repr(line)
+            print(f"{self.prefix} {text}", flush=True)
+
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def terminate(self, grace: float = 2.0) -> None:
+        self._stop.set()
+        if self.proc.poll() is None:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
         try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            if content_length == 0:
-                self._send_json_response(400, {"error": "Empty request body"})
-                return
+            self.proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            try:
+                self.proc.kill()
+            except Exception:
+                pass
 
-            raw_body = self.rfile.read(content_length)
-            data = json.loads(raw_body.decode("utf-8"))
 
-            # Parse the message
-            make_target = data.get("make_target", "")
-            
-            if not make_target:
-                self._send_json_response(400, {"error": "Missing 'make_target' field"})
-                return
+def _spawn_bridge() -> Child:
+    if not BRIDGE_SCRIPT.exists():
+        raise FileNotFoundError(f"bridge script missing: {BRIDGE_SCRIPT}")
+    cmd = [
+        sys.executable,
+        str(BRIDGE_SCRIPT),
+        "--host", str(CONFIG["host"]),
+        "--port", str(CONFIG["port"]),
+    ]
+    print(f"[launcher] starting bridge: {' '.join(cmd)}", file=sys.stderr)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(_REPO_ROOT),
+    )
+    return Child("bridge", proc, str(CONFIG.get("log_prefix_bridge") or "[bridge]"))
 
-            # Execute the make command
-            success, output = run_make_target(make_target)
 
-            if not success:
-                self._send_json_response(500, {
-                    "error": f"Target '{make_target}' failed",
-                    "output": output.splitlines() if output else []
-                })
-                return
+def _spawn_vite() -> Child | None:
+    if not VIEWER_DIR.exists():
+        print(f"[launcher] viewer dir missing: {VIEWER_DIR}", file=sys.stderr)
+        return None
+    npm = shutil.which("npm")
+    if npm is None:
+        print("[launcher] npm not found on PATH; skipping Vite", file=sys.stderr)
+        return None
+    cmd = [
+        npm, "run", "dev", "--", "--port", str(CONFIG["vite_port"]),
+    ]
+    print(f"[launcher] starting vite: {' '.join(cmd)}", file=sys.stderr)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(VIEWER_DIR),
+    )
+    return Child("vite", proc, str(CONFIG.get("log_prefix_vite") or "[vite]"))
 
-            # Special handling for join-stages - signal server termination
-            if make_target == "join-stages":
-                self._send_json_response(200, {
-                    "status": "success",
-                    "target": make_target,
-                    "output": output.splitlines() if output else []
-                })
-                # Signal the main thread to terminate after sending response
-                threading.Thread(target=lambda: (time.sleep(0.1), should_terminate.set()), daemon=True).start()
-                return
 
-            self._send_json_response(200, {
-                "status": "success",
-                "target": make_target,
-                "output": output.splitlines() if output else []
-            })
+def _wait_for_port(host: str, port: int, timeout: float = 30.0) -> bool:
+    """Return True once TCP ``host:port`` accepts connections, else False."""
+    import socket
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.25)
+    return False
 
-        except json.JSONDecodeError as e:
-            self._send_json_response(400, {"error": f"Invalid JSON: {str(e)}"})
-        except Exception as e:
-            self._send_json_response(500, {"error": str(e)})
 
+# ─── Signal handling ─────────────────────────────────────────────────────────
+
+_children: list[Child] = []
+_shutdown = threading.Event()
+
+
+def _install_signal_handlers() -> None:
+    def _handler(signum, frame):  # noqa: ARG001
+        print(f"[launcher] received signal {signum}; shutting down",
+              file=sys.stderr)
+        _shutdown.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(sig, _handler)
+        except (ValueError, OSError):
+            pass
+
+
+# ─── Main ────────────────────────────────────────────────────────────────────
 
 def main() -> int:
-    """Start the REST server on port 8338."""
-    # Suppress broken pipe errors
-    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    _install_signal_handlers()
 
-    host = "0.0.0.0"
-    port = 8338
+    bridge = _spawn_bridge()
+    bridge.start_logging()
+    _children.append(bridge)
 
+    vite = _spawn_vite()
+    if vite is not None:
+        vite.start_logging()
+        _children.append(vite)
+
+    # Block until the bridge accepts connections (or timeout).
+    if _wait_for_port(str(CONFIG["host"]), int(CONFIG["port"]), timeout=15.0):
+        print(
+            f"[launcher] bridge ready at "
+            f"http://{CONFIG['host']}:{CONFIG['port']}",
+            file=sys.stderr,
+        )
+    else:
+        print("[launcher] bridge failed to open port in time",
+              file=sys.stderr)
+
+    # Park here until either a child dies or we receive a shutdown signal.
     try:
-        server = HTTPServer((host, port), RESTRequestHandler)
-        print(f"REST server starting on {host}:{port}", file=sys.stderr)
-        print("Accepting make_target JSON via POST requests", file=sys.stderr)
-        print("Send POST requests to http://localhost:{}/".format(port), file=sys.stderr)
-
-        # Run until termination is requested (e.g., join-stages completed or error)
-        while not should_terminate.is_set():
-            server.handle_request()
-
-    except OSError as e:
-        if "Address already in use" in str(e):
-            print(f"Error: Port {port} is already in use", file=sys.stderr)
-            return 1
-        raise
+        while not _shutdown.is_set():
+            for child in _children:
+                if not child.alive():
+                    print(f"[launcher] {child.name} exited unexpectedly",
+                          file=sys.stderr)
+                    _shutdown.set()
+                    break
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        _shutdown.set()
     finally:
-        pass
+        for child in _children:
+            child.terminate()
+        print("[launcher] stopped", file=sys.stderr)
 
-    print("Server terminated.", file=sys.stderr)
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
