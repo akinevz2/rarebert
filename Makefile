@@ -2,7 +2,7 @@
 
 PYTHON ?= python3
 
-PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow get-training-set join-stages runtime top-max
+PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow extra-rare-agentic-bert get-training-set join-stages runtime top-max
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -13,48 +13,51 @@ help:
 	@printf '  %-15s\n' 'data-loader'
 	@printf '  %-15s\n' 'devlib'
 	@printf '  %-15s\n' 'enrich_bow'
+	@printf '  %-15s\n' 'extra-rare-agentic-bert'
 	@printf '  %-15s\n' 'get-training-set'
 	@printf '  %-15s\n' 'join-stages'
-	@printf '  %-15s\n' 'runtime'
 	@echo ""
 	@echo "Usage: make <target> KEY=VALUE ..."
 	@echo "       make bootstrap"
 	@echo "       make add MODULE=<name>"
 
 bootstrap:
-	@$(PYTHON) bootstrap-make.py
+	@$(PYTHON) src/python/bootstrap-make.py
 
 add:
 	@test -n "$(MODULE)" || (echo "Usage: make add MODULE=<name>" && exit 1)
-	@$(PYTHON) bootstrap-make.py add --module "$(MODULE)"
+	@$(PYTHON) src/python/bootstrap-make.py add --module "$(MODULE)"
 
 	@echo ""
 	@echo "join-stages: Chain multiple stages together:"
 	@echo "  make join-stages stage1 stage2 ..."
 
 bootstrap-make:
-	@$(PYTHON) bootstrap-make.py
+	@$(PYTHON) src/python/bootstrap-make.py
 
 bottom-max:
-	@$(PYTHON) bottom-max.py
+	@$(PYTHON) src/python/bottom-max.py
 
 data-loader:
-	@$(PYTHON) data-loader.py
+	@$(PYTHON) src/python/data-loader.py
 
 devlib:
-	@$(PYTHON) devlib.py
+	@$(PYTHON) src/python/devlib.py
 
 enrich_bow:
-	@$(PYTHON) enrich_bow.py
+	@$(PYTHON) src/python/enrich_bow.py
+
+extra-rare-agentic-bert:
+	@$(PYTHON) src/python/extra-rare-agentic-bert.py
 
 get-training-set:
-	@$(PYTHON) get-training-set.py
+	@$(PYTHON) src/python/get-training-set.py
 
 join-stages:
-	@$(PYTHON) join-stages.py $(filter-out join-stages,$(MAKECMDGOALS))
+	@$(PYTHON) src/python/join-stages.py $(filter-out join-stages,$(MAKECMDGOALS))
 
 runtime:
-	@$(PYTHON) runtime.py
+	@$(PYTHON) src/python/runtime.py
 
 top-max:
-	@$(PYTHON) top-max.py
+	@$(PYTHON) src/python/top-max.py

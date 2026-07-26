@@ -8,7 +8,6 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any
 
 
 # Global state for server management
@@ -39,11 +38,11 @@ def run_make_target(target: str) -> tuple[bool, str]:
 class RESTRequestHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the agentic BERT server."""
 
-    def log_message(self, format: str, *args: Any) -> None:
+    def log_message(self, format: str, *args: object) -> None:
         """Override to suppress default logging."""
         pass
 
-    def _send_json_response(self, status_code: int, data: dict[str, Any]) -> None:
+    def _send_json_response(self, status_code: int, data: dict[str, object]) -> None:
         """Send a JSON response with the given status code and data."""
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")

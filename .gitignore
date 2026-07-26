@@ -1,18 +1,51 @@
-# Created by venv; see https://docs.python.org/3/library/venv.html
-*
+# ─────────────────────────────────────────────────────────────────────────────
+# Rarebert venv: an accidental Python virtualenv was created inside this
+# project root (the bin/, lib/, include/, etc. directories).  Ignore those
+# specifically rather than blanket-ignoring everything in the repo.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Include nlp-pipeline-viewer contents in commits for rarebert
-!Makefile
-!pyproject.toml
-!nlp-pipeline-viewer
-!pipeline.json
-!**/src/
-!**/public/
-!**/*.json
-!**/*.ts
-!**/*.vue
-!*.py
-**/node_modules/
+# Standard venv layout, present at the project root.
+bin/
+etc/
+include/
+lib/
+lib64
+local/
+share/
+__pycache__/
+pyvenv.cfg
 
-!nlp-pipeline-viewer/**/*.json
-!nlp-pipeline-viewer/public/**/*.*
+# Common Python build artefacts.
+*.egg-info/
+*.pyc
+*.pyo
+*.pyd
+
+# Editor / tooling caches.
+.agents/
+.claude/
+.metals/
+.bsp/
+.bloop/
+.scala-build/
+.vscode/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-directory tooling ignores (kept terse; nothing else is blanket-ignored).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# nlp-pipeline-viewer has its own node_modules and build output.
+nlp-pipeline-viewer/node_modules/
+nlp-pipeline-viewer/dist/
+
+# Scala sbt output.
+src/scala/target/
+src/scala/project/target/
+src/scala/project/project/
+
+# Maven output.
+src/java/target/
+
+# Generic OS noise.
+.DS_Store
+Thumbs.db

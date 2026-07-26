@@ -2,16 +2,15 @@
 
 import json
 import sys
-from typing import List, Dict, Union
 
 from devlib import run
 
 
-def process_module(module_config: Dict[str, Union[str, Dict]]) -> str:
+def process_module(module_config: dict[str, object]) -> str:
     """Generate executable command from module configuration."""
     module = module_config.get("module", "")
     runtime = module_config.get("runtime", "")
-    
+
     if runtime == "make":
         return f"make {module}"
     elif runtime == "java":

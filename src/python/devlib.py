@@ -21,18 +21,99 @@ from collections.abc import Iterable
 from contextlib import contextmanager
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any
+from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 
 DB_FILENAME = "rarebert.db"
 LOCAL_DEPS_DIRNAME = ".rarebert_deps"
-OLLAMA_HOSTS_NAMESPACE = "available_hosts"
-USABLE_OLLAMA_HOSTS_NAMESPACE = "usable_hosts"
-OLLAMA_HOST_ALIASES_NAMESPACE = "ollama_host_aliases"
+CONFIG_FILENAME = "config.json"
 
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+
+class AppConfig:
+    """File-backed JSON configuration shared by every rarebert module.
+
+    The loader reads ``config.json`` from the current working directory on
+    first access and caches the parsed blob.  Keys prefixed with ``_`` are
+    treated as documentation and stripped from the public view.  Missing
+    files cause an informative error so misconfigured deployments fail fast.
+    """
+
+    def __init__(self, raw: dict[str, object], source: Path) -> None:
+        self._raw = raw
+        self._source = source
+
+    @classmethod
+    def load(cls, path: Optional[Path] = None) -> "AppConfig":
+        """Load config from ``path`` (default: ``./config.json``)."""
+        target = Path(path) if path else Path.cwd() / CONFIG_FILENAME
+        if not target.is_file():
+            raise FileNotFoundError(
+                f"config.json not found at {target}; expected central configuration"
+            )
+        with target.open("r", encoding="utf-8") as handle:
+            return cls(json.load(handle), target)
+
+    @property
+    def source(self) -> Path:
+        """Path the configuration was loaded from."""
+        return self._source
+
+    def section(self, name: str) -> dict[str, object]:
+        """Return a configuration section, raising if missing."""
+        if name not in self._raw:
+            raise KeyError(f"missing config section '{name}' in {self._source}")
+        return self._raw[name]
+
+    def get(self, dotted_path: str, default: object = None) -> object:
+        """Resolve a dotted path like ``paths.db_filename``."""
+        node: object = self._raw
+        for part in dotted_path.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return default
+            node = node[part]
+        return node
+
+
+_DEFAULT_CONFIG: Optional[AppConfig] = None
+
+
+def get_config() -> AppConfig:
+    """Return the process-wide ``AppConfig`` (lazy-loaded)."""
+    global _DEFAULT_CONFIG
+    if _DEFAULT_CONFIG is None:
+        _DEFAULT_CONFIG = AppConfig.load()
+    return _DEFAULT_CONFIG
+
+
+def reset_config_cache() -> None:
+    """Forget the cached config (useful for tests)."""
+    global _DEFAULT_CONFIG
+    _DEFAULT_CONFIG = None
+
+
+# Backwards-compatible aliases derived from the central config.  These let
+# legacy callers keep using ``OLLAMA_HOSTS_NAMESPACE`` etc. while we move
+# the source of truth into config.json.
+def _legacy_ollama_namespaces() -> Dict[str, str]:
+    cfg = get_config()
+    try:
+        return cfg.section("ollama")["namespaces"]
+    except KeyError:
+        return {
+            "available": "available_hosts",
+            "usable": "usable_hosts",
+            "aliases": "ollama_host_aliases",
+        }
+
+
+OLLAMA_HOSTS_NAMESPACE = _legacy_ollama_namespaces()["available"]
+USABLE_OLLAMA_HOSTS_NAMESPACE = _legacy_ollama_namespaces()["usable"]
+OLLAMA_HOST_ALIASES_NAMESPACE = _legacy_ollama_namespaces()["aliases"]
+
 
 def todo(feature: str) -> None:
     """Raise a clear placeholder error for unfinished functionality."""
@@ -290,7 +371,7 @@ def render_marquee_bar(stop_event: threading.Event, label: str = "Working") -> N
 def run_with_spinner(label: str, fn, *args, **kwargs):
     """Run a function while showing an indefinite marquee spinner."""
     stop_event = threading.Event()
-    box: dict[str, Any] = {}
+    box: dict[str, object] = {}
 
     def worker() -> None:
         try:
@@ -352,7 +433,7 @@ def init_db(base_dir: str | Path | None = None) -> Path:
     return path
 
 
-def save_data(namespace: str, key: str, value: Any, base_dir: str | Path | None = None) -> None:
+def save_data(namespace: str, key: str, value: object, base_dir: str | Path | None = None) -> None:
     """Persist a JSON-serialisable value into rarebert.db."""
     if not namespace.strip() or not key.strip():
         raise ValueError("namespace and key must be non-empty")
@@ -371,7 +452,7 @@ def save_data(namespace: str, key: str, value: Any, base_dir: str | Path | None 
         )
 
 
-def load_data(namespace: str, key: str, default: Any = None, base_dir: str | Path | None = None) -> Any:
+def load_data(namespace: str, key: str, default: object = None, base_dir: str | Path | None = None) -> object:
     """Load a stored value by namespace/key, returning default when absent."""
     init_db(base_dir)
     with db_connection(base_dir) as conn:
@@ -582,7 +663,7 @@ def _save_host_alias(alias: str, host: str, port: int) -> None:
     )
 
 
-def _load_host_alias(alias: str) -> dict[str, Any] | None:
+def _load_host_alias(alias: str) -> dict[str, object] | None:
     """Load hostname -> usable host mapping."""
     key = alias.strip().lower()
     if not key:
@@ -593,12 +674,12 @@ def _load_host_alias(alias: str) -> dict[str, Any] | None:
     return record
 
 
-def list_available_ollama_hosts() -> list[dict[str, Any]]:
+def list_available_ollama_hosts() -> list[dict[str, object]]:
     """Return persisted Ollama hosts sorted by most recently seen first."""
     all_keys: set[str] = set(list_keys(USABLE_OLLAMA_HOSTS_NAMESPACE))
     all_keys.update(list_keys(OLLAMA_HOSTS_NAMESPACE))
 
-    hosts: list[dict[str, Any]] = []
+    hosts: list[dict[str, object]] = []
     for key in sorted(all_keys):
         record = load_data(USABLE_OLLAMA_HOSTS_NAMESPACE, key)
         if not isinstance(record, dict):
