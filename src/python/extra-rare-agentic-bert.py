@@ -45,6 +45,7 @@ DEFAULTS: dict[str, Any] = {
     "port": 8338,
     "shutdown_grace_seconds": 0.0,
     "vite_port": 5173,
+    "launcher_port": 0,  # 0 = pick a free port at startup
     "log_prefix_vite": "[vite]",
     "log_prefix_bridge": "[bridge]",
 }
@@ -125,6 +126,13 @@ class Child:
                 self.proc.kill()
             except Exception:
                 pass
+        # Close any file handles we redirected stdout/stderr to.
+        for stream in (self.proc.stdout, self.proc.stderr):
+            if stream is not None and hasattr(stream, "close"):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
 
 
 def _spawn_bridge() -> Child:
@@ -157,12 +165,35 @@ def _spawn_vite() -> Child | None:
     cmd = [
         npm, "run", "dev", "--", "--port", str(CONFIG["vite_port"]),
     ]
+    # Hand the Vite plugin enough info to cascade shutdown to the rest of
+    # the stack without needing pids or signals.
+    vite_env = os.environ.copy()
+    vite_env["RAREBERT_BRIDGE_HOST"] = str(CONFIG["host"])
+    vite_env["RAREBERT_BRIDGE_PORT"] = str(CONFIG["port"])
+    vite_env["RAREBERT_LAUNCHER_HOST"] = str(CONFIG["host"])
+    vite_env["RAREBERT_LAUNCHER_PORT"] = str(CONFIG.get("launcher_port") or "0")
+    # Force Node/Vite into line-buffered output mode so its stdout
+    # doesn't block behind the OS pipe buffer (which would in turn
+    # starve the event loop and prevent it from serving HTTP).
+    vite_env["NODE_NO_WARNINGS"] = "1"
+    vite_env["FORCE_COLOR"] = "0"
     print(f"[launcher] starting vite: {' '.join(cmd)}", file=sys.stderr)
+    # Stdout and stderr go to per-child log files instead of pipes.
+    # Pipes cause two problems:
+    #   1. Node block-buffers its stdout when it's not a TTY, which
+    #      can stall the event loop indefinitely.
+    #   2. Our pump thread would need to drain every byte, otherwise
+    #      Vite blocks on write().
+    log_dir = _REPO_ROOT / ".rarebert_logs"
+    log_dir.mkdir(exist_ok=True)
+    stdout_log = open(log_dir / "vite.stdout.log", "ab", buffering=0)
+    stderr_log = open(log_dir / "vite.stderr.log", "ab", buffering=0)
     proc = subprocess.Popen(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=stdout_log,
+        stderr=stderr_log,
         cwd=str(VIEWER_DIR),
+        env=vite_env,
     )
     return Child("vite", proc, str(CONFIG.get("log_prefix_vite") or "[vite]"))
 
@@ -199,10 +230,76 @@ def _install_signal_handlers() -> None:
             pass
 
 
+# ─── In-process HTTP shutdown endpoint ───────────────────────────────────────
+#
+# Vite's graceful-shutdown plugin POSTs here when the user (via
+# it-tidy-up) asks the Vite side to close.  We just set the same shutdown
+# flag our signal handlers use; the main loop will then wind everything
+# down in the existing order.
+
+def _start_shutdown_server() -> int | None:
+    """Bind to ``launcher_port`` (or pick a free port) and return it."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    explicit = int(CONFIG.get("launcher_port") or 0)
+    bind_host = str(CONFIG["host"])
+    bind_port = explicit if explicit > 0 else 0
+
+    parent = {"server": None}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt: str, *args: object) -> None:
+            pass  # silent
+
+        def do_POST(self) -> None:  # noqa: N802
+            if self.path != "/shutdown":
+                self.send_response(404); self.end_headers(); return
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > 0:
+                self.rfile.read(length)
+            print("[launcher] /shutdown received; shutting down",
+                  file=sys.stderr)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"shutting_down"}')
+            # Tear down on the next tick so the response flushes first.
+            import threading as _t
+            _t.Thread(target=lambda: (time.sleep(0.05), _shutdown.set()),
+                      daemon=True).start()
+
+        def do_GET(self) -> None:  # noqa: N802
+            if self.path == "/health":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+                return
+            self.send_response(404); self.end_headers()
+
+    try:
+        server = ThreadingHTTPServer((bind_host, bind_port), Handler)
+    except OSError as exc:
+        print(f"[launcher] could not bind {bind_host}:{bind_port} -> {exc}",
+              file=sys.stderr)
+        return None
+
+    parent["server"] = server
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print(f"[launcher] shutdown server on http://{bind_host}:{server.server_address[1]}",
+          file=sys.stderr)
+    CONFIG["launcher_port"] = server.server_address[1]  # remember actual port
+    return server.server_address[1]
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main() -> int:
     _install_signal_handlers()
+
+    # Stand up the in-process shutdown endpoint before anything else so
+    # Vite's cascade always has a target to hit.
+    _start_shutdown_server()
 
     bridge = _spawn_bridge()
     bridge.start_logging()
