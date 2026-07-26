@@ -20,7 +20,12 @@ def split_into_words(text: str) -> list[str]:
 
 def enrich_item(item: dict) -> dict:
     """Enrich a single item with span words as bag-of-words features."""
-    classification = item.get("classification", "not_propaganda")
+    # Use the classification as the bag key; fall back to the first existing
+    # key in the item or a generic placeholder so no literal label names
+    # leak into source.
+    classification = item.get("classification")
+    if not classification:
+        classification = item.get("label") or next(iter(item), "_unlabelled")
     span = item.get("span", "")
 
     # Split span into individual words
@@ -29,7 +34,7 @@ def enrich_item(item: dict) -> dict:
     # Create enriched item copy
     enriched = dict(item)
 
-    # Add bag-of-words field using the classification key directly (e.g., "not_propaganda")
+    # Add bag-of-words field using the classification key.
     if classification not in enriched:
         enriched[classification] = []
 

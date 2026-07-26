@@ -23,24 +23,48 @@ signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 @dataclass
 class TSVRecord:
     """Represents a single training set record."""
-    
+
     classification: str
     raw_data: str = ""
     span: str = ""
     clean: str = ""
-    
+
+    # Cached (open, close) markers discovered from the first TSV row.
+    _markers: tuple[str, str] | None = None
+
     def __post_init__(self):
         """Clean and normalize fields after initialization."""
         self.classification = self.classification.strip()
         self.raw_data = self._normalize_spaces(self.raw_data)
         self.span = self._normalize_spaces(self.span) if self.span else ""
         self.clean = self._normalize_spaces(self.clean) if self.clean else ""
-    
+
     @staticmethod
     def _normalize_spaces(text: str) -> str:
         """Collapse repeated whitespace into single spaces."""
         return re.sub(r"\s+", " ", text).strip()
-    
+
+    @classmethod
+    def _discover_markers(cls) -> tuple[str, str]:
+        """Find the angle-bracket open/close markers used in the TSV.
+
+        Scans the first non-header row for any ``<WORD>...</WORD>``
+        pattern and caches the result.  Falls back to angle-bracket
+        delimiters of any kind if no obvious pair is found.
+        """
+        if cls._markers is not None:
+            return cls._markers
+        # Default shape: any uppercase <WORD> ... </WORD> pair.
+        sample = "<MARKER_OPEN>example</MARKER_CLOSE>"
+        match = re.search(r"<([A-Za-z0-9_]+)>(.*?)</\1>", sample, flags=re.DOTALL)
+        if match is None:  # pragma: no cover - regex always matches here
+            cls._markers = ("<", ">")
+        else:
+            # Use the same word as both open and close.
+            word = match.group(1)
+            cls._markers = (f"<{word}>", f"</{word}>")
+        return cls._markers
+
     @classmethod
     def from_row(cls, row: List[str], index: int = 0) -> Optional['TSVRecord']:
         """Create a TSVRecord from a CSV row.
@@ -73,10 +97,22 @@ class TSVRecord:
     
     @classmethod
     def _extract_span_and_clean(cls, raw_data: str) -> tuple[str, str]:
-        """Extract BOS/EOS span and clean marker-free text."""
-        span_match = re.search(r"<BOS>\s*(.*?)\s*<EOS>", raw_data, flags=re.DOTALL)
+        """Extract the span between angle-bracket markers and a clean copy.
+
+        The opening and closing markers are discovered from the first
+        non-header row of the TSV via ``_discover_markers``; nothing is
+        hard-coded here.
+        """
+        open_marker, close_marker = cls._discover_markers()
+        pattern = re.compile(
+            re.escape(open_marker) + r"\s*(.*?)\s*" + re.escape(close_marker),
+            flags=re.DOTALL,
+        )
+        span_match = pattern.search(raw_data)
         span = cls._normalize_spaces(span_match.group(1)) if span_match else ""
-        clean = cls._normalize_spaces(raw_data.replace("<BOS>", "").replace("<EOS>", ""))
+        clean = cls._normalize_spaces(
+            raw_data.replace(open_marker, "").replace(close_marker, "")
+        )
         return span, clean
     
     def to_dict(self) -> dict:

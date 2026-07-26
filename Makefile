@@ -2,7 +2,7 @@
 
 PYTHON ?= python3
 
-PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow extra-rare-agentic-bert get-training-set join-stages runtime stream_subprocess top-max
+PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow extra-rare-agentic-bert get-training-set join-stages runtime stream_subprocess top-max understand_language
 
 .PHONY: help bootstrap add $(PY_TARGETS)
 
@@ -64,3 +64,6 @@ stream_subprocess:
 
 top-max:
 	@$(PYTHON) src/python/top-max.py
+
+understand_language:
+	@$(PYTHON) src/python/understand_language.py

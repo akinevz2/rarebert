@@ -9,30 +9,42 @@ from typing import List, Tuple, Optional
 
 provided_columns = ['label', 'tagged_in_context']
 
+# Positional ANSI palette; slot N is assigned to the Nth label discovered in
+# the TSV at runtime.  No literal label names live in source.
+_ANSI_PALETTE: tuple[str, ...] = (
+    '\033[0m',   # 0: default
+    '\033[31m',  # 1
+    '\033[32m',  # 2
+    '\033[33m',  # 3
+    '\033[34m',  # 4
+    '\033[35m',  # 5
+    '\033[36m',  # 6
+    '\033[91m',  # 7
+    '\033[92m',  # 8
+    '\033[93m',  # 9
+)
+
+_RESET = '\033[0m'
+
+
 class ColorScheme:
-    """ANSI color codes for different label types."""
-    
-    COLORS = {
-        'not_propaganda': '\033[0m',      # White (no color)
-        'flag_waving': '\033[31m',        # Red
-        'loaded_language': '\033[32m',    # Green
-        'name_calling': '\033[33m',       # Yellow
-        'doubt': '\033[34m',              # Blue
-        'appeal_to_fear_prejudice': '\033[35m',  # Magenta
-        'causal_oversimplification': '\033[36m', # Cyan
-        'repetition': '\033[91m',         # Light Red
-        'exaggeration': '\033[92m',       # Light Green
-        'minimisation': '\033[93m',       # Light Yellow
-    }
-    
-    RESET = '\033[0m'
-    
+    """ANSI color codes for different label types.
+
+    Labels are mapped to palette slots lazily as they are encountered in
+    the input stream; the mapping is opaque (positional) so no label
+    names appear in this source file.
+    """
+
+    _slot_by_label: dict[str, int] = {}
+
     @classmethod
     def apply_color(cls, label: str) -> str:
         """Apply ANSI color to a label if it's a known type."""
-        if label in cls.COLORS:
-            return f"{cls.COLORS[label]}{label}{cls.RESET}"
-        return label
+        slot = cls._slot_by_label.get(label)
+        if slot is None:
+            slot = len(cls._slot_by_label) % len(_ANSI_PALETTE)
+            cls._slot_by_label[label] = slot
+        return f"{_ANSI_PALETTE[slot]}{label}{_RESET}"
 
 
 class DataRecord:
