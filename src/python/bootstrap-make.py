@@ -123,8 +123,13 @@ def build_makefile_content(modules: list[Path], aliases: list[tuple[str, str]] |
             ]
         )
 
-    # Emit alias targets — each one is a phony that delegates to the real recipe.
+    # Emit alias targets — each one is a phony that delegates to the real
+    # recipe.  Skip self-aliases (alias == module) so the generated
+    # Makefile never contains ``target: target`` which Make reports as a
+    # circular dependency.
     for alias, module in aliases:
+        if alias == module:
+            continue
         if module in module_relpath:
             lines.extend(
                 [
@@ -241,7 +246,12 @@ def aliases_path(directory: Path) -> Path:
 
 
 def read_aliases(directory: Path) -> list[tuple[str, str]]:
-    """Return ``[(alias, module), ...]`` from the sidecar file (empty if missing)."""
+    """Return ``[(alias, module), ...]`` from the sidecar file (empty if missing).
+
+    Self-aliases (alias == module) are silently dropped — they were
+    never useful and would emit a circular ``target: target`` line in
+    the generated Makefile.
+    """
     path = aliases_path(directory)
     if not path.exists():
         return []
@@ -255,7 +265,7 @@ def read_aliases(directory: Path) -> list[tuple[str, str]]:
         alias, _, module = line.partition(":")
         alias = alias.strip()
         module = module.strip()
-        if alias and module:
+        if alias and module and alias != module:
             out.append((alias, module))
     return out
 
@@ -282,6 +292,12 @@ def mv_module(directory: Path, module_name: str, to_name: str) -> str:
     """
     module = normalize_module_name(module_name)
     alias = normalize_module_name(to_name)
+
+    # Reject self-aliases — they produce a circular target in the generated
+    # Makefile (e.g. ``it-tidy-up: it-tidy-up``) which Make drops with
+    # ``Circular ... dependency dropped`` and is never useful anyway.
+    if alias == module:
+        raise ValueError(f"alias '{alias}' equals module name; nothing to alias")
 
     # Sanity: don't shadow bootstrap-managed targets or reserved names.
     reserved = {"help", "bootstrap", "add", "mv", "rm", "all", "clean"}
@@ -347,6 +363,22 @@ def bootstrap(directory: Path) -> Path:
         for module in modules
     ]
     aliases = read_aliases(directory)
+    # Self-heal the sidecar: drop any pairs that were filtered out by
+    # read_aliases (currently: self-aliases like ``x:x``).  This keeps
+    # ``.make_aliases`` consistent with what the Makefile emitter sees.
+    raw_aliases: list[tuple[str, str]] = []
+    if aliases_path(directory).exists():
+        for raw in aliases_path(directory).read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or ":" not in line:
+                continue
+            a, _, m = line.partition(":")
+            a, m = a.strip(), m.strip()
+            if a and m:
+                raw_aliases.append((a, m))
+    if raw_aliases != aliases:
+        write_aliases(directory, aliases)
+
     content = build_makefile_content(relative_modules, aliases=aliases)
     makefile_path = write_makefile(directory, content)
 

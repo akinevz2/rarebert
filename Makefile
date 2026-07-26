@@ -2,9 +2,9 @@
 
 PYTHON ?= python3
 
-PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow extra-rare-agentic-bert get-training-set join-stages runtime stream_subprocess top-max understand_language
+PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow extra-rare-agentic-bert get-training-set it-tidy-up join-stages look-at-data runtime stream_subprocess test-against-values top-max understand-language
 
-.PHONY: help bootstrap add mv rm $(PY_TARGETS) understand-language
+.PHONY: help bootstrap add mv rm $(PY_TARGETS) 
 
 help:
 	@echo "Available Python module targets:"
@@ -15,7 +15,7 @@ help:
 	@printf '  %-15s\n' 'enrich_bow'
 	@printf '  %-15s\n' 'extra-rare-agentic-bert'
 	@printf '  %-15s\n' 'get-training-set'
-	@printf '  %-15s\n' 'join-stages'
+	@printf '  %-15s\n' 'it-tidy-up'
 	@echo ""
 	@echo "Usage: make <target> KEY=VALUE ..."
 	@echo "       make bootstrap"
@@ -63,8 +63,14 @@ extra-rare-agentic-bert:
 get-training-set:
 	@$(PYTHON) src/python/get-training-set.py
 
+it-tidy-up:
+	@$(PYTHON) src/python/it-tidy-up.py
+
 join-stages:
 	@$(PYTHON) src/python/join-stages.py $(filter-out join-stages,$(MAKECMDGOALS))
+
+look-at-data:
+	@$(PYTHON) src/python/look-at-data.py
 
 runtime:
 	@$(PYTHON) src/python/runtime.py
@@ -72,10 +78,11 @@ runtime:
 stream_subprocess:
 	@$(PYTHON) src/python/stream_subprocess.py
 
+test-against-values:
+	@$(PYTHON) src/python/test-against-values.py
+
 top-max:
 	@$(PYTHON) src/python/top-max.py
 
-understand_language:
-	@$(PYTHON) src/python/understand_language.py
-
-understand-language: understand_language
+understand-language:
+	@$(PYTHON) src/python/understand-language.py
