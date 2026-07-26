@@ -1,18 +1,30 @@
-"""stream_subprocess: SSE/HTTP bridge that streams `make` targets and a Python REPL.
+"""stream_subprocess: SSE/HTTP bridge that streams ``make`` targets and a Python REPL.
 
-Launched as a child process by ``extra-rare-agentic-bert.py``. Read its config
-from the same ``config.json`` so the launcher and bridge agree on host/port.
+Launched as a child process by ``extra-rare-agentic-bert.py``.  The bridge
+is structured around a handful of small classes:
 
-Endpoints:
-    POST /                -> legacy fire-and-forget JSON execution of a make target.
-    GET  /stream?target=  -> Server-Sent Events stream of `make <target>` output.
-    GET  /repl            -> Server-Sent Events stream of an interactive
-                             ``python3 -i -u`` session (uses a PTY so
-                             readline / prompts work).
-    POST /repl/in         -> write one line of input to the active REPL's stdin.
-    GET  /api/targets     -> JSON list of make targets discovered from the Makefile.
+    * :class:`Channel`      — protocol-specific sink for events
+      (``SseChannel`` writes to an HTTP response, ``MemoryChannel`` is a
+      test double).
+    * :class:`Shell`        — validates one command line into an argv list
+      (``MakeShell``, ``PythonReplShell``).
+    * :class:`Command`      — spawns one subprocess and pumps output
+      (``SubprocessCommand``, ``ReplCommand``).
+    * :class:`Session`      — owns one ``Command`` + one ``Channel`` and
+      threads the output.
+    * :class:`SessionRegistry` — central map of live sessions.
+    * :class:`BridgeHTTPHandler` — tiny router, knows only URLs.
+
+Endpoints (unchanged from the original):
+    POST /                -> legacy fire-and-forget JSON execution.
+    GET  /stream?target=  -> SSE stream of ``make <target>`` output.
+    GET  /repl            -> SSE stream of an interactive Python session.
+    POST /repl/in         -> write one line of input to the active REPL.
+    POST /api/run-stream  -> SSE stream of a sandboxed ``make`` command.
+    GET  /api/targets     -> JSON list of make targets.
     GET  /health          -> 200 OK if the bridge is alive.
-    GET  /status          -> JSON status (pid, uptime, active sessions).
+    GET  /status          -> JSON status.
+    POST /shutdown        -> graceful exit.
 """
 
 from __future__ import annotations
@@ -22,21 +34,23 @@ import base64
 import json
 import os
 import pty
+import re
 import select
+import shlex
 import signal
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
-from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
-from urllib.parse import urlparse, parse_qs
+from typing import Any, Callable, ClassVar
+from urllib.parse import parse_qs, urlparse
 
 
-# ─── Paths & defaults ────────────────────────────────────────────────────────
+# ─── Paths & config ──────────────────────────────────────────────────────────
 
 _HERE = Path(__file__).resolve().parent
 _REPO_ROOT = _HERE.parent.parent
@@ -69,7 +83,6 @@ def load_config(host: str | None, port: int | None) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         print(f"[bridge] config.json invalid: {exc}; using defaults",
               file=sys.stderr)
-    # CLI overrides win.
     if host is not None:
         cfg["host"] = host
     if port is not None:
@@ -77,11 +90,656 @@ def load_config(host: str | None, port: int | None) -> dict[str, Any]:
     return cfg
 
 
-# ─── Global state ────────────────────────────────────────────────────────────
+CONFIG: dict[str, Any] = load_config(None, None)
+
+
+# ─── Exceptions ──────────────────────────────────────────────────────────────
+
+class BridgeError(Exception):
+    """Base class for bridge-originated errors."""
+
+
+class ShellError(BridgeError):
+    """The shell rejected a command line."""
+
+
+class CommandError(BridgeError):
+    """Spawning or driving a subprocess failed."""
+
+
+class _ClientGone(BridgeError):
+    """The SSE/HTTP client disconnected mid-stream."""
+
+
+# ─── Channel ─────────────────────────────────────────────────────────────────
+
+class Channel(ABC):
+    """Sink for output events from a :class:`Command`.
+
+    Subclasses know how to transport events to the outside world
+    (SSE, websocket, in-memory list for tests, ...).  The bridge
+    itself never instantiates one — :class:`Session` asks the route
+    handler for one and passes it on.
+    """
+
+    @abstractmethod
+    def open(self, meta: dict[str, Any]) -> None:
+        """Begin a session; ``meta`` is sent verbatim as an ``open`` frame."""
+
+    @abstractmethod
+    def emit_line(self, line: str) -> None:
+        """Forward one line of stdout (or stderr) text."""
+
+    @abstractmethod
+    def emit_bytes(self, chunk: bytes) -> None:
+        """Forward raw bytes (used by the PTY-backed REPL channel)."""
+
+    @abstractmethod
+    def emit_done(self, returncode: int, **extra: Any) -> None:
+        """Mark the session finished; ``returncode`` is the child's exit code."""
+
+    @abstractmethod
+    def close(self) -> None:
+        """Tear down the transport (flush buffers, close socket, ...)."""
+
+
+class SseChannel(Channel):
+    """Write events as ``text/event-stream`` to an HTTP handler."""
+
+    def __init__(self, handler: BaseHTTPRequestHandler) -> None:
+        self._handler = handler
+        self._closed = False
+
+    def _write(self, event: str, payload: dict[str, Any]) -> None:
+        body = f"event: {event}\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
+        try:
+            self._handler.wfile.write(body)
+            self._handler.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            raise _ClientGone()
+
+    def open(self, meta: dict[str, Any]) -> None:
+        self._handler.send_response(200)
+        self._handler.send_header("Content-Type", "text/event-stream")
+        self._handler.send_header("Cache-Control", "no-cache")
+        self._handler.send_header("Connection", "keep-alive")
+        self._handler.send_header("X-Accel-Buffering", "no")
+        self._handler.end_headers()
+        self._write("open", meta)
+
+    def emit_line(self, line: str) -> None:
+        self._write("line", {"line": line})
+
+    def emit_bytes(self, chunk: bytes) -> None:
+        self._write("bytes", {"data": base64.b64encode(chunk).decode("ascii")})
+
+    def emit_done(self, returncode: int, **extra: Any) -> None:
+        payload: dict[str, Any] = {"returncode": returncode}
+        payload.update(extra)
+        try:
+            self._write("done", payload)
+        except _ClientGone:
+            pass
+
+    def close(self) -> None:
+        # The HTTP response stream stays open; we just stop emitting.
+        self._closed = True
+
+
+class MemoryChannel(Channel):
+    """In-memory event recorder for tests.  No transport involved."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, Any]]] = []
+        self.closed = False
+
+    def open(self, meta: dict[str, Any]) -> None:
+        self.events.append(("open", meta))
+
+    def emit_line(self, line: str) -> None:
+        self.events.append(("line", {"line": line}))
+
+    def emit_bytes(self, chunk: bytes) -> None:
+        self.events.append(("bytes", {"data": chunk}))
+
+    def emit_done(self, returncode: int, **extra: Any) -> None:
+        payload: dict[str, Any] = {"returncode": returncode}
+        payload.update(extra)
+        self.events.append(("done", payload))
+
+    def close(self) -> None:
+        self.closed = True
+
+
+# ─── Shell ───────────────────────────────────────────────────────────────────
+
+class Shell(ABC):
+    """Translate a single command line into a safe argv list.
+
+    A shell enforces:
+      * the literal-binary prefix (``make``, ``python3``, ...),
+      * a token whitelist (no shell metacharacters), and
+      * a maximum token count.
+
+    The HTTP route decides which shell to invoke; the shell never sees
+    the network.  Adding a new binary means writing a new subclass and
+    adding it to :data:`SHELLS`.
+    """
+
+    name: ClassVar[str]
+    binary: ClassVar[str]
+    max_tokens: ClassVar[int] = 16
+    token_re: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9_./=@%+,:-]+$")
+
+    @abstractmethod
+    def validate(self, line: str) -> list[str] | None:
+        """Return ``None`` for empty/comment lines, or the validated argv."""
+
+    @classmethod
+    def split(cls, line: str) -> list[str]:
+        try:
+            return shlex.split(line, posix=True)
+        except ValueError as exc:
+            raise ShellError(f"parse error: {exc}") from exc
+
+    @classmethod
+    def check_tokens(cls, tokens: list[str]) -> None:
+        if len(tokens) > cls.max_tokens:
+            raise ShellError(f"too many tokens (max {cls.max_tokens})")
+        for tok in tokens[1:]:
+            if not cls.token_re.match(tok):
+                raise ShellError(f"disallowed character in token: {tok!r}")
+
+
+class MakeShell(Shell):
+    """Sandboxed ``make`` shell.  Only ``make <target> [KEY=VALUE]...``."""
+
+    name = "make"
+    binary = "make"
+
+    def validate(self, line: str) -> list[str] | None:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            return None
+        tokens = self.split(stripped)
+        if not tokens:
+            return None
+        if tokens[0] != self.binary:
+            raise ShellError(f"only `{self.binary}` commands are allowed in this shell")
+        self.check_tokens(tokens)
+        return tokens
+
+
+SHELLS: dict[str, Shell] = {"make": MakeShell()}
+
+
+def shell_for(name: str) -> Shell:
+    try:
+        return SHELLS[name]
+    except KeyError as exc:
+        raise ShellError(f"unknown shell: {name!r}") from exc
+
+
+# ─── Command ─────────────────────────────────────────────────────────────────
+
+class Command(ABC):
+    """Spawns one child and pumps its output through a :class:`Channel`."""
+
+    def __init__(self, argv: list[str], cwd: Path | None = None) -> None:
+        self.argv = list(argv)
+        self.cwd = cwd
+
+    @abstractmethod
+    def execute(self, channel: Channel, stop: threading.Event) -> int:
+        """Run the command to completion.  Returns the child's exit code."""
+
+    def cancel(self) -> None:
+        """Best-effort early termination.  Default is a no-op for subclasses
+        that don't keep handles after :meth:`execute` returns."""
+
+
+class SubprocessCommand(Command):
+    """Spawn a child with merged stdout/stderr, line-buffered."""
+
+    def __init__(self, argv: list[str], cwd: Path | None = None) -> None:
+        super().__init__(argv, cwd)
+        self._proc: subprocess.Popen | None = None
+
+    def execute(self, channel: Channel, stop: threading.Event) -> int:
+        try:
+            self._proc = subprocess.Popen(
+                self.argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=str(self.cwd) if self.cwd else None,
+            )
+        except FileNotFoundError as exc:
+            channel.emit_line(f"\x1b[31merror: {exc}\x1b[0m")
+            return 127
+        except Exception as exc:
+            channel.emit_line(f"\x1b[31merror: {exc}\x1b[0m")
+            return 1
+
+        assert self._proc.stdout is not None
+        try:
+            for raw in self._proc.stdout:
+                if stop.is_set():
+                    self._proc.terminate()
+                    break
+                channel.emit_line(raw.rstrip("\n"))
+        finally:
+            self._proc.wait()
+        rc = self._proc.returncode if self._proc.returncode is not None else -1
+        return rc
+
+    def cancel(self) -> None:
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+
+
+class ReplCommand(Command):
+    """Spawn ``python3 -i -u`` under a PTY so readline / prompts work."""
+
+    def __init__(self, argv: list[str] | None = None, cwd: Path | None = None) -> None:
+        super().__init__(argv or ["python3", "-i", "-u"], cwd)
+        self._proc: subprocess.Popen | None = None
+        self._pty_master_fd: int = -1
+
+    @property
+    def pty_master_fd(self) -> int:
+        return self._pty_master_fd
+
+    def write_input(self, data: bytes) -> None:
+        if self._pty_master_fd < 0:
+            return
+        try:
+            os.write(self._pty_master_fd, data)
+        except OSError:
+            pass
+
+    def execute(self, channel: Channel, stop: threading.Event) -> int:
+        master_fd, slave_fd = pty.openpty()
+        self._pty_master_fd = master_fd
+
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        env["TERM"] = "xterm-256color"
+
+        try:
+            self._proc = subprocess.Popen(
+                self.argv,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                env=env,
+                preexec_fn=os.setsid,
+                cwd=str(self.cwd) if self.cwd else None,
+            )
+        finally:
+            os.close(slave_fd)
+
+        try:
+            while not stop.is_set():
+                r, _, _ = select.select([master_fd], [], [], 0.1)
+                if not r:
+                    continue
+                try:
+                    chunk = os.read(master_fd, 4096)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                channel.emit_bytes(chunk)
+        finally:
+            try:
+                self._proc.wait()
+            except Exception:
+                pass
+            try:
+                os.close(master_fd)
+            except Exception:
+                pass
+            self._pty_master_fd = -1
+
+        return self._proc.returncode if self._proc.returncode is not None else -1
+
+    def cancel(self) -> None:
+        if self._proc is not None and self._proc.poll() is None:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+        if self._pty_master_fd >= 0:
+            try:
+                os.close(self._pty_master_fd)
+            except Exception:
+                pass
+            self._pty_master_fd = -1
+
+
+# ─── Session & Registry ─────────────────────────────────────────────────────
+
+class Session:
+    """One in-flight (Command, Channel) pair, run on a worker thread."""
+
+    def __init__(
+        self,
+        command: Command,
+        channel: Channel,
+        session_id: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
+        self.session_id = session_id or f"ses-{os.getpid()}-{time.monotonic_ns()}"
+        self.command = command
+        self.channel = channel
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._returncode: int | None = None
+        self._meta: dict[str, Any] = meta or {}
+
+    def start(self) -> None:
+        """Spawn the worker thread and return immediately."""
+        self.channel.open({"session": self.session_id, **self._meta})
+        self._thread = threading.Thread(
+            target=self._run, name=f"session-{self.session_id}", daemon=True,
+        )
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            self._returncode = self.command.execute(self.channel, self._stop)
+        except _ClientGone:
+            self._returncode = -1
+        except Exception as exc:
+            self.channel.emit_line(f"\x1b[31minternal error: {exc}\x1b[0m")
+            self._returncode = 1
+        finally:
+            self.channel.emit_done(self._returncode if self._returncode is not None else -1)
+            self.channel.close()
+
+    def cancel(self) -> None:
+        self._stop.set()
+        self.command.cancel()
+
+    def join(self, timeout: float | None = None) -> None:
+        if self._thread is not None:
+            self._thread.join(timeout)
+
+
+class SessionRegistry:
+    """Thread-safe map of ``session_id -> Session``."""
+
+    def __init__(self) -> None:
+        self._sessions: dict[str, Session] = {}
+        self._lock = threading.Lock()
+
+    def register(self, session: Session) -> None:
+        with self._lock:
+            self._sessions[session.session_id] = session
+
+    def unregister(self, session_id: str) -> None:
+        with self._lock:
+            self._sessions.pop(session_id, None)
+
+    def get(self, session_id: str) -> Session | None:
+        with self._lock:
+            return self._sessions.get(session_id)
+
+    def find_by_target(self, target: str) -> Session | None:
+        """Return the most recently registered session whose ``meta`` advertises
+        the given ``target`` string.  Used by ``POST /repl/in`` to find the
+        active REPL."""
+        with self._lock:
+            for session in reversed(self._sessions.values()):
+                if session._meta.get("target") == target:
+                    return session
+        return None
+
+    def all_ids(self) -> list[str]:
+        with self._lock:
+            return list(self._sessions.keys())
+
+
+# Process-wide singleton — small enough not to need DI.
+REGISTRY = SessionRegistry()
+
+
+# ─── HTTP routing ────────────────────────────────────────────────────────────
+
+class RouteHandler(ABC):
+    """One route, one handler object.  Subclasses implement :meth:`handle`."""
+
+    @abstractmethod
+    def handle(self, bridge: "BridgeHTTPHandler") -> None: ...
+
+
+class HealthHandler(RouteHandler):
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        bridge._send_json(200, {"status": "ok"})
+
+
+class StatusHandler(RouteHandler):
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        bridge._send_json(200, {
+            "pid": os.getpid(),
+            "uptime": time.monotonic() - _last_activity,
+            "active_sessions": REGISTRY.all_ids(),
+        })
+
+
+class TargetsHandler(RouteHandler):
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        bridge._send_json(200, {
+            "targets": _discover_makefile_targets(CONFIG["makefile"]),
+        })
+
+
+class LegacyPostHandler(RouteHandler):
+    """POST / — fire-and-forget make execution, returns JSON, no streaming."""
+
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        try:
+            length = int(bridge.headers.get("Content-Length", 0))
+            raw = bridge.rfile.read(length) if length else b""
+            data = json.loads(raw.decode("utf-8")) if raw else {}
+        except Exception as exc:
+            bridge._send_json(400, {"error": f"Bad request: {exc}"})
+            return
+
+        field = CONFIG["field_make_target"]
+        target = data.get(field, "")
+        if not target:
+            bridge._send_json(400, {"error": f"Missing '{field}' field"})
+            return
+
+        success, output = run_make_target(target, int(CONFIG["make_timeout_seconds"]))
+        if not success:
+            bridge._send_json(500, {
+                "error": f"Target '{target}' failed",
+                CONFIG["output_field"]: output.splitlines() if output else [],
+            })
+            return
+
+        if target == "join-stages":
+            bridge._send_json(200, {
+                CONFIG["status_ok"]: CONFIG["status_ok"],
+                "target": target,
+                CONFIG["output_field"]: output.splitlines() if output else [],
+            })
+            threading.Thread(
+                target=lambda: (time.sleep(0.1), _should_terminate.set()),
+                daemon=True,
+            ).start()
+            return
+
+        bridge._send_json(200, {
+            CONFIG["status_ok"]: CONFIG["status_ok"],
+            "target": target,
+            CONFIG["output_field"]: output.splitlines() if output else [],
+        })
+
+
+class ShutdownHandler(RouteHandler):
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        # Drain any request body so the client doesn't see a reset.
+        try:
+            length = int(bridge.headers.get("Content-Length", 0))
+            if length:
+                bridge.rfile.read(length)
+        except Exception:
+            pass
+        bridge._send_json(200, {"status": "shutting_down"})
+        # Set the flag on a fresh thread so the response flushes first.
+        threading.Thread(
+            target=lambda: (time.sleep(0.05), _should_terminate.set()),
+            daemon=True,
+        ).start()
+
+
+class _LegacyMakeStreamHandler(RouteHandler):
+    """GET /stream?target=<name> — original SSE make execution."""
+
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        qs = parse_qs(urlparse(bridge.path).query)
+        target = (qs.get("target") or [""])[0].strip()
+        if not target:
+            bridge._send_json(400, {"error": "Missing 'target' query param"})
+            return
+        try:
+            argv = shell_for("make").validate(f"make {target}")
+        except ShellError as exc:
+            bridge._send_json(400, {"error": str(exc)})
+            return
+        if argv is None:
+            bridge._send_json(400, {"error": "empty target"})
+            return
+        channel = SseChannel(bridge)
+        command = SubprocessCommand(argv, cwd=_REPO_ROOT)
+        session = Session(command, channel, meta={"target": target, "argv": argv})
+        REGISTRY.register(session)
+        try:
+            session.start()
+            session.join()
+        finally:
+            REGISTRY.unregister(session.session_id)
+
+
+class _LegacyReplStreamHandler(RouteHandler):
+    """GET /repl — interactive Python REPL over SSE (PTY-backed)."""
+
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        channel = SseChannel(bridge)
+        command = ReplCommand()
+        session = Session(command, channel, meta={"target": "__repl__"})
+        REGISTRY.register(session)
+        try:
+            session.start()
+            session.join()
+        finally:
+            REGISTRY.unregister(session.session_id)
+
+
+class ReplInputHandler(RouteHandler):
+    """POST /repl/in — write one line of input to the active REPL session."""
+
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        session = REGISTRY.find_by_target("__repl__")
+        if session is None:
+            bridge._send_json(409, {"error": "No active REPL session"})
+            return
+        try:
+            length = int(bridge.headers.get("Content-Length", 0))
+            payload = bridge.rfile.read(length) if length else b""
+        except Exception as exc:
+            bridge._send_json(400, {"error": f"Bad request: {exc}"})
+            return
+        if not isinstance(session.command, ReplCommand):
+            bridge._send_json(409, {"error": "Active session is not a REPL"})
+            return
+        session.command.write_input(payload)
+        bridge._send_json(200, {"status": "ok", "bytes": len(payload)})
+
+
+class RunStreamHandler(RouteHandler):
+    """POST /api/run-stream — sandboxed shell, SSE-streamed output.
+
+    Body: ``{"command": "make it-learn-language", "shell": "make"}``.
+    Output: text/event-stream with ``event: open | line | bytes | done``.
+    """
+
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        try:
+            length = int(bridge.headers.get("Content-Length", 0))
+            raw = bridge.rfile.read(length) if length else b""
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except Exception as exc:
+            bridge._send_json(400, {"error": f"Bad JSON: {exc}"})
+            return
+
+        shell_name = payload.get("shell") or "make"
+        line = payload.get("command") or ""
+
+        try:
+            shell = shell_for(shell_name)
+        except ShellError as exc:
+            bridge._send_json(400, {"error": str(exc)})
+            return
+
+        try:
+            argv = shell.validate(line)
+        except ShellError as exc:
+            channel = SseChannel(bridge)
+            channel.open({"session": "rejected", "argv": [], "shell": shell_name})
+            channel.emit_line(f"\x1b[31m{line}: {exc}\x1b[0m")
+            channel.emit_done(2, rejected=True)
+            channel.close()
+            return
+
+        if argv is None:
+            channel = SseChannel(bridge)
+            channel.open({"session": "noop", "argv": [], "shell": shell_name})
+            channel.emit_done(0, noop=True)
+            channel.close()
+            return
+
+        channel = SseChannel(bridge)
+        command = SubprocessCommand(argv, cwd=_REPO_ROOT)
+        session = Session(command, channel, meta={
+            "target": argv[1] if len(argv) > 1 else "",
+            "argv": argv,
+            "shell": shell_name,
+        })
+        REGISTRY.register(session)
+        try:
+            session.start()
+            session.join()
+        finally:
+            REGISTRY.unregister(session.session_id)
+
+
+# Routing table — single source of truth.
+ROUTES: dict[tuple[str, str], RouteHandler] = {
+    ("GET",  "/health"):         HealthHandler(),
+    ("GET",  "/status"):         StatusHandler(),
+    ("GET",  "/api/targets"):    TargetsHandler(),
+    ("GET",  "/stream"):         _LegacyMakeStreamHandler(),
+    ("GET",  "/repl"):           _LegacyReplStreamHandler(),
+    ("POST", "/"):               LegacyPostHandler(),
+    ("POST", "/repl/in"):        ReplInputHandler(),
+    ("POST", "/api/run-stream"): RunStreamHandler(),
+    ("POST", "/shutdown"):       ShutdownHandler(),
+}
+
+
+# ─── HTTP handler ────────────────────────────────────────────────────────────
 
 _last_activity = time.monotonic()
 _activity_lock = threading.Lock()
-_active_sessions: dict[str, "StreamingSession"] = {}
 _should_terminate = threading.Event()
 
 
@@ -91,153 +749,44 @@ def _touch_activity() -> None:
         _last_activity = time.monotonic()
 
 
-# ─── Streaming primitives ────────────────────────────────────────────────────
+class BridgeHTTPHandler(BaseHTTPRequestHandler):
+    """HTTP request handler.  Only knows about URLs — all work lives in
+    :class:`RouteHandler` subclasses."""
 
-@dataclass
-class StreamingSession:
-    """Tracks one live subprocess tied to a client (SSE stream or REPL)."""
+    server_version = "RarebertBridge/1.0"
 
-    session_id: str
-    target: str = ""
-    process: subprocess.Popen | None = None
-    pty_master_fd: int = -1
-    stop_event: threading.Event = field(default_factory=threading.Event)
-    is_pty: bool = False
-    _handler: Any = None  # set via .bind()
+    def log_message(self, fmt: str, *args: object) -> None:
+        sys.stderr.write(f"[bridge] {self.address_string()} {fmt % args}\n")
 
-    def bind(self, handler: "RESTRequestHandler") -> None:
-        self._handler = handler
+    # ── helpers used by route handlers ──────────────────────────────────────
 
-    def emit_line(self, line: str) -> None:
-        self._handler._sse_event("line", json.dumps({"line": line}))
+    def _send_json(self, status_code: int, data: dict[str, Any]) -> None:
+        body = json.dumps(data).encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
-    def emit_bytes(self, chunk: bytes) -> None:
-        encoded = base64.b64encode(chunk).decode("ascii")
-        self._handler._sse_event("bytes", json.dumps({"data": encoded}))
+    # ── dispatch ────────────────────────────────────────────────────────────
 
-    def mark_done(self, returncode: int | None) -> None:
-        rc = returncode if returncode is not None else -1
-        try:
-            self._handler._sse_event("done", json.dumps({"returncode": rc}))
-        except _ClientGone:
-            pass
+    def do_GET(self) -> None:
+        self._dispatch("GET")
 
-    def terminate(self) -> None:
-        self.stop_event.set()
-        if self.process is not None and self.process.poll() is None:
-            try:
-                self.process.terminate()
-            except Exception:
-                pass
-        if self.pty_master_fd >= 0:
-            try:
-                os.close(self.pty_master_fd)
-            except Exception:
-                pass
-            self.pty_master_fd = -1
+    def do_POST(self) -> None:
+        self._dispatch("POST")
 
-
-class _ClientGone(Exception):
-    """Raised internally when the SSE client disconnects."""
-
-
-def _iter_popen_lines(proc: subprocess.Popen) -> Iterator[str]:
-    assert proc.stdout is not None
-    for raw in proc.stdout:
-        yield raw
-
-
-def _iter_pty_bytes(master_fd: int) -> Iterator[bytes]:
-    while True:
-        try:
-            r, _, _ = select.select([master_fd], [], [], 0.1)
-        except (OSError, ValueError):
+    def _dispatch(self, method: str) -> None:
+        _touch_activity()
+        path = urlparse(self.path).path
+        handler = ROUTES.get((method, path))
+        if handler is None:
+            self._send_json(404, {"error": f"No route for {method} {path}"})
             return
-        if not r:
-            if not _should_terminate.is_set():
-                continue
-            return
-        try:
-            chunk = os.read(master_fd, 4096)
-        except OSError:
-            return
-        if not chunk:
-            return
-        yield chunk
+        handler.handle(self)
 
 
-def spawn_make_streaming(target: str, session: StreamingSession) -> None:
-    try:
-        proc = subprocess.Popen(
-            ["make", target],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-    except FileNotFoundError as exc:
-        session.emit_line(f"error: {exc}")
-        session.mark_done(returncode=127)
-        return
-    session.process = proc
-    for line in _iter_popen_lines(proc):
-        if session.stop_event.is_set():
-            proc.terminate()
-            break
-        session.emit_line(line.rstrip("\n"))
-    proc.wait()
-    session.mark_done(returncode=proc.returncode)
-
-
-def spawn_repl(session: StreamingSession) -> None:
-    master_fd, slave_fd = pty.openpty()
-    session.pty_master_fd = master_fd
-    session.is_pty = True
-
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-    env["TERM"] = "xterm-256color"
-
-    try:
-        proc = subprocess.Popen(
-            ["python3", "-i", "-u"],
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            env=env,
-            preexec_fn=os.setsid,
-        )
-    finally:
-        os.close(slave_fd)
-    session.process = proc
-
-    for chunk in _iter_pty_bytes(master_fd):
-        if session.stop_event.is_set():
-            break
-        try:
-            session.emit_bytes(chunk)
-        except Exception:
-            break
-
-    proc.wait()
-    try:
-        os.close(master_fd)
-    except Exception:
-        pass
-    session.pty_master_fd = -1
-    session.mark_done(returncode=proc.returncode)
-
-
-def write_to_repl(session: StreamingSession, data: bytes) -> None:
-    if session.pty_master_fd < 0:
-        return
-    try:
-        os.write(session.pty_master_fd, data)
-    except OSError:
-        pass
-
-
-# ─── Legacy helpers ──────────────────────────────────────────────────────────
+# ─── Legacy helpers (kept for POST / and TargetsHandler) ────────────────────
 
 def run_make_target(target: str, timeout: int) -> tuple[bool, str]:
     try:
@@ -275,185 +824,6 @@ def _discover_makefile_targets(makefile_name: str) -> list[str]:
     return targets
 
 
-# ─── HTTP handler ────────────────────────────────────────────────────────────
-
-class RESTRequestHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for the bridge."""
-
-    server_version = "RarebertBridge/1.0"
-
-    def log_message(self, format: str, *args: object) -> None:
-        sys.stderr.write(f"[bridge] {self.address_string()} {format % args}\n")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _send_json(self, status_code: int, data: dict[str, Any]) -> None:
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _send_sse_start(self) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
-
-    def _sse_event(self, event: str, data: str) -> None:
-        payload = f"event: {event}\ndata: {data}\n\n".encode("utf-8")
-        try:
-            self.wfile.write(payload)
-            self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            raise _ClientGone()
-
-    def _parse_qs(self) -> dict[str, str]:
-        parsed = urlparse(self.path)
-        out: dict[str, str] = {}
-        for k, v in parse_qs(parsed.query).items():
-            if v:
-                out[k] = v[0]
-        return out
-
-    # ── GET routes ───────────────────────────────────────────────────────────
-
-    def do_GET(self) -> None:
-        _touch_activity()
-        path = urlparse(self.path).path
-
-        if path == "/health":
-            self._send_json(200, {"status": "ok"})
-        elif path == "/status":
-            self._send_json(200, {
-                "pid": os.getpid(),
-                "uptime": time.monotonic() - _last_activity,
-                "active_sessions": list(_active_sessions.keys()),
-            })
-        elif path == "/api/targets":
-            self._send_json(200, {
-                "targets": _discover_makefile_targets(CONFIG["makefile"]),
-            })
-        elif path == "/stream":
-            self._handle_stream()
-        elif path == "/repl":
-            self._handle_repl()
-        else:
-            self._send_json(404, {"error": f"Unknown path: {path}"})
-
-    def _handle_stream(self) -> None:
-        qs = self._parse_qs()
-        target = qs.get("target", "").strip()
-        if not target:
-            self._send_json(400, {"error": "Missing 'target' query param"})
-            return
-
-        session_id = f"stream-{target}-{os.getpid()}-{time.monotonic_ns()}"
-        session = StreamingSession(session_id=session_id, target=target)
-        session.bind(self)
-        _active_sessions[session_id] = session
-
-        self._send_sse_start()
-        self._sse_event("open", json.dumps({"session": session_id, "target": target}))
-
-        try:
-            spawn_make_streaming(target, session)
-        except _ClientGone:
-            pass
-        finally:
-            session.terminate()
-            _active_sessions.pop(session_id, None)
-
-    def _handle_repl(self) -> None:
-        session_id = f"repl-{os.getpid()}-{time.monotonic_ns()}"
-        session = StreamingSession(session_id=session_id, target="__repl__")
-        session.bind(self)
-        _active_sessions[session_id] = session
-
-        self._send_sse_start()
-        self._sse_event("open", json.dumps({"session": session_id, "mode": "repl"}))
-
-        try:
-            spawn_repl(session)
-        except _ClientGone:
-            pass
-        finally:
-            session.terminate()
-            _active_sessions.pop(session_id, None)
-
-    # ── POST routes ──────────────────────────────────────────────────────────
-
-    def do_POST(self) -> None:
-        _touch_activity()
-        path = urlparse(self.path).path
-
-        if path == CONFIG["post_path"]:
-            self._handle_legacy_post()
-        elif path == "/repl/in":
-            self._handle_repl_input()
-        else:
-            self._send_json(404, {"error": f"Unknown path: {path}"})
-
-    def _handle_legacy_post(self) -> None:
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(length) if length else b""
-            data = json.loads(raw.decode("utf-8")) if raw else {}
-        except Exception as exc:
-            self._send_json(400, {"error": f"Bad request: {exc}"})
-            return
-
-        field = CONFIG["field_make_target"]
-        target = data.get(field, "")
-        if not target:
-            self._send_json(400, {"error": f"Missing '{field}' field"})
-            return
-
-        success, output = run_make_target(target, int(CONFIG["make_timeout_seconds"]))
-        if not success:
-            self._send_json(500, {
-                "error": f"Target '{target}' failed",
-                CONFIG["output_field"]: output.splitlines() if output else [],
-            })
-            return
-
-        if target == "join-stages":
-            self._send_json(200, {
-                CONFIG["status_ok"]: CONFIG["status_ok"],
-                "target": target,
-                CONFIG["output_field"]: output.splitlines() if output else [],
-            })
-            threading.Thread(
-                target=lambda: (time.sleep(0.1), _should_terminate.set()),
-                daemon=True,
-            ).start()
-            return
-
-        self._send_json(200, {
-            CONFIG["status_ok"]: CONFIG["status_ok"],
-            "target": target,
-            CONFIG["output_field"]: output.splitlines() if output else [],
-        })
-
-    def _handle_repl_input(self) -> None:
-        repl_sessions = [s for s in _active_sessions.values() if s.target == "__repl__"]
-        if not repl_sessions:
-            self._send_json(409, {"error": "No active REPL session"})
-            return
-        session = repl_sessions[-1]
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = self.rfile.read(length) if length else b""
-        except Exception as exc:
-            self._send_json(400, {"error": f"Bad request: {exc}"})
-            return
-        write_to_repl(session, payload)
-        self._send_json(200, {"status": "ok", "bytes": len(payload)})
-
-
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -473,7 +843,7 @@ def main() -> int:
     port = int(CONFIG["port"])
 
     try:
-        server = ThreadingHTTPServer((host, port), RESTRequestHandler)
+        server = ThreadingHTTPServer((host, port), BridgeHTTPHandler)
     except OSError as exc:
         print(f"[bridge] cannot bind {host}:{port} -> {exc}", file=sys.stderr)
         return 1
@@ -485,8 +855,10 @@ def main() -> int:
         while not _should_terminate.is_set():
             server.handle_request()
     finally:
-        for session in list(_active_sessions.values()):
-            session.terminate()
+        for sid in REGISTRY.all_ids():
+            session = REGISTRY.get(sid)
+            if session is not None:
+                session.cancel()
         server.server_close()
         print("[bridge] stopped", file=sys.stderr)
     return 0
