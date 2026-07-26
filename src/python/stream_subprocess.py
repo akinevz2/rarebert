@@ -38,10 +38,13 @@ import re
 import select
 import shlex
 import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -601,6 +604,105 @@ class ShutdownHandler(RouteHandler):
         ).start()
 
 
+class ViteProxyHandler(RouteHandler):
+    """Reverse-proxy any unmatched GET to the Vite dev server.
+
+    The launcher (``extra-rare-agentic-bert.py``) passes the Vite URL
+    via ``--vite-url`` so the bridge can mount the Vue app at
+    ``http://127.0.0.1:8338/`` as a convenience — same shell, same
+    xterm.js, same HMR — without forcing users to remember a second
+    port.
+
+    Failures are surfaced as JSON 502s so a misconfigured upstream
+    shows up clearly in the browser rather than as an opaque HTTP
+    error.
+    """
+
+    # Hop-by-hop headers that must not be forwarded (RFC 7230 §6.1).
+    _SKIP_REQUEST_HEADERS = frozenset({
+        "host", "content-length", "connection", "keep-alive",
+        "proxy-authenticate", "proxy-authorization", "te", "trailers",
+        "transfer-encoding", "upgrade",
+    })
+    _SKIP_RESPONSE_HEADERS = frozenset({
+        "connection", "keep-alive", "proxy-authenticate",
+        "proxy-authorization", "te", "trailers", "transfer-encoding",
+        "upgrade", "server",
+    })
+
+    def handle(self, bridge: "BridgeHTTPHandler") -> None:
+        vite_url = _vite_upstream()
+        if not vite_url:
+            bridge._send_json(503, {"error": "vite upstream not configured"})
+            return
+
+        # Build the upstream URL.  Preserve the original path + query
+        # so deep links like ``/?target=help`` survive the hop.
+        parsed = urlparse(bridge.path)
+        target = f"{vite_url}{parsed.path}"
+        if parsed.query:
+            target = f"{target}?{parsed.query}"
+
+        # Forward request headers, minus hop-by-hop.
+        fwd_headers: dict[str, str] = {}
+        for key, value in bridge.headers.items():
+            if key.lower() in self._SKIP_REQUEST_HEADERS:
+                continue
+            fwd_headers[key] = value
+
+        req = urllib.request.Request(target, headers=fwd_headers, method="GET")
+
+        status: int
+        body: bytes
+        upstream_headers: Any
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                status = resp.status
+                body = resp.read()
+                upstream_headers = resp.headers
+        except urllib.error.HTTPError as exc:
+            # Vite itself returned an error (e.g. 404 for an asset).
+            # Forward it through verbatim so the browser sees the same
+            # status Vite produced.
+            status = exc.code
+            body = exc.read() if hasattr(exc, "read") else b""
+            upstream_headers = getattr(exc, "headers", {}) or {}
+        except (urllib.error.URLError, socket.timeout, ConnectionRefusedError, OSError) as exc:
+            bridge._send_json(502, {
+                "error": "vite upstream unreachable",
+                "upstream": vite_url,
+                "detail": str(exc),
+            })
+            return
+
+        bridge.send_response(status)
+        # Forward content-type / content-length / cache-control so the
+        # browser handles JS modules, HMR pings, etc. correctly.
+        for key, value in upstream_headers.items():
+            if key.lower() in self._SKIP_RESPONSE_HEADERS:
+                continue
+            bridge.send_header(key, value)
+        bridge.send_header("Content-Length", str(len(body)))
+        bridge.end_headers()
+        bridge.wfile.write(body)
+
+
+# ─── Vite upstream discovery ─────────────────────────────────────────────────
+
+def _vite_upstream() -> str:
+    """Resolve the Vite dev server URL from CLI flag, env, or default.
+
+    Priority:
+      1. ``--vite-url`` CLI flag (set by the launcher).
+      2. ``RAREBERT_VITE_URL`` env var.
+      3. ``http://127.0.0.1:5173`` (Vite default).
+    """
+    return _VITE_URL
+
+
+_VITE_URL = ""
+
+
 class _LegacyMakeStreamHandler(RouteHandler):
     """GET /stream?target=<name> — original SSE make execution."""
 
@@ -729,6 +831,8 @@ ROUTES: dict[tuple[str, str], RouteHandler] = {
     ("GET",  "/api/targets"):    TargetsHandler(),
     ("GET",  "/stream"):         _LegacyMakeStreamHandler(),
     ("GET",  "/repl"):           _LegacyReplStreamHandler(),
+    ("GET",  "/"):               ViteProxyHandler(),
+    ("GET",  "/index.html"):     ViteProxyHandler(),
     ("POST", "/"):               LegacyPostHandler(),
     ("POST", "/repl/in"):        ReplInputHandler(),
     ("POST", "/api/run-stream"): RunStreamHandler(),
@@ -781,6 +885,13 @@ class BridgeHTTPHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         handler = ROUTES.get((method, path))
         if handler is None:
+            # GET fall-through: forward unmapped paths to the Vite
+            # dev server so the user can open ``http://8338/`` and get
+            # the Vue shell, then navigate around as if they were on
+            # the proxied origin.  Other methods still 404 cleanly.
+            if method == "GET":
+                ViteProxyHandler().handle(self)
+                return
             self._send_json(404, {"error": f"No route for {method} {path}"})
             return
         handler.handle(self)
@@ -832,10 +943,20 @@ def main() -> int:
                         help="override config.json host")
     parser.add_argument("--port", type=int, default=None,
                         help="override config.json port")
+    parser.add_argument("--vite-url", default=None,
+                        help="URL of the Vite dev server to proxy "
+                             "unmatched GETs to.  Defaults to "
+                             "$RAREBERT_VITE_URL or "
+                             "http://127.0.0.1:5173.")
     args = parser.parse_args()
 
-    global CONFIG
+    global CONFIG, _VITE_URL
     CONFIG = load_config(args.host, args.port)
+    _VITE_URL = (
+        args.vite_url
+        or os.environ.get("RAREBERT_VITE_URL")
+        or "http://127.0.0.1:5173"
+    )
 
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 

@@ -138,11 +138,13 @@ class Child:
 def _spawn_bridge() -> Child:
     if not BRIDGE_SCRIPT.exists():
         raise FileNotFoundError(f"bridge script missing: {BRIDGE_SCRIPT}")
+    vite_url = f"http://{CONFIG['host']}:{CONFIG['vite_port']}"
     cmd = [
         sys.executable,
         str(BRIDGE_SCRIPT),
         "--host", str(CONFIG["host"]),
         "--port", str(CONFIG["port"]),
+        "--vite-url", vite_url,
     ]
     print(f"[launcher] starting bridge: {' '.join(cmd)}", file=sys.stderr)
     proc = subprocess.Popen(
