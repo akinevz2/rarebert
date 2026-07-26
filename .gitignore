@@ -39,6 +39,7 @@ nlp-pipeline-viewer/node_modules/
 nlp-pipeline-viewer/dist/
 
 # Scala sbt output.
+target/
 src/scala/target/
 src/scala/project/target/
 src/scala/project/project/
@@ -48,4 +49,25 @@ src/java/target/
 
 # Generic OS noise.
 .DS_Store
+
+# Generated files
+*.class
+*.jar
+*.war
+*.ear
+*.log
+*.tmp
+*.pid
+*.lock
+
+# Build artifacts
+build/
+dist/
+out/
+*.out
+
+# IDE specific files
+*~
+.*.swp
+.*.swo
 Thumbs.db
