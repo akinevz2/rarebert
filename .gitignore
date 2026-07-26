@@ -66,6 +66,9 @@ dist/
 out/
 *.out
 
+# Rarebert runtime artefacts.
+.rarebert_logs/
+
 # IDE specific files
 *~
 .*.swp
