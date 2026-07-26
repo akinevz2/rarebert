@@ -4,7 +4,7 @@ PYTHON ?= python3
 
 PY_TARGETS := bootstrap-make bottom-max data-loader devlib enrich_bow extra-rare-agentic-bert get-training-set join-stages runtime stream_subprocess top-max understand_language
 
-.PHONY: help bootstrap add $(PY_TARGETS)
+.PHONY: help bootstrap add mv rm $(PY_TARGETS) understand-language
 
 help:
 	@echo "Available Python module targets:"
@@ -20,6 +20,8 @@ help:
 	@echo "Usage: make <target> KEY=VALUE ..."
 	@echo "       make bootstrap"
 	@echo "       make add MODULE=<name>"
+	@echo "       make mv MODULE=<existing> TO=<alias>"
+	@echo "       make rm MODULE=<name>"
 
 bootstrap:
 	@$(PYTHON) src/python/bootstrap-make.py
@@ -27,6 +29,14 @@ bootstrap:
 add:
 	@test -n "$(MODULE)" || (echo "Usage: make add MODULE=<name>" && exit 1)
 	@$(PYTHON) src/python/bootstrap-make.py add --module "$(MODULE)"
+
+mv:
+	@test -n "$(MODULE)" -a -n "$(TO)" || (echo "Usage: make mv MODULE=<existing> TO=<alias>" && exit 1)
+	@$(PYTHON) src/python/bootstrap-make.py mv --module "$(MODULE)" --to "$(TO)"
+
+rm:
+	@test -n "$(MODULE)" || (echo "Usage: make rm MODULE=<name>" && exit 1)
+	@$(PYTHON) src/python/bootstrap-make.py rm --module "$(MODULE)"
 
 	@echo ""
 	@echo "join-stages: Chain multiple stages together:"
@@ -67,3 +77,5 @@ top-max:
 
 understand_language:
 	@$(PYTHON) src/python/understand_language.py
+
+understand-language: understand_language
