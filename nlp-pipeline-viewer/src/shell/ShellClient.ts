@@ -45,7 +45,14 @@ export class ShellClient {
     constructor(opts: ShellClientOptions = {}) {
         this.endpoint = opts.endpoint ?? DEFAULT_ENDPOINT;
         this.opts = opts;
-        this.fetchImpl = opts.fetchImpl ?? fetch;
+        // Bind ``fetch`` to ``globalThis`` so the browser doesn't throw
+        // "Illegal Invocation" when we invoke the captured reference
+        // through a different receiver.  Without ``.bind`` here the
+        // bundled reference ends up as a free function pointer, which
+        // some engines (notably Safari) reject.
+        const baseFetch: typeof fetch =
+            opts.fetchImpl ?? fetch.bind(globalThis);
+        this.fetchImpl = baseFetch;
     }
 
     get ready(): boolean {
