@@ -143,13 +143,20 @@ async function main(args = []) {
     }
     console.error('--- end summary ---\n');
 
-    // 5. git commit with default editor
+    // 5. git commit: interactive -> editor via template; non-interactive -> -m directly.
+    //    `git commit -t <template>` aborts when the editor doesn't modify the file
+    //    (e.g. no TTY), so in non-interactive mode we pass the summary with -m instead.
+    const interactive = process.stdin.isTTY === true;
     let commitArgs = [];
     let templateFile = null;
     if (summary) {
-        templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
-        fs.writeFileSync(templateFile, summary + '\n');
-        commitArgs = ['-t', templateFile];
+        if (interactive) {
+            templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
+            fs.writeFileSync(templateFile, summary + '\n');
+            commitArgs = ['-t', templateFile];
+        } else {
+            commitArgs = ['-m', summary];
+        }
     }
 
     try {
