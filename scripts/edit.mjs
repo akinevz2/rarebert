@@ -4,14 +4,14 @@ import fs from 'fs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
 import { editFile, writeLastModule } from '../lib/editor.mjs';
-import { runIDE } from '../lib/ide.mjs';
+import { runIDE, exitIDE } from '../lib/ide.mjs';
 import { relPath } from '../lib/libs.mjs';
 import * as git from '../lib/git.mjs';
 
 async function main(args = []) {
     if (args.includes('--help') || args.includes('-h')) {
-        console.error('open: Select a module, edit it in $EDITOR, run opencode on it, then stage changes');
-        console.error('  Usage: node index.js open [--lib|--scripts] [module] [model]');
+        console.error('edit: Select a module, edit it in $EDITOR, then run opencode on it');
+        console.error('  Usage: node index.js edit [--lib|--scripts] [module] [model]');
         console.error('  --lib       choose from modules in lib/');
         console.error('  --scripts   choose from modules in scripts/ (default)');
         console.error('  Lists modules with arrow-key navigation and search.');
@@ -30,7 +30,7 @@ async function main(args = []) {
     const moduleArg = nonFlag[0];
     const modelArg = nonFlag[1];
 
-    const target = await promptModule(modules, moduleArg, 'Select a module to open');
+    const target = await promptModule(modules, moduleArg, 'Select a module to edit');
     const rel = relPath(target.path);
 
     if (!fs.existsSync(target.path)) {
@@ -46,16 +46,36 @@ async function main(args = []) {
         model = await promptModel(listModels(config), config.model);
     }
 
-    const { status, child } = runIDE(model, rel);
+    const { status, child: ideChild } = runIDE(model, rel);
 
     console.error(`Opening $EDITOR ${rel}`);
-    const editStatus = editFile(target.path);
-    if (child) {
-        try { child.kill('SIGTERM'); } catch { /* already exited */ }
-    }
-    if (editStatus !== 0) {
-        console.error(`Editor exited with status ${editStatus}`);
-        process.exit(editStatus);
+    const editorChild = editFile(target.path);
+
+    let finalStatus = 0;
+
+    const editorExit = new Promise((resolve) => {
+        editorChild.on('exit', (code) => resolve(code ?? 0));
+    });
+    const ideExit = new Promise((resolve) => {
+        if (ideChild) {
+            ideChild.on('exit', (code) => resolve(code ?? 0));
+        } else {
+            resolve(status ?? 0);
+        }
+    });
+
+    const first = await Promise.race([
+        editorExit.then(code => ({ kind: 'editor', code })),
+        ideExit.then(code => ({ kind: 'ide', code }))
+    ]);
+
+    if (first.kind === 'editor') {
+        if (first.code !== 0) finalStatus = first.code;
+        await exitIDE(ideChild);
+        const ideCode = await ideExit;
+        if (ideCode !== 0) finalStatus = ideCode;
+    } else {
+        finalStatus = first.code;
     }
 
     try {
@@ -66,7 +86,7 @@ async function main(args = []) {
         console.error(`git: ${err.message}`);
     }
 
-    process.exit(status ?? 0);
+    process.exit(finalStatus);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -76,7 +96,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 export { main };
 
 export default {
-    name: 'open',
+    name: 'edit',
     description: 'Select an existing module, edit it in $EDITOR, then run opencode on it',
     main
 };
