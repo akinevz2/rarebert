@@ -6,8 +6,19 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { PROJECT_ROOT } from '../lib/core.mjs';
+import { listAllModules } from '../lib/modules.mjs';
 import * as git from '../lib/git.mjs';
 import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
+import { loadMemos } from '../lib/memo.mjs';
+import { editFile } from '../lib/editor.mjs';
+
+function stripCommitMessage(raw) {
+    return raw
+        .split('\n')
+        .filter(line => !line.startsWith('#'))
+        .join('\n')
+        .replace(/\n+$/, '');
+}
 
 async function confirmProceed(message = 'Proceed with autocommit?') {
     if (process.stdin.isTTY !== true) {
@@ -95,37 +106,14 @@ async function main(args = []) {
         console.error('commit: Stage all changes, summarise them via opencode, then commit with $EDITOR');
         console.error('  Usage: node index.js commit [model]');
         console.error('  After confirmation, if changes are already staged, offers a plain commit');
-        console.error('  (skip opencode). Otherwise: `git add -A`, opencode summarises the staged');
-        console.error('  changelist (with full diff), then opens $EDITOR via `git commit -t <template>`.');
-        console.error('  Non-interactive mode commits with -m directly; aborts if no summary is produced.');
-        console.error('  On interruption or empty commit message, the index is restored to its');
-        console.error('  pre-run state (staged files unstaged; working tree never modified).');
+        console.error('  (skip opencode). Otherwise: opencode summarises the changelist (with full diff),');
+        console.error('  then stages and commits. Non-interactive mode commits with -m directly;');
+        console.error('  aborts if no summary is produced.');
+        console.error('  The index is only mutated right before commit; on interruption or empty');
+        console.error('  commit message, `git restore --staged` reverts the index (non-destructive).');
         console.error('  Reads available models from opencode.json (or accepts one as an argument).');
         return;
     }
-
-    // Snapshot the index before any mutation so we can restore it on
-    // interruption (SIGINT) or a failed/empty commit. The working tree
-    // is never modified by this script, so only the index needs restoring.
-    const snapshot = git.git('diff', ['--cached', '--name-only']);
-    const stagedBefore = snapshot.stdout.trim();
-
-    let indexMutated = false;
-    function restoreIndex() {
-        if (!indexMutated) return;
-        indexMutated = false;
-        git.git('reset', ['HEAD', '--quiet'], { stdio: 'pipe' });
-        if (stagedBefore) {
-            const files = stagedBefore.split('\n');
-            git.git('add', files, { stdio: 'pipe' });
-        }
-    }
-
-    process.on('SIGINT', () => {
-        console.error('\nInterrupted; restoring index to pre-run state.');
-        restoreIndex();
-        process.exit(130);
-    });
 
     // 1. Confirm before proceeding, then prompt for an optional subject line
     const proceed = await confirmProceed();
@@ -137,7 +125,6 @@ async function main(args = []) {
 
     // 2. If changes are already staged, offer a plain commit (interactive only)
     //    so the user can write their own message without involving opencode.
-    //    On failure, fall through to the summarise-and-commit flow.
     if (process.stdin.isTTY === true) {
         const staged = git.git('status', ['--short']);
         const hasStaged = staged.stdout.split('\n').some(l => /^[MADRC]/.test(l));
@@ -151,28 +138,25 @@ async function main(args = []) {
             try { doPlain = await skip.run(); } catch { process.exit(130); }
             if (doPlain) {
                 const quick = git.git('commit', [], { stdio: 'inherit' });
-                if (quick.status === 0) {
-                    indexMutated = false;
-                    process.exit(0);
-                }
+                if (quick.status === 0) process.exit(0);
                 console.error(`Plain commit failed (status ${quick.status}); continuing to summarise flow.`);
             }
         }
     }
 
-    // 3. git add -A
-    const addResult = git.add([], { all: true, stdio: 'inherit' });
-    if (!addResult.ok) {
-        console.error(`git add failed (status ${addResult.status})`);
-        restoreIndex();
-        process.exit(addResult.status ?? 1);
-    }
-    indexMutated = true;
-
-    // 4. Gather the staged changelist (status + full diff for content context)
+    // 3. Gather the changelist WITHOUT mutating the index.
+    //    Use HEAD diff (staged + unstaged) so opencode sees all pending changes.
     const status = git.git('status', ['--short']);
-    const diffStat = git.git('diff', ['--cached', '--stat']);
-    const diffFull = git.git('diff', ['--cached']);
+    const diffStat = git.git('diff', ['HEAD', '--stat']);
+    const diffFull = git.git('diff', ['HEAD']);
+
+    const memoLines = [];
+    for (const mod of listAllModules()) {
+        for (const content of loadMemos(mod.name)) {
+            memoLines.push(`${mod.name}: ${content}`);
+        }
+    }
+
     const changelist = [
         '--- status ---',
         status.stdout.trim(),
@@ -181,16 +165,18 @@ async function main(args = []) {
         diffStat.stdout.trim(),
         '',
         '--- full diff ---',
-        diffFull.stdout.trim()
+        diffFull.stdout.trim(),
+        '',
+        '--- memos ---',
+        memoLines.join('\n')
     ].join('\n');
 
     if (!status.stdout.trim()) {
-        console.error('Nothing to commit: staged changelist is empty.');
-        restoreIndex();
+        console.error('Nothing to commit: working tree clean.');
         process.exit(0);
     }
 
-    // 5. Resolve model
+    // 4. Resolve model
     const modelArg = args.find(a => !a.startsWith('-') && a);
     let model = modelArg;
     if (!model) {
@@ -198,44 +184,80 @@ async function main(args = []) {
         model = await promptModel(listModels(config), config.model);
     }
 
-    // 6. Summarise via opencode
+    // 5. Summarise via opencode (index still untouched)
     console.error('\n--- opencode summary ---');
     const summary = summariseChangelist(model, changelist, subject);
     if (summary) {
         console.error(summary);
     } else {
-        console.error('(no summary produced; opening editor with empty message)');
+        console.error('(no summary produced)');
     }
     console.error('--- end summary ---\n');
 
-    // 7. git commit: interactive -> editor via template; non-interactive -> -m directly.
-    //    In non-interactive mode, if no summary was produced, abort rather than
-    //    opening an editor that would hang waiting for input.
+    // 6. Non-interactive with no summary: abort without touching the index.
     const interactive = process.stdin.isTTY === true;
+    if (!summary && !interactive) {
+        console.error('No summary produced and not interactive; aborting.');
+        process.exit(1);
+    }
+
+    // 7. Stage everything and commit. The index is only mutated here.
+    //    On SIGINT or empty commit message, restore the index with
+    //    `git restore --staged` (non-destructive: only touches the index,
+    //    never the working tree).
+    //    In interactive mode we open $EDITOR on the prefilled summary
+    //    ourselves (git's `-t` aborts on any unmodified template, which
+    //    would prevent accepting the message as-is). After the editor
+    //    closes we strip comment lines: an unmodified-but-non-empty
+    //    message is committed as-is; an erased/empty message abandons.
     let commitArgs = [];
     let templateFile = null;
     if (summary) {
         if (interactive) {
             templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
             fs.writeFileSync(templateFile, summary + '\n');
-            commitArgs = ['-t', templateFile];
+            const editStatus = editFile(templateFile);
+            if (editStatus !== 0) {
+                console.error(`Editor exited with status ${editStatus}; abandoning.`);
+                try { fs.unlinkSync(templateFile); } catch { /* gone */ }
+                process.exit(editStatus);
+            }
+            const edited = stripCommitMessage(fs.readFileSync(templateFile, 'utf-8'));
+            if (!edited) {
+                console.error('Commit message erased; abandoning (no changes committed, index untouched).');
+                try { fs.unlinkSync(templateFile); } catch { /* gone */ }
+                process.exit(0);
+            }
+            commitArgs = ['-F', templateFile];
         } else {
             commitArgs = ['-m', summary];
         }
-    } else if (!interactive) {
-        console.error('No summary produced and not interactive; aborting to avoid opening an editor.');
-        restoreIndex();
-        process.exit(1);
     }
+
+    const addResult = git.add([], { all: true, stdio: 'inherit' });
+    if (!addResult.ok) {
+        console.error(`git add failed (status ${addResult.status})`);
+        process.exit(addResult.status ?? 1);
+    }
+
+    process.on('SIGINT', () => {
+        console.error('\nInterrupted; restoring index (non-destructive).');
+        git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
+        process.exit(130);
+    });
 
     try {
         const result = git.git('commit', commitArgs, { stdio: 'inherit' });
         if (result.status !== 0) {
-            console.error(`git commit exited with status ${result.status}`);
-            restoreIndex();
+            const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+            if (/empty commit message|Aborting commit/i.test(output)) {
+                console.error('Empty commit message; restoring index (non-destructive).');
+                git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
+            } else {
+                console.error(`git commit exited with status ${result.status}`);
+            }
             process.exit(result.status ?? 1);
         }
-        indexMutated = false;
     } finally {
         if (templateFile) {
             try { fs.unlinkSync(templateFile); } catch { /* already removed */ }

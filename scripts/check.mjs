@@ -66,8 +66,8 @@ async function main(args = []) {
 
         const prior = memo.loadMemos(mod.name);
         if (prior.length > 0) {
-            for (const entry of prior) {
-                console.error(`     memo ${entry.name}: ${entry.content}`);
+            for (const content of prior) {
+                console.error(`     memo ${mod.name}: ${content}`);
             }
         }
     }

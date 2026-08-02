@@ -8,6 +8,7 @@ import {
     discoverScripts
 } from './lib/core.mjs';
 import { listModules } from './lib/list.mjs';
+import { recallImports, loadMemos, flush } from './lib/memo.mjs';
 
 assertProjectRoot();
 
@@ -20,11 +21,33 @@ async function runModule(name, args = []) {
         process.exit(1);
     }
 
+    recallImports(script.path);
+
+    const { memoCascadingBuffer } = await import('./lib/memo.mjs');
+    for (const content of loadMemos(script.name)) {
+        if (!memoCascadingBuffer.some(m => m.name === script.name && m.content === content)) {
+            memoCascadingBuffer.push({ name: script.name, content });
+        }
+    }
+
+    process.on('exit', flush);
+    process.on('SIGINT', () => {
+        flush();
+        process.exit(130);
+    });
+    process.on('SIGHUP', () => {
+        flush();
+        process.exit(129);
+    });
+
     try {
         const mod = await import('file://' + script.path);
         const main = mod.default?.main ?? mod.main;
         if (typeof main === 'function') await main(args);
-    } catch (err) { console.error(err.message || err); process.exit(1); }
+    } catch (err) {
+        console.error(err.message || err);
+        process.exit(1);
+    }
 }
 
 async function helpVerbose() {

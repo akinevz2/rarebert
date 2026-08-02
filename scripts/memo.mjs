@@ -104,7 +104,8 @@ function findMainInsertIndex(lines) {
 function injectMemoLine(filePath, moduleName, memoContent) {
     const lines = fs.readFileSync(filePath, 'utf-8').split(/\r?\n/);
 
-    if (lines.some(l => l.includes(`${MEMO_LIB_NAME}.remember(`) && l.includes(moduleName))) {
+    const recallPattern = `${MEMO_LIB_NAME}.remember('${escapeForSingleQuoteString(moduleName)}', '${escapeForSingleQuoteString(memoContent)}')`;
+    if (lines.some(l => l.includes(recallPattern))) {
         return { changed: false, reason: 'memo line already present' };
     }
 
