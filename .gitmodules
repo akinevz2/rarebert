@@ -1,7 +1,0 @@
-[submodule "academic-report"]
-	path = academic-report
-	url = https://github.com/akinevz2/report-template.git
-	branch = report-anlp
-[submodule "nlp-pipeline-viewer/libs/xtermjs"]
-	path = nlp-pipeline-viewer/libs/xtermjs
-	url = https://github.com/xtermjs/xterm.js

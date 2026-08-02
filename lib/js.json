@@ -1,0 +1,22 @@
+[
+    "#!/usr/bin/env node",
+    "",
+    "const { PROJECT_ROOT, StringBuilder, normalizeModuleName } = require('../lib/core.mjs');",
+    "{{LIB_IMPORTS}}",
+    "",
+    "async function main() {",
+    "    // {{MODULE_NAME}}: implementation scaffold",
+    "    // TODO: Implement the logic here.",
+    "    console.log('{{MODULE_NAME}} module - not yet implemented');",
+    "}",
+    "",
+    "if (require.main === module) {",
+    "    main();",
+    "}",
+    "",
+    "module.exports = {",
+    "    name: '{{MODULE_NAME}}',",
+    "    description: '{{MODULE_NAME}} module'",
+    "};",
+    ""
+]

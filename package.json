@@ -1,0 +1,16 @@
+{
+  "name": "rarebert-add-cli",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    ".": "./index.js"
+  },
+  "scripts": {
+    "add": "make add",
+    "list": "make list",
+    "reload": "make reload"
+  },
+  "dependencies": {
+    "enquirer": "^2.4.1"
+  }
+}

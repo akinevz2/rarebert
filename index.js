@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+
+import fs from 'fs';
+import path from 'path';
+import {
+    PROJECT_ROOT,
+    SCRIPTS_DIR,
+    assertProjectRoot,
+    Stream,
+    normalizeModuleName,
+    discoverScripts,
+    getScriptMetadata,
+    generateMakefile
+} from './lib/core.mjs';
+
+assertProjectRoot();
+
+function listModules() {
+    const modules = discoverScripts();
+    for (const mod of modules) {
+        const meta = getScriptMetadata(mod.path);
+        console.log('  ' + mod.name.padEnd(18) + (meta.description || ''));
+    }
+}
+
+async function runModule(name, args = []) {
+    const scripts = discoverScripts();
+    const script = scripts.find(s => normalizeModuleName(s.name) === name);
+
+    if (!script) {
+        console.error('Module not found:', name);
+        process.exit(1);
+    }
+
+    try {
+        const mod = await import('file://' + script.path);
+        const main = mod.default?.main ?? mod.main;
+        if (typeof main === 'function') await main(args);
+    } catch (err) { console.error(err.message || err); process.exit(1); }
+}
+
+async function helpVerbose() {
+    const scripts = discoverScripts();
+    for (const script of scripts) {
+        console.log(`\n=== ${script.name} ===`);
+        try {
+            const mod = await import('file://' + script.path);
+            const main = mod.default?.main ?? mod.main;
+            if (typeof main === 'function') {
+                await main(['--help']);
+            } else {
+                const meta = mod.default || {};
+                console.log('  ' + (meta.description || '(no description)'));
+            }
+        } catch (err) {
+            console.error('  (failed:', err.message, ')');
+        }
+    }
+}
+
+function refresh() {
+    import(path.join(SCRIPTS_DIR, 'reload.mjs'))
+        .then(m => (m.default?.main ?? m.main)?.())
+        .catch(e => console.error('Reload failed:', e.message));
+}
+
+async function main(argv) {
+    const cmd = argv[2];
+    const rest = argv.slice(3);
+
+    if (cmd === 'reload') return refresh();
+    if (cmd === '-v' || cmd === '--verbose') return helpVerbose();
+    if (!cmd || cmd.startsWith('help') || cmd.startsWith('h')) return listModules();
+
+    await runModule(normalizeModuleName(cmd), rest);
+}
+
+main(process.argv);
+
+export { normalizeModuleName, discoverScripts, getScriptMetadata, Stream };

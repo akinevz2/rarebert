@@ -1,0 +1,22 @@
+[
+    "#!/usr/bin/env node",
+    "",
+    "import { PROJECT_ROOT, StringBuilder, normalizeModuleName } from '../lib/core.mjs';",
+    "{{LIB_IMPORTS}}",
+    "",
+    "async function main() {",
+    "    // {{MODULE_NAME}}: implementation scaffold",
+    "    // TODO: Implement the logic here.",
+    "    console.log('{{MODULE_NAME}} module - not yet implemented');",
+    "}",
+    "",
+    "if (import.meta.url === `file://${process.argv[1]}`) {",
+    "    main();",
+    "}",
+    "",
+    "export default {",
+    "    name: '{{MODULE_NAME}}',",
+    "    description: '{{MODULE_NAME}} module'",
+    "};",
+    ""
+]
