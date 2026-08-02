@@ -201,10 +201,20 @@ async function main(args = []) {
 
     if (interactive && await promptPreview()) {
         previewDiff();
+        const prompt = new Enquirer.Confirm({
+            name: 'unstage',
+            message: 'Continue?',
+            initial: true
+        });
+        if (!await prompt.run()) {
+            console.error('Aborted; restoring index (non-destructive).');
+            git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
+            process.exit(0);
+        }
     }
 
     if (choice === 'raw') {
-        stageAndCommit([], null);
+        stageAndCommit([]);
         return;
     }
 
@@ -222,8 +232,8 @@ async function main(args = []) {
             process.exit(1);
         }
 
-        const { commitArgs, templateFile } = buildCommitPlan(summary, interactive);
-        stageAndCommit(commitArgs, templateFile);
+        const commitArgs = await buildCommitPlan(summary, interactive);
+        stageAndCommit(commitArgs);
         return;
     }
 }
@@ -249,35 +259,37 @@ async function resolveModel(args) {
 
 function buildCommitPlan(summary, interactive) {
     if (summary && interactive) {
-        const templateFile = editSummaryInEditor(summary);
-        return { commitArgs: ['-F', templateFile], templateFile };
+        return editSummaryInEditor(summary);
     }
     if (summary) {
-        return { commitArgs: ['-m', summary], templateFile: null };
+        return Promise.resolve(['-m', summary]);
     }
-    return { commitArgs: [], templateFile: null };
+    return Promise.resolve([]);
 }
 
-function editSummaryInEditor(summary) {
+async function editSummaryInEditor(summary, interactive) {
     const templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
     fs.writeFileSync(templateFile, summary + '\n');
-    const editStatus = editFile(templateFile);
-    if (editStatus !== 0) {
-        console.error(`Editor exited with status ${editStatus}; abandoning.`);
-        try { fs.unlinkSync(templateFile); } catch { /* gone */ }
-        process.exit(editStatus);
-    }
+    
+    const editorChild = editFile(templateFile);
+    
+    await new Promise((resolve) => {
+        editorChild.on('exit', (code) => resolve(code ?? 0));
+    });
+    
     const stripped = stripCommitMessage(fs.readFileSync(templateFile, 'utf-8'));
+    try { fs.unlinkSync(templateFile); } catch { /* gone */ }
+    
     if (!stripped) {
         console.error('Commit message erased; unstaging all changes so you can cherry-pick files.');
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
-        try { fs.unlinkSync(templateFile); } catch { /* gone */ }
         process.exit(0);
     }
-    return templateFile;
+    
+    return ['-m', stripped];
 }
 
-function stageAndCommit(commitArgs, templateFile) {
+function stageAndCommit(commitArgs) {
     process.on('SIGINT', () => {
         console.error('\nInterrupted; restoring index (non-destructive).');
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
@@ -307,10 +319,9 @@ function stageAndCommit(commitArgs, templateFile) {
             }
             process.exit(result.status ?? 1);
         }
-    } finally {
-        if (templateFile) {
-            try { fs.unlinkSync(templateFile); } catch { /* already removed */ }
-        }
+    } catch (err) {
+        console.error(`Commit failed: ${err.message}`);
+        process.exit(1);
     }
 }
 
