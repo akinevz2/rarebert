@@ -1,36 +1,45 @@
-[
-    "# Auto-generated Makefile",
-    "",
-    ".PHONY: help reload add edit implement {{MODULE_NAMES}}",
-    "",
-    "",
-    "help:",
-    "\tnode index.js",
-    "",
-    "",
-    "reload:",
-    "\tnode index.js reload",
-    "\t@rm -f .last-module",
-    "",
-    "",
-    "add:",
-    "\t@node index.js add; \\",
-    "\t  [ -f .last-module ] || exit 1; \\",
-    "\t  file=$$(cat .last-module); \\",
-    "\t  echo \"Created: $$file\"; \\",
-    "\t  $${EDITOR:-nano} $$EDITOR_FLAGS \"$$file\"; \\",
-    "\t  opencode run \"Implement the module in $$file\" -m ollama/glm-5.2:cloud --file \"$$file\"",
-    "",
-    "",
-    "edit:",
-    "\t@file=$$(cat .last-module); \\",
-    "\t  [ -n \"$$file\" ] || { echo 'Run make add first'; exit 1; }; \\",
-    "\t  $${EDITOR:-nano} $$EDITOR_FLAGS \"$$file\"",
-    "",
-    "",
-    "implement:",
-    "\t@file=$$(cat .last-module); \\",
-    "\t  [ -n \"$$file\" ] || { echo 'Run make add first'; exit 1; }; \\",
-    "\t  opencode run \"Implement the module in $$file\" -m ollama/glm-5.2:cloud --file \"$$file\"",
-    "{{MODULE_TARGETS}}"
-]
+{
+    "lines": {
+        "blank": "",
+        "header_comment": "# Auto-generated Makefile",
+        "echo_created": "\t  echo \"Created: $$file\"; \\",
+        "open_editor_last": "\t  $${EDITOR:-nano} $$EDITOR_FLAGS \"$$file\"",
+        "open_editor_last_cont": "\t  $${EDITOR:-nano} $$EDITOR_FLAGS \"$$file\"; \\",
+        "load_last_module": "\t@file=$$(cat .last-module); \\",
+        "load_last_module_indented": "\t  file=$$(cat .last-module); \\",
+        "guard_last_module_exists": "\t  [ -f .last-module ] || exit 1; \\",
+        "run_index": "\tnode index.js",
+        "run_reload": "\tnode index.js reload",
+        "run_add": "\t@node index.js add; \\",
+        "guard_run_add_first": "\t  [ -n \"$$file\" ] || { echo 'Run make add first'; exit 1; }; \\",
+        "opencode_implement": "\t  opencode run \"Implement the module in $$file\" --auto -m ollama/glm-5.2:cloud",
+        "clean_last_module": "\t  @if [ -n \"$$FORGET\" ]; then rm -f .last-module; fi"
+    },
+    "recipes": {
+        "help": [
+            "run_index"
+        ],
+        "reload": [
+            "run_reload",
+            "clean_last_module"
+        ],
+        "add": [
+            "run_add",
+            "guard_last_module_exists",
+            "load_last_module_indented",
+            "echo_created",
+            "open_editor_last_cont",
+            "opencode_implement"
+        ],
+        "edit": [
+            "load_last_module",
+            "guard_run_add_first",
+            "open_editor_last"
+        ],
+        "implement": [
+            "load_last_module",
+            "guard_run_add_first",
+            "opencode_implement"
+        ]
+    }
+}

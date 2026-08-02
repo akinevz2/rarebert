@@ -8,6 +8,7 @@
   "scripts": {
     "add": "make add",
     "list": "make list",
+    "memo": "make memo",
     "reload": "make reload"
   },
   "dependencies": {

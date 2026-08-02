@@ -12,16 +12,9 @@ import {
     getScriptMetadata,
     generateMakefile
 } from './lib/core.mjs';
+import { listModules } from './lib/list.mjs';
 
 assertProjectRoot();
-
-function listModules() {
-    const modules = discoverScripts();
-    for (const mod of modules) {
-        const meta = getScriptMetadata(mod.path);
-        console.log('  ' + mod.name.padEnd(18) + (meta.description || ''));
-    }
-}
 
 async function runModule(name, args = []) {
     const scripts = discoverScripts();
@@ -42,7 +35,7 @@ async function runModule(name, args = []) {
 async function helpVerbose() {
     const scripts = discoverScripts();
     for (const script of scripts) {
-        console.log(`\n=== ${script.name} ===`);
+        if (script !== scripts[0]) console.log();
         try {
             const mod = await import('file://' + script.path);
             const main = mod.default?.main ?? mod.main;
@@ -70,7 +63,9 @@ async function main(argv) {
 
     if (cmd === 'reload') return refresh();
     if (cmd === '-v' || cmd === '--verbose') return helpVerbose();
-    if (!cmd || cmd.startsWith('help') || cmd.startsWith('h')) return listModules();
+    if (!cmd || cmd.startsWith('help') || cmd.startsWith('h') || cmd.startsWith('--lib') || cmd.startsWith('--scripts') || cmd.startsWith('--script')) {
+        return listModules([cmd, ...rest].filter(Boolean));
+    }
 
     await runModule(normalizeModuleName(cmd), rest);
 }

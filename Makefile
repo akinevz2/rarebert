@@ -1,15 +1,10 @@
 # Auto-generated Makefile
 
-.PHONY: help reload add edit implement implement list
+.PHONY: help add check git implement jump memo open reload undo
 
 
 help:
 	node index.js
-
-
-reload:
-	node index.js reload
-	@rm -f .last-module
 
 
 add:
@@ -18,19 +13,39 @@ add:
 	  file=$$(cat .last-module); \
 	  echo "Created: $$file"; \
 	  $${EDITOR:-nano} $$EDITOR_FLAGS "$$file"; \
-	  opencode run "Implement the module in $$file" -m ollama/glm-5.2:cloud --file "$$file"
+	  opencode run "Implement the module in $$file" --auto -m ollama/glm-5.2:cloud
 
 
-edit:
-	@file=$$(cat .last-module); \
-	  [ -n "$$file" ] || { echo 'Run make add first'; exit 1; }; \
-	  $${EDITOR:-nano} $$EDITOR_FLAGS "$$file"
+check:
+	node index.js check
+
+
+git:
+	node index.js git
 
 
 implement:
 	@file=$$(cat .last-module); \
 	  [ -n "$$file" ] || { echo 'Run make add first'; exit 1; }; \
-	  opencode run "Implement the module in $$file" -m ollama/glm-5.2:cloud --file "$$file"
+	  opencode run "Implement the module in $$file" --auto -m ollama/glm-5.2:cloud
 
-list:
-	node index.js list
+
+jump:
+	node index.js jump
+
+
+memo:
+	node index.js memo
+
+
+open:
+	node index.js open
+
+
+reload:
+	node index.js reload
+	  @if [ -n "$$FORGET" ]; then rm -f .last-module; fi
+
+
+undo:
+	node index.js undo

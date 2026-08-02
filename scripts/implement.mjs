@@ -2,9 +2,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { PROJECT_ROOT, normalizeModuleName } from '../lib/core.mjs';
+import { PROJECT_ROOT, normalizeModuleName, runIDE } from '../lib/core.mjs';
 
 const LAST_MODULE_FILE = path.join(PROJECT_ROOT, '.last-module');
 const OPENCODE_CONFIG = path.join(PROJECT_ROOT, 'opencode.json');
@@ -75,18 +74,6 @@ async function promptModel(models, fallback) {
     }
 }
 
-function runOpende(model, file) {
-    const message = `Implement the module in ${file}`;
-    const args = ['run', message, '-m', model, '--file', file];
-    console.error(`$ opencode ${args.join(' ')}`);
-    const result = spawnSync('opencode', args, { stdio: 'inherit', cwd: PROJECT_ROOT });
-    if (result.error) {
-        console.error(`Failed to launch opencode: ${result.error.message}`);
-        process.exit(1);
-    }
-    return result.status;
-}
-
 async function main(args = []) {
     if (args.includes('--help') || args.includes('-h')) {
         console.error('implement: Implement the last-created module using an opencode model');
@@ -115,7 +102,7 @@ async function main(args = []) {
         model = await promptModel(models, config.model || DEFAULT_MODEL);
     }
 
-    const status = runOpende(model, file);
+    const status = runIDE(model, file, { implement: true });
     process.exit(status ?? 0);
 }
 
@@ -128,7 +115,6 @@ export {
     readOpendeConfig,
     listModels,
     promptModel,
-    runOpende,
     main
 };
 
