@@ -1,6 +1,6 @@
 # Auto-generated Makefile
 
-.PHONY: help add check git implement jump memo open reload undo
+.PHONY: help add check implement jump memo open reload undo
 
 
 help:
@@ -18,10 +18,6 @@ add:
 
 check:
 	node index.js check
-
-
-git:
-	node index.js git
 
 
 implement:

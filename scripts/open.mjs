@@ -7,7 +7,7 @@ import Enquirer from 'enquirer';
 import { PROJECT_ROOT, LIB_DIR, SCRIPTS_DIR, discoverScripts, getScriptMetadata, normalizeModuleName, runIDE } from '../lib/core.mjs';
 import { relPath } from '../lib/libs.mjs';
 import { readOpendeConfig, listModels, promptModel } from './implement.mjs';
-import * as git from './git.mjs';
+import * as git from '../lib/git.mjs';
 
 const DEFAULT_MODEL = 'ollama/glm-5.2:cloud';
 
