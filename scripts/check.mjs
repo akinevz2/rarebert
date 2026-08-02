@@ -37,11 +37,16 @@ async function main(args = []) {
         const rel = path.relative(PROJECT_ROOT, mod.path);
         const { ok, firstLine } = runNodeCheck(mod.path);
         memo.remember(mod.name, firstLine);
-        if (ok) {
-            console.error(`ok   ${rel}`);
-        } else {
+
+        const label = ok ? `ok   ${rel}` : `FAIL ${rel}`;
+        console.error(label);
+
+        for (const entry of memo.loadMemos(mod.name)) {
+            console.error(`     memo ${entry.name}: ${entry.content}`);
+        }
+
+        if (!ok) {
             failures++;
-            console.error(`FAIL ${rel}`);
             console.error(`     ${firstLine}`);
         }
     }

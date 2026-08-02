@@ -111,15 +111,21 @@ function injectMemoLine(filePath, moduleName, memoContent) {
     const importResult = ensureMemoLibImport(lines, filePath);
     const insertIndex = findMainInsertIndex(importResult.lines);
     if (insertIndex === -1) {
-        return { changed: false, reason: 'could not locate main() body' };
+        return { changed: false, reason: 'could not locate main() body (library modules are not directly memoizable; their memos are prepended by importing scripts)' };
     }
 
     const refLine = importResult.lines[insertIndex] ?? '';
     const indent = (refLine.match(/^(\s*)/) || [])[1] || '    ';
-    const recallLine = `${indent}${MEMO_LIB_NAME}.remember('${escapeForSingleQuoteString(moduleName)}', '${escapeForSingleQuoteString(memoContent)}');`;
-
     const newLines = [...importResult.lines];
-    newLines.splice(insertIndex, 0, recallLine);
+
+    const hasRecall = newLines.some(l => l.includes(`${MEMO_LIB_NAME}.recallImports(`));
+    if (!hasRecall) {
+        newLines.splice(insertIndex, 0, `${indent}${MEMO_LIB_NAME}.recallImports(import.meta.url);`);
+    }
+
+    const recallLine = `${indent}${MEMO_LIB_NAME}.remember('${escapeForSingleQuoteString(moduleName)}', '${escapeForSingleQuoteString(memoContent)}');`;
+    const rememberAt = hasRecall ? insertIndex : insertIndex + 1;
+    newLines.splice(rememberAt, 0, recallLine);
     fs.writeFileSync(filePath, newLines.join('\n'));
     return { changed: true };
 }
@@ -130,6 +136,8 @@ async function main(args = []) {
         console.error('  Usage: node index.js memo [module] [memoContent]');
         console.error('  Selects a module from scripts/ and lib/, prompts for memo content,');
         console.error('  then injects a `memo.remember(name, content)` call into its main().');
+        console.error('  Library modules (no main()) are rejected; their memos are instead');
+        console.error('  prepended by scripts that import them via memo.recallImports().');
         console.error('  When the instrumented module is later called, the memo is printed');
         console.error('  to stdout as "moduleName: memoContent".');
         console.error('  If the FORGET env variable is set, the memo array is cleared after printing.');

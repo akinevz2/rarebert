@@ -30,3 +30,6 @@ dist-ssr
 # Runtime
 .last-module
 .cache/
+*.memo
+*.mjs.
+*.js.

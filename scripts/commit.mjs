@@ -8,6 +8,7 @@ import Enquirer from 'enquirer';
 import { PROJECT_ROOT } from '../lib/core.mjs';
 import * as git from '../lib/git.mjs';
 import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
+import * as memo from '../lib/memo.mjs';
 
 async function confirmProceed(message = 'Proceed with autocommit?') {
     if (process.stdin.isTTY !== true) {
@@ -90,6 +91,8 @@ function summariseChangelist(model, changelist, subject) {
 }
 
 async function main(args = []) {
+    memo.recallImports(import.meta.url);
+    memo.remember('commit', 'script memo');
     if (args.includes('--help') || args.includes('-h')) {
         console.error('commit: Stage all changes, summarise them via opencode, then commit with $EDITOR');
         console.error('  Usage: node index.js commit [model]');
