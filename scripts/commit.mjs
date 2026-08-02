@@ -94,32 +94,38 @@ async function main(args = []) {
     if (args.includes('--help') || args.includes('-h')) {
         console.error('commit: Stage all changes, summarise them via opencode, then commit with $EDITOR');
         console.error('  Usage: node index.js commit [model]');
-        console.error('  If changes are already staged, first attempts a plain `git commit`;');
-        console.error('  on failure, unstages the pending changeset and falls through to the');
-        console.error('  full flow: `git add -A`, opencode summarises the staged changelist,');
-        console.error('  then opens $EDITOR via `git commit -t <template>` pre-filled with the summary.');
-        console.error('  Falls back to a plain `git commit` (empty editor) if no summary is produced.');
+        console.error('  After confirmation, if changes are already staged, offers a plain commit');
+        console.error('  (skip opencode). Otherwise: `git add -A`, opencode summarises the staged');
+        console.error('  changelist (with full diff), then opens $EDITOR via `git commit -t <template>`.');
+        console.error('  Non-interactive mode commits with -m directly; aborts if no summary is produced.');
+        console.error('  On interruption or empty commit message, the index is restored to its');
+        console.error('  pre-run state (staged files unstaged; working tree never modified).');
         console.error('  Reads available models from opencode.json (or accepts one as an argument).');
         return;
     }
 
-    // 0. Short-circuit (interactive only): if anything is already staged,
-    //    try a plain `git commit` so the user can write their own message.
-    //    On failure, unstage the whole changeset and fall through to the
-    //    full summarise-and-commit flow.
-    if (process.stdin.isTTY === true) {
-        const staged = git.git('status', ['--short']);
-        const hasStaged = staged.stdout.split('\n').some(l => /^[MADRC]/.test(l));
-        if (hasStaged) {
-            console.error('Staged changes detected; attempting plain commit...');
-            const quick = git.git('commit', [], { stdio: 'inherit' });
-            if (quick.status === 0) {
-                process.exit(0);
-            }
-            console.error(`Plain commit failed (status ${quick.status}); unstaging pending changeset and continuing.`);
-            git.git('reset', ['HEAD'], { stdio: 'inherit' });
+    // Snapshot the index before any mutation so we can restore it on
+    // interruption (SIGINT) or a failed/empty commit. The working tree
+    // is never modified by this script, so only the index needs restoring.
+    const snapshot = git.git('diff', ['--cached', '--name-only']);
+    const stagedBefore = snapshot.stdout.trim();
+
+    let indexMutated = false;
+    function restoreIndex() {
+        if (!indexMutated) return;
+        indexMutated = false;
+        git.git('reset', ['HEAD', '--quiet'], { stdio: 'pipe' });
+        if (stagedBefore) {
+            const files = stagedBefore.split('\n');
+            git.git('add', files, { stdio: 'pipe' });
         }
     }
+
+    process.on('SIGINT', () => {
+        console.error('\nInterrupted; restoring index to pre-run state.');
+        restoreIndex();
+        process.exit(130);
+    });
 
     // 1. Confirm before proceeding, then prompt for an optional subject line
     const proceed = await confirmProceed();
@@ -129,24 +135,62 @@ async function main(args = []) {
     }
     const subject = await promptSubject();
 
-    // 2. git add -A
+    // 2. If changes are already staged, offer a plain commit (interactive only)
+    //    so the user can write their own message without involving opencode.
+    //    On failure, fall through to the summarise-and-commit flow.
+    if (process.stdin.isTTY === true) {
+        const staged = git.git('status', ['--short']);
+        const hasStaged = staged.stdout.split('\n').some(l => /^[MADRC]/.test(l));
+        if (hasStaged) {
+            const skip = new (Enquirer.Confirm)({
+                name: 'skip',
+                message: 'Staged changes detected. Plain commit (skip opencode summary)?',
+                initial: false
+            });
+            let doPlain = false;
+            try { doPlain = await skip.run(); } catch { process.exit(130); }
+            if (doPlain) {
+                const quick = git.git('commit', [], { stdio: 'inherit' });
+                if (quick.status === 0) {
+                    indexMutated = false;
+                    process.exit(0);
+                }
+                console.error(`Plain commit failed (status ${quick.status}); continuing to summarise flow.`);
+            }
+        }
+    }
+
+    // 3. git add -A
     const addResult = git.add([], { all: true, stdio: 'inherit' });
     if (!addResult.ok) {
         console.error(`git add failed (status ${addResult.status})`);
+        restoreIndex();
         process.exit(addResult.status ?? 1);
     }
+    indexMutated = true;
 
-    // 3. Gather the staged changelist
+    // 4. Gather the staged changelist (status + full diff for content context)
     const status = git.git('status', ['--short']);
-    const diff = git.git('diff', ['--cached', '--stat']);
-    const changelist = `${status.stdout}${diff.stdout}`.trim();
+    const diffStat = git.git('diff', ['--cached', '--stat']);
+    const diffFull = git.git('diff', ['--cached']);
+    const changelist = [
+        '--- status ---',
+        status.stdout.trim(),
+        '',
+        '--- diffstat ---',
+        diffStat.stdout.trim(),
+        '',
+        '--- full diff ---',
+        diffFull.stdout.trim()
+    ].join('\n');
 
-    if (!changelist) {
+    if (!status.stdout.trim()) {
         console.error('Nothing to commit: staged changelist is empty.');
+        restoreIndex();
         process.exit(0);
     }
 
-    // 4. Resolve model
+    // 5. Resolve model
     const modelArg = args.find(a => !a.startsWith('-') && a);
     let model = modelArg;
     if (!model) {
@@ -154,7 +198,7 @@ async function main(args = []) {
         model = await promptModel(listModels(config), config.model);
     }
 
-    // 5. Summarise via opencode
+    // 6. Summarise via opencode
     console.error('\n--- opencode summary ---');
     const summary = summariseChangelist(model, changelist, subject);
     if (summary) {
@@ -164,9 +208,9 @@ async function main(args = []) {
     }
     console.error('--- end summary ---\n');
 
-    // 6. git commit: interactive -> editor via template; non-interactive -> -m directly.
-    //    `git commit -t <template>` aborts when the editor doesn't modify the file
-    //    (e.g. no TTY), so in non-interactive mode we pass the summary with -m instead.
+    // 7. git commit: interactive -> editor via template; non-interactive -> -m directly.
+    //    In non-interactive mode, if no summary was produced, abort rather than
+    //    opening an editor that would hang waiting for input.
     const interactive = process.stdin.isTTY === true;
     let commitArgs = [];
     let templateFile = null;
@@ -178,14 +222,20 @@ async function main(args = []) {
         } else {
             commitArgs = ['-m', summary];
         }
+    } else if (!interactive) {
+        console.error('No summary produced and not interactive; aborting to avoid opening an editor.');
+        restoreIndex();
+        process.exit(1);
     }
 
     try {
         const result = git.git('commit', commitArgs, { stdio: 'inherit' });
         if (result.status !== 0) {
             console.error(`git commit exited with status ${result.status}`);
+            restoreIndex();
             process.exit(result.status ?? 1);
         }
+        indexMutated = false;
     } finally {
         if (templateFile) {
             try { fs.unlinkSync(templateFile); } catch { /* already removed */ }
