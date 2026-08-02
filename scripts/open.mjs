@@ -3,7 +3,7 @@
 import fs from 'fs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
-import { editFile } from '../lib/editor.mjs';
+import { editFile, writeLastModule } from '../lib/editor.mjs';
 import { runIDE } from '../lib/ide.mjs';
 import { relPath } from '../lib/libs.mjs';
 import * as git from '../lib/git.mjs';
@@ -16,7 +16,7 @@ async function main(args = []) {
         console.error('  --scripts   choose from modules in scripts/ (default)');
         console.error('  Lists modules with arrow-key navigation and search.');
         console.error('  Reads available models from opencode.json (or accepts one as an argument).');
-        console.error('  Before exiting, runs `git add -A` to stage changes.');
+        console.error('  Before exiting, runs `git add` on the selected module only.');
         return;
     }
 
@@ -38,23 +38,28 @@ async function main(args = []) {
         process.exit(1);
     }
 
+    writeLastModule(rel);
+
     let model = modelArg;
     if (!model) {
         const config = readOpendeConfig();
         model = await promptModel(listModels(config), config.model);
     }
 
-    const status = runIDE(model, rel);
+    const { status, child } = runIDE(model, rel);
 
     console.error(`Opening $EDITOR ${rel}`);
     const editStatus = editFile(target.path);
+    if (child) {
+        try { child.kill('SIGTERM'); } catch { /* already exited */ }
+    }
     if (editStatus !== 0) {
         console.error(`Editor exited with status ${editStatus}`);
         process.exit(editStatus);
     }
 
     try {
-        const r = git.add([], { all: true, stdio: 'inherit' });
+        const r = git.add([target.path], { stdio: 'inherit' });
         if (r.stdout) process.stdout.write(r.stdout);
         if (r.stderr) process.stderr.write(r.stderr);
     } catch (err) {

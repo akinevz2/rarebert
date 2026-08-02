@@ -1,5 +1,7 @@
 # Auto-generated Makefile
 
+MODEL ?= ollama/glm-5.2:cloud
+
 .PHONY: help add check commit implement jump memo open reload undo
 
 
@@ -12,8 +14,9 @@ add:
 	  [ -f .last-module ] || exit 1; \
 	  file=$$(cat .last-module); \
 	  echo "Created: $$file"; \
+	  git add -A; \
 	  $${EDITOR:-nano} $$EDITOR_FLAGS "$$file"; \
-	  opencode run "Implement the module in $$file" --auto -m ollama/glm-5.2:cloud
+	  opencode run "Implement the module in $$file" --auto -m $(MODEL)
 
 
 check:
@@ -27,7 +30,7 @@ commit:
 implement:
 	@file=$$(cat .last-module); \
 	  [ -n "$$file" ] || { echo 'Run make add first'; exit 1; }; \
-	  opencode run "Implement the module in $$file" --auto -m ollama/glm-5.2:cloud
+	  opencode run "Implement the module in $$file" --auto -m $(MODEL)
 
 
 jump:

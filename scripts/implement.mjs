@@ -34,7 +34,7 @@ async function main(args = []) {
         model = await promptModel(listModels(config), config.model);
     }
 
-    const status = runIDE(model, file, { implement: true });
+    const { status, child } = runIDE(model, file, { implement: true });
     process.exit(status ?? 0);
 }
 

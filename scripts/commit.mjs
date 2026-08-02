@@ -51,26 +51,27 @@ async function promptSubject() {
 
 function summariseChangelist(model, changelist, subject) {
     const lines = [
-        'Summarise the following staged git changelist as a concise commit message.'
+        'Write a git commit message for the staged changelist below.',
+        'Strict rules (do not violate any):',
+        '1. First line: imperative mood, STRICTLY 72 characters or fewer. Count them.',
+        '2. One blank line after the first line.',
+        '3. A body of 2-4 lines wrapped at 72 columns explaining why the change was made.',
+        '4. Output ONLY the commit message — no preamble, no commentary, no markdown fences.'
     ];
     if (subject) {
         lines.push(
-            `Use exactly "${subject}" as the first line, followed by two blank lines and a short body.`,
-            'Infer the focus of the body from the first line and the changelist.',
-            'Output only the commit message, no preamble or commentary.'
+            `5. Use exactly "${subject}" as the first line (it must still be <= 72 chars; truncate if needed).`,
+            '6. Infer the body focus from the first line and the changelist.'
         );
     } else {
-        lines.push(
-            'Use the imperative mood for the subject line (<= 72 chars).',
-            'Optionally follow with a blank line and a short body explaining the why.',
-            'Output only the commit message, no preamble or commentary.'
-        );
+        lines.push('5. Infer the subject and body from the changelist.');
     }
     lines.push('', '--- staged changelist ---', changelist);
     const prompt = lines.join('\n');
 
     const args = ['run', prompt, '-m', model, '--auto'];
-    console.error(`$ opencode ${args[0]} "<prompt>" ${args.slice(2).join(' ')}`);
+    const firstLine = prompt.split('\n')[0];
+    console.error(`$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${firstLine}">" -m ${model} --auto`);
 
     const result = spawnSync('opencode', args, {
         cwd: PROJECT_ROOT,
@@ -102,19 +103,22 @@ async function main(args = []) {
         return;
     }
 
-    // 0. Short-circuit: if anything is already staged, try a plain commit
-    //    before involving opencode. If it fails, unstage the whole changeset
-    //    and fall through to the full summarise-and-commit flow.
-    const staged = git.git('status', ['--short']);
-    const hasStaged = staged.stdout.split('\n').some(l => /^[MADRC]/.test(l));
-    if (hasStaged) {
-        console.error('Staged changes detected; attempting plain commit...');
-        const quick = git.git('commit', [], { stdio: 'inherit' });
-        if (quick.status === 0) {
-            process.exit(0);
+    // 0. Short-circuit (interactive only): if anything is already staged,
+    //    try a plain `git commit` so the user can write their own message.
+    //    On failure, unstage the whole changeset and fall through to the
+    //    full summarise-and-commit flow.
+    if (process.stdin.isTTY === true) {
+        const staged = git.git('status', ['--short']);
+        const hasStaged = staged.stdout.split('\n').some(l => /^[MADRC]/.test(l));
+        if (hasStaged) {
+            console.error('Staged changes detected; attempting plain commit...');
+            const quick = git.git('commit', [], { stdio: 'inherit' });
+            if (quick.status === 0) {
+                process.exit(0);
+            }
+            console.error(`Plain commit failed (status ${quick.status}); unstaging pending changeset and continuing.`);
+            git.git('reset', ['HEAD'], { stdio: 'inherit' });
         }
-        console.error(`Plain commit failed (status ${quick.status}); unstaging pending changeset and continuing.`);
-        git.git('reset', ['HEAD'], { stdio: 'inherit' });
     }
 
     // 1. Confirm before proceeding, then prompt for an optional subject line

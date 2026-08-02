@@ -3,6 +3,7 @@
         "blank": "",
         "header_comment": "# Auto-generated Makefile",
         "echo_created": "\t  echo \"Created: $$file\"; \\",
+        "git_add_all": "\t  git add -A; \\",
         "open_editor_last": "\t  $${EDITOR:-nano} $$EDITOR_FLAGS \"$$file\"",
         "open_editor_last_cont": "\t  $${EDITOR:-nano} $$EDITOR_FLAGS \"$$file\"; \\",
         "load_last_module": "\t@file=$$(cat .last-module); \\",
@@ -12,7 +13,7 @@
         "run_reload": "\tnode index.js reload",
         "run_add": "\t@node index.js add; \\",
         "guard_run_add_first": "\t  [ -n \"$$file\" ] || { echo 'Run make add first'; exit 1; }; \\",
-        "opencode_implement": "\t  opencode run \"Implement the module in $$file\" --auto -m ollama/glm-5.2:cloud",
+        "opencode_implement": "\t  opencode run \"Implement the module in $$file\" --auto -m $(MODEL)",
         "clean_last_module": "\t  @if [ -n \"$$FORGET\" ]; then rm -f .last-module; fi"
     },
     "recipes": {
@@ -28,6 +29,7 @@
             "guard_last_module_exists",
             "load_last_module_indented",
             "echo_created",
+            "git_add_all",
             "open_editor_last_cont",
             "opencode_implement"
         ],
