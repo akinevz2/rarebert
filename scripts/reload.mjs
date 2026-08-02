@@ -2,12 +2,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import {
-    PROJECT_ROOT,
-    SCRIPTS_DIR,
-    discoverScripts,
-    generateMakefile
-} from '../lib/core.mjs';
+import { PROJECT_ROOT, SCRIPTS_DIR, discoverScripts } from '../lib/core.mjs';
+import { generateMakefile } from '../lib/makefile.mjs';
 
 export async function main(args = []) {
     if (args.includes('--help') || args.includes('-h')) {

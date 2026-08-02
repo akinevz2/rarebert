@@ -2,77 +2,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import Enquirer from 'enquirer';
-import { PROJECT_ROOT, normalizeModuleName, runIDE } from '../lib/core.mjs';
-
-const LAST_MODULE_FILE = path.join(PROJECT_ROOT, '.last-module');
-const OPENCODE_CONFIG = path.join(PROJECT_ROOT, 'opencode.json');
-const DEFAULT_MODEL = 'ollama/glm-5.2:cloud';
-
-function readLastModule() {
-    if (!fs.existsSync(LAST_MODULE_FILE)) return null;
-    const rel = fs.readFileSync(LAST_MODULE_FILE, 'utf-8').trim();
-    return rel || null;
-}
-
-function readOpendeConfig() {
-    if (!fs.existsSync(OPENCODE_CONFIG)) return {};
-    return JSON.parse(fs.readFileSync(OPENCODE_CONFIG, 'utf-8'));
-}
-
-function listModels(config) {
-    const models = [];
-    const defaultModel = config.model;
-    const providers = config.provider || {};
-    for (const [providerName, provider] of Object.entries(providers)) {
-        const providerModels = provider.models || {};
-        for (const modelId of Object.keys(providerModels)) {
-            const fullId = `${providerName}/${modelId}`;
-            const meta = providerModels[modelId] || {};
-            models.push({
-                id: fullId,
-                name: meta.name || modelId,
-                isDefault: fullId === defaultModel
-            });
-        }
-    }
-    if (models.length === 0 && defaultModel) {
-        models.push({ id: defaultModel, name: defaultModel, isDefault: true });
-    }
-    return models;
-}
-
-async function promptModel(models, fallback) {
-    if (models.length === 0) {
-        console.error(`No models found in opencode.json; using fallback: ${fallback}`);
-        return fallback;
-    }
-    if (process.stdin.isTTY !== true) {
-        const def = models.find(m => m.isDefault) || models[0];
-        console.error(`Non-interactive; using ${def.id}`);
-        return def.id;
-    }
-
-    const choices = models.map(m => ({
-        name: m.id,
-        message: `${m.name}${m.isDefault ? ' (default)' : ''}`
-    }));
-    const defaultIndex = Math.max(0, models.findIndex(m => m.isDefault));
-
-    const prompt = new Enquirer.Select({
-        name: 'model',
-        message: 'Select a model to implement with',
-        choices,
-        initial: defaultIndex
-    });
-
-    try {
-        return await prompt.run();
-    } catch {
-        console.error('\nAborted.');
-        process.exit(130);
-    }
-}
+import { PROJECT_ROOT } from '../lib/core.mjs';
+import { readLastModule } from '../lib/editor.mjs';
+import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
+import { runIDE } from '../lib/ide.mjs';
 
 async function main(args = []) {
     if (args.includes('--help') || args.includes('-h')) {
@@ -98,8 +31,7 @@ async function main(args = []) {
     let model = args.find(a => !a.startsWith('-') && a);
     if (!model) {
         const config = readOpendeConfig();
-        const models = listModels(config);
-        model = await promptModel(models, config.model || DEFAULT_MODEL);
+        model = await promptModel(listModels(config), config.model);
     }
 
     const status = runIDE(model, file, { implement: true });
@@ -110,13 +42,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     main(process.argv.slice(2));
 }
 
-export {
-    readLastModule,
-    readOpendeConfig,
-    listModels,
-    promptModel,
-    main
-};
+export { main };
 
 export default {
     name: 'implement',

@@ -2,7 +2,7 @@
     "lines": {
         "shebang": "#!/usr/bin/env node",
         "blank": "",
-        "imports": "import { PROJECT_ROOT, StringBuilder, normalizeModuleName } from '{{CORE_IMPORT}}';",
+        "imports": "import { PROJECT_ROOT } from '{{CORE_IMPORT}}';",
         "lib_imports": "{{LIB_IMPORTS}}",
         "main_open": "async function main() {",
         "main_scaffold": "    // {{MODULE_NAME}}: implementation scaffold",

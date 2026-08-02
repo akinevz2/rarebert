@@ -3,61 +3,11 @@
 import fs from 'fs';
 import path from 'path';
 import Enquirer from 'enquirer';
-import { PROJECT_ROOT, SCRIPTS_DIR, LIB_DIR, discoverScripts, getScriptMetadata, normalizeModuleName } from '../lib/core.mjs';
+import { PROJECT_ROOT, LIB_DIR } from '../lib/core.mjs';
+import { listAllModules, promptModule } from '../lib/modules.mjs';
 
 const MEMO_LIB = path.join(LIB_DIR, 'memo.mjs');
 const MEMO_LIB_NAME = 'memo';
-
-function listAllModules() {
-    const scripts = discoverScripts(SCRIPTS_DIR);
-    const libs = discoverScripts(LIB_DIR);
-    return [...scripts, ...libs];
-}
-
-function moduleChoices(modules) {
-    return modules.map(s => {
-        const meta = getScriptMetadata(s.path);
-        const label = `${s.name}${meta.description ? ' - ' + meta.description : ''}`;
-        return { name: s.path, message: label };
-    });
-}
-
-async function promptModule(modules, moduleArg) {
-    if (moduleArg) {
-        const match = modules.find(s => normalizeModuleName(s.name) === normalizeModuleName(moduleArg));
-        if (!match) {
-            console.error(`Module not found: ${moduleArg}`);
-            process.exit(1);
-        }
-        return match;
-    }
-
-    if (process.stdin.isTTY !== true) {
-        console.error('Non-interactive; pass a module name as an argument.');
-        process.exit(1);
-    }
-
-    const choices = moduleChoices(modules);
-    const prompt = new Enquirer.AutoComplete({
-        name: 'module',
-        message: 'Select a module to memoize',
-        limit: 12,
-        choices,
-        suggest(input) {
-            const q = (input || '').toLowerCase().trim();
-            if (!q) return choices;
-            return choices.filter(c => c.message.toLowerCase().includes(q));
-        }
-    });
-
-    try {
-        const answer = await prompt.run();
-        return modules.find(s => s.path === answer);
-    } catch {
-        console.error('\nAborted.');
-        process.exit(130);
-    }
-}
 
 async function promptMemoContent() {
     if (process.stdin.isTTY !== true) {
@@ -71,8 +21,7 @@ async function promptMemoContent() {
     });
 
     try {
-        const answer = await prompt.run();
-        return answer.trim();
+        return (await prompt.run()).trim();
     } catch {
         console.error('\nAborted.');
         process.exit(130);
@@ -84,8 +33,7 @@ function escapeForSingleQuoteString(value) {
 }
 
 function memoImportPath(modulePath) {
-    const dir = path.dirname(modulePath);
-    const rel = path.relative(dir, MEMO_LIB);
+    const rel = path.relative(path.dirname(modulePath), MEMO_LIB);
     return rel.startsWith('.') ? rel : `./${rel}`;
 }
 
@@ -99,14 +47,6 @@ function ensureMemoLibImport(lines, modulePath) {
             trimmed.includes(importPath);
     });
     if (already) return { lines, added: false };
-
-    let insertIndex = -1;
-    for (let i = 0; i < lines.length; i++) {
-        const trimmed = lines[i].trim();
-        if (trimmed.startsWith('#!')) continue;
-        if (trimmed === '') continue;
-        break;
-    }
 
     let lastImportIndex = -1;
     let inImport = false;
@@ -127,9 +67,11 @@ function ensureMemoLibImport(lines, modulePath) {
         }
     }
 
+    let insertIndex;
     if (lastImportIndex !== -1) {
         insertIndex = lastImportIndex + 1;
     } else {
+        insertIndex = 0;
         for (let i = 0; i < lines.length; i++) {
             const trimmed = lines[i].trim();
             if (trimmed.startsWith('#!')) continue;
@@ -137,7 +79,6 @@ function ensureMemoLibImport(lines, modulePath) {
             insertIndex = i;
             break;
         }
-        if (insertIndex === -1) insertIndex = 0;
     }
 
     const newLines = [...lines];
@@ -148,49 +89,38 @@ function ensureMemoLibImport(lines, modulePath) {
 function findMainInsertIndex(lines) {
     let mainLineIndex = -1;
     for (let i = 0; i < lines.length; i++) {
-        const trimmed = lines[i].trim();
-        if (/\b(?:async\s+)?function\s+main\b/.test(trimmed)) {
+        if (/\b(?:async\s+)?function\s+main\b/.test(lines[i].trim())) {
             mainLineIndex = i;
             break;
         }
     }
     if (mainLineIndex === -1) return -1;
-
     for (let i = mainLineIndex; i < lines.length; i++) {
         if (lines[i].includes('{')) return i + 1;
     }
     return -1;
 }
 
-function hasMemoRecallLine(lines, moduleName) {
-    return lines.some(l => l.includes(`${MEMO_LIB_NAME}.remember(`) && l.includes(moduleName));
-}
-
 function injectMemoLine(filePath, moduleName, memoContent) {
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    const lines = raw.split(/\r?\n/);
+    const lines = fs.readFileSync(filePath, 'utf-8').split(/\r?\n/);
 
-    if (hasMemoRecallLine(lines, moduleName)) {
+    if (lines.some(l => l.includes(`${MEMO_LIB_NAME}.remember(`) && l.includes(moduleName))) {
         return { changed: false, reason: 'memo line already present' };
     }
 
     const importResult = ensureMemoLibImport(lines, filePath);
-
     const insertIndex = findMainInsertIndex(importResult.lines);
     if (insertIndex === -1) {
         return { changed: false, reason: 'could not locate main() body' };
     }
 
     const refLine = importResult.lines[insertIndex] ?? '';
-    const indentMatch = refLine.match(/^(\s*)/);
-    const indent = (indentMatch && indentMatch[1]) || '    ';
+    const indent = (refLine.match(/^(\s*)/) || [])[1] || '    ';
     const recallLine = `${indent}${MEMO_LIB_NAME}.remember('${escapeForSingleQuoteString(moduleName)}', '${escapeForSingleQuoteString(memoContent)}');`;
 
     const newLines = [...importResult.lines];
     newLines.splice(insertIndex, 0, recallLine);
-
-    const content = newLines.join('\n');
-    fs.writeFileSync(filePath, content);
+    fs.writeFileSync(filePath, newLines.join('\n'));
     return { changed: true };
 }
 
@@ -216,7 +146,7 @@ async function main(args = []) {
         process.exit(1);
     }
 
-    const target = await promptModule(modules, moduleArg);
+    const target = await promptModule(modules, moduleArg, 'Select a module to memoize');
     if (!fs.existsSync(target.path)) {
         console.error(`Module file not found: ${target.path}`);
         process.exit(1);
@@ -241,15 +171,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     main(process.argv.slice(2));
 }
 
-export {
-    listAllModules,
-    promptModule,
-    promptMemoContent,
-    injectMemoLine,
-    ensureMemoLibImport,
-    findMainInsertIndex,
-    main
-};
+export { injectMemoLine, main };
 
 export default {
     name: 'memo',

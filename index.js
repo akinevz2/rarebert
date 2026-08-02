@@ -1,16 +1,11 @@
 #!/usr/bin/env node
 
-import fs from 'fs';
 import path from 'path';
 import {
-    PROJECT_ROOT,
     SCRIPTS_DIR,
     assertProjectRoot,
-    Stream,
     normalizeModuleName,
-    discoverScripts,
-    getScriptMetadata,
-    generateMakefile
+    discoverScripts
 } from './lib/core.mjs';
 import { listModules } from './lib/list.mjs';
 
@@ -71,5 +66,3 @@ async function main(argv) {
 }
 
 main(process.argv);
-
-export { normalizeModuleName, discoverScripts, getScriptMetadata, Stream };

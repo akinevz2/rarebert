@@ -2,28 +2,18 @@
 
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { PROJECT_ROOT, SCRIPTS_DIR, LIB_DIR, discoverScripts } from '../lib/core.mjs';
+import { PROJECT_ROOT } from '../lib/core.mjs';
+import { listAllModules } from '../lib/modules.mjs';
 import * as memo from '../lib/memo.mjs';
 
-function listAllModules() {
-    const scripts = discoverScripts(SCRIPTS_DIR);
-    const libs = discoverScripts(LIB_DIR);
-    return [...scripts, ...libs];
-}
-
-export function runNodeCheck(filePath) {
+function runNodeCheck(filePath) {
     const result = spawnSync(process.execPath, ['--check', filePath], {
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'pipe']
     });
     const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
     const firstLine = output.split(/\r?\n/)[0] ?? '';
-    return {
-        ok: result.status === 0,
-        status: result.status,
-        firstLine,
-        output
-    };
+    return { ok: result.status === 0, firstLine };
 }
 
 async function main(args = []) {
@@ -64,10 +54,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     main(process.argv.slice(2));
 }
 
-export {
-    listAllModules,
-    main
-};
+export { runNodeCheck, main };
 
 export default {
     name: 'check',

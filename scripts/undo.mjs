@@ -3,14 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PROJECT_ROOT } from '../lib/core.mjs';
-
-const LAST_MODULE_FILE = path.join(PROJECT_ROOT, '.last-module');
-
-function readLastModule() {
-    if (!fs.existsSync(LAST_MODULE_FILE)) return null;
-    const rel = fs.readFileSync(LAST_MODULE_FILE, 'utf-8').trim();
-    return rel || null;
-}
+import { readLastModule, clearLastModule } from '../lib/editor.mjs';
 
 async function main(args = []) {
     if (args.includes('--help') || args.includes('-h')) {
@@ -35,7 +28,7 @@ async function main(args = []) {
         console.error(`Module file not found (already removed?): ${rel}`);
     }
 
-    fs.unlinkSync(LAST_MODULE_FILE);
+    clearLastModule();
     console.error('✓ Cleared .last-module marker');
 }
 
@@ -43,10 +36,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     main(process.argv.slice(2));
 }
 
-export {
-    readLastModule,
-    main
-};
+export { main };
 
 export default {
     name: 'undo',

@@ -2,9 +2,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { PROJECT_ROOT } from '../lib/core.mjs';
+import { editFile } from '../lib/editor.mjs';
 
 const SCRIPTS_DIR = path.join(PROJECT_ROOT, 'scripts');
 const LIB_DIR = path.join(PROJECT_ROOT, 'lib');
@@ -35,11 +35,9 @@ function suggestPath(input) {
         base = path.basename(resolved);
     }
     if (!fs.existsSync(dir)) return [];
-    const entries = listDir(dir).filter(p => {
-        if (base === '') return true;
-        return path.basename(p).toLowerCase().startsWith(base.toLowerCase());
-    });
-    return entries.map(p => ({ name: p, message: p }));
+    return listDir(dir)
+        .filter(p => base === '' || path.basename(p).toLowerCase().startsWith(base.toLowerCase()))
+        .map(p => ({ name: p, message: p }));
 }
 
 async function promptDestination() {
@@ -62,31 +60,28 @@ async function promptDestination() {
     });
 
     try {
-        const answer = await prompt.run();
-        return path.resolve(answer);
+        return path.resolve(await prompt.run());
     } catch {
         console.error('\nAborted.');
         process.exit(130);
     }
 }
 
-function copyDir(src, dest) {
-    if (!fs.existsSync(src)) return false;
-    fs.cpSync(src, dest, { recursive: true });
-    return true;
-}
-
-function copyFile(src, dest) {
-    if (!fs.existsSync(src)) return false;
-    fs.copyFileSync(src, dest);
-    return true;
-}
-
-function editFile(filePath) {
-    const editor = process.env.EDITOR || 'nano';
-    const editorFlags = process.env.EDITOR_FLAGS ? process.env.EDITOR_FLAGS.split(/\s+/).filter(Boolean) : [];
-    const result = spawnSync(editor, [...editorFlags, filePath], { stdio: 'inherit' });
-    return result.status ?? 0;
+function copyEntry(src, dest, kind) {
+    if (!fs.existsSync(src)) {
+        console.error(`skip ${kind} (source missing)`);
+        return;
+    }
+    if (fs.existsSync(dest)) {
+        console.error(`skip ${kind} (already exists at destination)`);
+        return;
+    }
+    if (fs.statSync(src).isDirectory()) {
+        fs.cpSync(src, dest, { recursive: true });
+    } else {
+        fs.copyFileSync(src, dest);
+    }
+    console.error(`copy ${kind} -> ${dest}`);
 }
 
 async function main(args = []) {
@@ -107,53 +102,25 @@ async function main(args = []) {
         console.error(`create ${dest}/`);
     }
 
-    const destScripts = path.join(dest, 'scripts');
-    if (!fs.existsSync(destScripts)) {
-        if (copyDir(SCRIPTS_DIR, destScripts)) {
-            console.error(`copy scripts/ -> ${path.relative(dest, destScripts) || 'scripts/'}`);
-        } else {
-            console.error('skip scripts/ (source missing)');
-        }
-    } else {
-        console.error(`skip scripts/ (already exists at destination)`);
-    }
-
-    const destLib = path.join(dest, 'lib');
-    if (!fs.existsSync(destLib)) {
-        if (copyDir(LIB_DIR, destLib)) {
-            console.error(`copy lib/ -> ${path.relative(dest, destLib) || 'lib/'}`);
-        } else {
-            console.error('skip lib/ (source missing)');
-        }
-    } else {
-        console.error(`skip lib/ (already exists at destination)`);
-    }
+    copyEntry(SCRIPTS_DIR, path.join(dest, 'scripts'), 'scripts/');
+    copyEntry(LIB_DIR, path.join(dest, 'lib'), 'lib/');
+    copyEntry(OPENCODE_SRC, path.join(dest, 'opencode.json'), 'opencode.json');
 
     const destMakefile = path.join(dest, 'Makefile');
-    if (!fs.existsSync(destMakefile)) {
-        if (copyFile(MAKEFILE_SRC, destMakefile)) {
-            console.error(`copy Makefile -> ${destMakefile}`);
+    if (fs.existsSync(destMakefile)) {
+        if (fs.existsSync(MAKEFILE_SRC)) {
+            const existing = fs.readFileSync(destMakefile, 'utf-8');
+            const incoming = fs.readFileSync(MAKEFILE_SRC, 'utf-8');
+            const separator = existing.endsWith('\n') ? '' : '\n';
+            fs.writeFileSync(destMakefile, existing + separator + '\n# --- appended by rarebert jump ---\n' + incoming);
+            console.error(`concat Makefile -> ${destMakefile}`);
+            console.error(`opening $EDITOR ${destMakefile}`);
+            editFile(destMakefile);
         } else {
             console.error('skip Makefile (source missing)');
         }
-    } else if (fs.existsSync(MAKEFILE_SRC)) {
-        const existing = fs.readFileSync(destMakefile, 'utf-8');
-        const incoming = fs.readFileSync(MAKEFILE_SRC, 'utf-8');
-        const separator = existing.endsWith('\n') ? '' : '\n';
-        fs.writeFileSync(destMakefile, existing + separator + '\n# --- appended by rarebert jump ---\n' + incoming);
-        console.error(`concat Makefile -> ${destMakefile}`);
-        console.error(`opening $EDITOR ${destMakefile}`);
-        editFile(destMakefile);
     } else {
-        console.error('skip Makefile (source missing)');
-    }
-
-    if (fs.existsSync(OPENCODE_SRC)) {
-        const destConfig = path.join(dest, 'opencode.json');
-        copyFile(OPENCODE_SRC, destConfig);
-        console.error(`copy opencode.json -> ${destConfig}`);
-    } else {
-        console.error('skip opencode.json (source missing)');
+        copyEntry(MAKEFILE_SRC, destMakefile, 'Makefile');
     }
 
     console.error('\n✓ jump complete');
@@ -163,14 +130,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     main(process.argv.slice(2));
 }
 
-export {
-    promptDestination,
-    suggestPath,
-    copyDir,
-    copyFile,
-    editFile,
-    main
-};
+export { promptDestination, suggestPath, main };
 
 export default {
     name: 'jump',
