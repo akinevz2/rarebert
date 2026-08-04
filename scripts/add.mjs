@@ -10,7 +10,7 @@ import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
-import { resolveOpencode } from '../lib/opencode.mjs';
+import { opencode } from '../lib/opencode.mjs';
 import { languages } from '../lib/languages.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 
@@ -257,7 +257,7 @@ async function main(args = []) {
     console.log(
         `$ opencode run "<prompt: ${instruction.length} bytes, 1 file>" -m ${model} --auto`
     );
-    const result = spawnSync(resolveOpencode(), ocArgs, {
+    const result = spawnSync(opencode.resolve(), ocArgs, {
         cwd: project.root,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'inherit']

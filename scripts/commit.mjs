@@ -8,7 +8,7 @@ import Enquirer from 'enquirer';
 import { project, exit } from '../lib/core.mjs';
 import { listAllModules } from '../lib/modules.mjs';
 import { git } from '../lib/git.mjs';
-import { readOpendeConfig, listModels, promptModel, resolveModel } from '../lib/models.mjs';
+import { models } from '../lib/models.mjs';
 import { memo } from '../lib/memo.mjs';
 import { editor } from '../lib/editor.mjs';
 import { opencode } from '../lib/opencode.mjs';
@@ -252,7 +252,7 @@ async function main(args = []) {
         return;
     }
 
-    const model = await resolveModel(args.find((a) => !a.startsWith('-') && a));
+    const model = await models.resolve(args.find((a) => !a.startsWith('-') && a));
 
     if (choice === 'proceed') {
         if (interactive && (await promptBail('Bail before running opencode summary?'))) {
