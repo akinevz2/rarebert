@@ -1,0 +1,379 @@
+[
+    // ───────────────────────── save / exit ─────────────────────────
+    // send vim command to save and exit command mode
+    {
+        "key": "ctrl+s",
+        "command": "vim.remap",
+        "when": "vim.mode == 'Insert'",
+        "args": {
+            "after": [
+                "<Esc>",
+                ":w"
+            ]
+        }
+    },
+    // ───────────────────────── search ─────────────────────────
+    {
+        "key": "ctrl+/",
+        "command": "workbench.action.quickOpen",
+        "when": "!editorFocus"
+    },
+    // ───────────────────────── notifications ─────────────────────────
+    {
+        "key": "ctrl+u",
+        "command": "notifications.toggleList",
+        "when": "(editorFocus && vim.mode == 'Normal') || notificationFocus || filesExplorerFocus"
+    },
+    {
+        "key": "ctrl+d",
+        "command": "notifications.toggleList",
+        "when": "(editorFocus && vim.mode == 'Normal') || panelFocus || auxiliaryBarFocus"
+    },
+    {
+        "key": "ctrl+d",
+        "command": "gitlens.diffWithPrevious",
+        "when": "editorTextFocus && vim.mode == 'Normal'"
+    },
+    {
+        "key": "ctrl+d",
+        "command": "notification.clear",
+        "when": "notificationFocus"
+    },
+    {
+        "key": "ctrl+d",
+        "command": "gitlens.quickOpenFileHistory",
+        "when": "filesExplorerFocus"
+    },
+    // ───────────────────────── toggle bars ─────────────────────────
+    {
+        "key": "ctrl+u",
+        "command": "workbench.action.closeAuxiliaryBar",
+        "when": "vim.active && vim.mode == 'Insert'"
+    },
+    {
+        "key": "ctrl+b",
+        "command": "workbench.action.closeAuxiliaryBar",
+        "when": "vim.active && auxiliaryBarVisible"
+    },
+    {
+        "key": "ctrl+b",
+        "command": "workbench.action.togglePanel",
+        "when": "vim.active && panelMaximized && !panelFocus"
+    },
+    {
+        "key": "ctrl+b",
+        "command": "workbench.action.togglePanel",
+        "when": "editorTextFocus || panelFocus"
+    },
+    {
+        "key": "ctrl+b",
+        "command": "workbench.action.closeSidebar",
+        "when": "vim.active && sideBarVisible"
+    },
+    // minimize the panel after it has been maximized (most specific — must be last)
+    {
+        "key": "ctrl+b",
+        "command": "workbench.action.toggleMaximizedPanel",
+        "when": "panelMaximized"
+    },
+    // ───────────────────────── inline chat (alt+i) ─────────────────────────
+    {
+        "key": "alt+i",
+        "command": "workbench.panel.chat.view.copilot.focus",
+        "when": "panelVisible || panelFocus"
+    },
+    {
+        "key": "alt+i",
+        "command": "workbench.panel.chat.view.copilot.focus",
+        "when": "vim.active && (editorTextFocus || auxiliaryBarVisible) && !auxiliaryBarMaximized"
+    },
+    {
+        "key": "alt+i",
+        "command": "workbench.action.closeAuxiliaryBar",
+        "when": "vim.active && auxiliaryBarMaximized || panelMaximized"
+    },
+    {
+        "key": "alt+i",
+        "command": "workbench.action.toggleMaximizedAuxiliaryBar",
+        "when": "vim.active && auxiliaryBarFocus && !auxiliaryBarMaximized"
+    },
+    // ───────────────────────── terminal / panel toggle (ctrl+i) ─────────────────────────
+    {
+        "key": "ctrl+i",
+        "command": "-editor.action.startFindReplaceAction",
+        "when": "editorFocus"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "workbench.action.toggleSidebarVisibility",
+        "when": "sideBarFocus && vim.active"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "workbench.action.toggleMaximizedPanel",
+        "when": "vim.mode == 'Insert' && editorTextFocus || panelVisible"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "workbench.action.togglePanel",
+        "when": "(!panelVisible || (panelFocus && !panelMaximized)) && !auxiliaryBarVisible"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "terminal.focus",
+        "when": "auxiliaryBarVisible"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "workbench.view.scm",
+        "when": "filesExplorerFocus"
+    },
+    // ───────────────────────── file explorer (ctrl+g) ─────────────────────────
+    {
+        "key": "ctrl+g",
+        "command": "workbench.files.action.focusFilesExplorer",
+        "when": "!filesExplorerFocus && vim.active"
+    },
+    {
+        "key": "ctrl+g",
+        "command": "workbench.action.focusActiveEditorGroup",
+        "when": "!editorTextFocus && vim.active"
+    },
+    {
+        "key": "ctrl+g",
+        "command": "workbench.files.action.focusFilesExplorer",
+        "when": "!editorTextFocus && !filesExplorerFocus"
+    },
+    // ───────────────────────── auxiliary bar (ctrl+h) ─────────────────────────
+    {
+        "key": "ctrl+h",
+        "command": "workbench.action.toggleAuxiliaryBar",
+        "when": "!auxiliaryBarFocus && vim.active"
+    },
+    // ───────────────────────── problems panel (ctrl+f) ─────────────────────────
+    {
+        "key": "ctrl+f",
+        "command": "workbench.actions.view.problems",
+        "when": "editorTextFocus && vim.active"
+    },
+    {
+        "key": "ctrl+f",
+        "command": "workbench.action.tasks.toggleProblems",
+        "when": "!editorTextFocus && vim.active"
+    },
+    // ───────────────────────── show hover (ctrl+q) ─────────────────────────
+    {
+        "key": "ctrl+q",
+        "command": "editor.action.showHover",
+        "when": "editorTextFocus"
+    },
+    // ───────────────────────── navigate buffers (ctrl+j / ctrl+k) ─────────────────────────
+    {
+        "key": "ctrl+j",
+        "command": "workbench.action.previousEditorInGroup"
+    },
+    {
+        "key": "ctrl+k",
+        "command": "workbench.action.nextEditorInGroup"
+    },
+    // ───────────────────────── navigate lists (ctrl+j / ctrl+k) ─────────────────────────
+    {
+        "key": "ctrl+j",
+        "command": "list.focusDown",
+        "when": "!inputFocus"
+    },
+    {
+        "key": "ctrl+k",
+        "command": "list.focusUp",
+        "when": "!inputFocus"
+    },
+    // ───────────────────────── scroll lists (ctrl+y / ctrl+e) ─────────────────────────
+    {
+        "key": "ctrl+y",
+        "command": "scrollLineUp",
+        "when": "!inputFocus"
+    },
+    {
+        "key": "ctrl+e",
+        "command": "scrollLineDown",
+        "when": "!inputFocus"
+    },
+    // ───────────────────────── quick open ─────────────────────────
+    {
+        "key": "ctrl+o",
+        "command": "workbench.action.quickOpen",
+        "when": "editorTextFocus && vim.active && !listFocus"
+    },
+    {
+        "key": "ctrl+shift+o",
+        "command": "vscode.openFolder"
+    },
+    {
+        "key": "ctrl+shift+f",
+        "command": "workbench.action.gotoSymbol"
+    },
+    // ───────────────────────── terminal overrides ─────────────────────────
+    {
+        "key": "ctrl+l",
+        "command": "workbench.action.terminal.sendSequence",
+        "args": {
+            "text": "\u000c"
+        },
+        "when": "terminalFocus"
+    },
+    {
+        "key": "ctrl+q",
+        "command": "workbench.action.terminal.sendSequence",
+        "args": {
+            "text": "\u0011"
+        },
+        "when": "terminalFocus"
+    },
+    {
+        "key": "ctrl-v",
+        "command": "-workbench.action.terminal.sendSequence",
+        "when": "terminalFocus && !accessibilityModeEnabled"
+    },
+    // ───────────────────────── disable default chat / extension keybindings ─────────────────────────
+    {
+        "key": "ctrl+alt+i",
+        "command": "-workbench.panel.chat",
+        "when": "workbench.panel.chat.view.copilot.active"
+    },
+    {
+        "key": "shift+alt+i",
+        "command": "-workbench.action.chat.open"
+    },
+    {
+        "key": "ctrl+shift+l",
+        "command": "-continue.focusContinueInputWithoutClear"
+    },
+    {
+        "key": "alt+l",
+        "command": "-toggleFindInSelection",
+        "when": "editorFocus"
+    },
+    {
+        "key": "alt+l",
+        "command": "-toggleSearchEditorContextLines",
+        "when": "inSearchEditor"
+    },
+    {
+        "key": "ctrl+l",
+        "command": "-continue.focusContinueInput"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-continue.focusEdit"
+    },
+    {
+        "key": "ctrl+shift+i",
+        "command": "-continue.focusEditWithoutClear"
+    },
+    {
+        "key": "shift+alt+a",
+        "command": "-editor.action.blockComment",
+        "when": "editorTextFocus && !editorReadonly"
+    },
+    {
+        "key": "ctrl+k ctrl+a",
+        "command": "-continue.toggleTabAutocompleteEnabled",
+        "when": "!terminalFocus"
+    },
+    {
+        "key": "ctrl+shift+i",
+        "command": "-workbench.action.chat.openEditSession",
+        "when": "chatEditingParticipantRegistered && view != 'workbench.panel.chat.view.edits'"
+    },
+    {
+        "key": "ctrl+shift+i",
+        "command": "-workbench.panel.chatEditing",
+        "when": "workbench.panel.chat.view.edits.active"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-workbench.action.chat.startVoiceChat",
+        "when": "chatIsEnabled && hasSpeechProvider && inChatInput && !chatSessionRequestInProgress && !editorFocus && !notebookEditorFocused && !scopedVoiceChatGettingReady && !speechToTextInProgress || chatIsEnabled && hasSpeechProvider && inlineChatFocused && !chatSessionRequestInProgress && !editorFocus && !notebookEditorFocused && !scopedVoiceChatGettingReady && !speechToTextInProgress"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-workbench.action.chat.stopListeningAndSubmit",
+        "when": "inChatInput && voiceChatInProgress && scopedVoiceChatInProgress == 'editor' || inChatInput && voiceChatInProgress && scopedVoiceChatInProgress == 'inline' || inChatInput && voiceChatInProgress && scopedVoiceChatInProgress == 'quick' || inChatInput && voiceChatInProgress && scopedVoiceChatInProgress == 'view' || inlineChatFocused && voiceChatInProgress && scopedVoiceChatInProgress == 'editor' || inlineChatFocused && voiceChatInProgress && scopedVoiceChatInProgress == 'inline' || inlineChatFocused && voiceChatInProgress && scopedVoiceChatInProgress == 'quick' || inlineChatFocused && voiceChatInProgress && scopedVoiceChatInProgress == 'view'"
+    },
+    {
+        "key": "ctrl+alt+i",
+        "command": "-workbench.action.chat.open"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-inlineChat.start",
+        "when": "editorFocus && inlineChatHasEditsAgent && inlineChatPossible && !editorReadonly && !editorSimpleInput || editorFocus && inlineChatHasProvider && inlineChatPossible && !editorReadonly && !editorSimpleInput"
+    },
+    {
+        "key": "ctrl+k i",
+        "command": "-inlineChat.startWithCurrentLine",
+        "when": "inlineChatHasProvider && !editorReadonly && !inlineChatVisible"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-inlineChat.startWithCurrentLine",
+        "when": "inlineChatHasProvider && inlineChatShowingHint && !editorReadonly && !inlineChatVisible"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-inlineChat2.stop",
+        "when": "inlineChatHasEditsAgent && inlineChatVisible && chatEdits.requestCount == '0'"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-workbench.action.terminal.chat.start",
+        "when": "terminalChatAgentRegistered && terminalFocusInAny && terminalHasBeenCreated || terminalChatAgentRegistered && terminalFocusInAny && terminalProcessSupported"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-inlineChat2.reveal",
+        "when": "inlineChatHasEditsAgent && !chatEdits.isGlobalEditingSession && chatEdits.requestCount >= 1"
+    },
+    {
+        "key": "ctrl+k ctrl+i",
+        "command": "-editor.action.showHover",
+        "when": "editorTextFocus"
+    },
+    {
+        "key": "ctrl+k ctrl+i",
+        "command": "-workbench.action.terminal.focusHover",
+        "when": "terminalFocus && terminalHasBeenCreated || terminalFocus && terminalIsOpen || terminalFocus && terminalProcessSupported || terminalHasBeenCreated && terminalTabsFocus || terminalIsOpen && terminalTabsFocus || terminalProcessSupported && terminalTabsFocus"
+    },
+    {
+        "key": "ctrl+oem_1 ctrl+shift+i",
+        "command": "-testing.toggleInlineCoverage"
+    },
+    {
+        "key": "ctrl+oem_1 ctrl+i",
+        "command": "-testing.toggleInlineTestOutput"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-editor.action.triggerSuggest",
+        "when": "editorHasCompletionItemProvider && textInputFocus && !editorReadonly && !suggestWidgetVisible"
+    },
+    {
+        "key": "ctrl+i",
+        "command": "-focusSuggestion",
+        "when": "suggestWidgetVisible && textInputFocus && !suggestWidgetHasFocusedSuggestion"
+    },
+    {
+        "key": "ctrl+l ctrl+i",
+        "command": "-latex-workshop.shortcut.textit",
+        "when": "editorTextFocus && !editorReadonly && editorLangId =~ /^latex$|^latex-expl3$|^doctex$|^rsweave$|^jlweave$|^pweave$/"
+    },
+    {
+        "key": "ctrl+m ctrl+i",
+        "command": "-latex-workshop.shortcut.mathit",
+        "when": "editorTextFocus && !editorReadonly && editorLangId =~ /^latex$|^latex-expl3$|^doctex$|^rsweave$|^jlweave$|^pweave$/"
+    },
+    {
+        "key": "ctrl+e",
+        "command": "-workbench.action.quickOpen"
+    }
+]

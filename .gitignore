@@ -14,6 +14,7 @@ node_modules
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea
 .DS_Store
 *.suo
@@ -39,3 +40,7 @@ report/
 
 # opencode scratch space (referenced from AGENTS.md)
 .opencode/system/
+
+# opencode project config (local-only, see ~/.config/opencode/opencode.json for global)
+opencode.json
+opencode.jsonc
