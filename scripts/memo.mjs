@@ -75,37 +75,14 @@ async function addMemo(moduleArg, memoContentArg) {
 }
 
 async function bare(args) {
-    const hadMemos = printAllMemos();
-
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-    if (nonFlag.length >= 2) {
-        await addMemo(nonFlag[0], nonFlag.slice(1).join(' '));
-        return;
-    }
 
-    if (!hadMemos) {
-        const proceed = await confirm('No memos found. Add one now?', true);
-        if (!proceed) return;
-    }
+    printAllMemos();
 
-    const action = await promptChoice(['add', 'exit'], 'What next?', 'Add a memo or exit');
-    if (action === 'add') {
-        const moduleArg = nonFlag[0] || '';
-        await addMemo(moduleArg, '');
-    }
-}
+    const moduleArg = nonFlag[0] || '';
+    const memoContentArg = nonFlag.slice(1).join(' ');
 
-async function promptChoice(choices, message, name = 'choice') {
-    const prompt = new Enquirer.Select({
-        name,
-        message,
-        choices: choices.map((c) => ({ name: c, message: c }))
-    });
-    try {
-        return await prompt.run();
-    } catch {
-        throw new AbortError();
-    }
+    await addMemo(moduleArg, memoContentArg);
 }
 
 async function multiSelectMemos(moduleName) {
