@@ -15,6 +15,55 @@ const { Select, Input, Confirm } = Enquirer;
 const REPORT_REMOTE = 'https://github.com/akinevz2/report-template.git';
 const REPORT_DIR = path.join(PROJECT_ROOT, 'report');
 const SRC_DIR = path.join(REPORT_DIR, 'src');
+const TOC_FILENAME = 'TOC.md';
+const TOC_PATH = path.join(SRC_DIR, TOC_FILENAME);
+
+function normalizeSectionRel(name) {
+    let rel = String(name).trim()
+        .replace(/^\.?\/?/, '')
+        .replace(/^(report\/)?src\//, '')
+        .replace(/^report\//, '');
+    rel = rel.split('/').filter(p => p && p !== '.' && p !== '..').join('/');
+    if (!rel) throw new Error('Invalid section path');
+    return rel.endsWith('.md') ? rel : `${rel}.md`;
+}
+
+function tocLinkFor(rel) {
+    const label = path.basename(rel, '.md').replace(/[-_]/g, ' ');
+    return `[${label}](./${rel})`;
+}
+
+function tocLinkRegex(rel) {
+    const escaped = rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`^.*\\]\\([^)]*${escaped}\\)\\s*$\\n?`, 'gm');
+}
+
+function appendToTOC(rel) {
+    const line = `${tocLinkFor(rel)}\n`;
+    if (!fs.existsSync(TOC_PATH)) {
+        fs.mkdirSync(path.dirname(TOC_PATH), { recursive: true });
+        fs.writeFileSync(TOC_PATH, line);
+        return;
+    }
+    const current = fs.readFileSync(TOC_PATH, 'utf-8');
+    if (tocLinkRegex(rel).test(current)) return;
+    const sep = current && !current.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(TOC_PATH, current + sep + line);
+}
+
+function removeFromTOC(rel) {
+    if (!fs.existsSync(TOC_PATH)) return;
+    const current = fs.readFileSync(TOC_PATH, 'utf-8');
+    const next = current.replace(tocLinkRegex(rel), '');
+    if (next !== current) fs.writeFileSync(TOC_PATH, next);
+}
+
+function rebuildAndOpen() {
+    console.error('\n--- rebuilding report and opening updated view ---');
+    if (!runMake('open')) {
+        console.error('(build/open failed; continuing)');
+    }
+}
 
 function reportGit(args, options = {}) {
     const result = spawnSync('git', args, {
@@ -29,6 +78,67 @@ function reportGit(args, options = {}) {
         stderr: result.stderr ?? '',
         ok: result.status === 0
     };
+}
+
+function hostGit(args, options = {}) {
+    const result = spawnSync('git', args, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: options.stdio ?? 'pipe'
+    });
+    if (result.error) throw result.error;
+    return {
+        status: result.status,
+        stdout: result.stdout ?? '',
+        stderr: result.stderr ?? '',
+        ok: result.status === 0
+    };
+}
+
+function isHostClean() {
+    const r = hostGit(['status', '--porcelain']);
+    return r.ok && r.stdout.trim() === '';
+}
+
+async function runHostCommit() {
+    console.error('\n--- rarebert repo has uncommitted changes; running `make commit` ---');
+    const result = spawnSync('make', ['commit'], {
+        cwd: PROJECT_ROOT,
+        stdio: 'inherit'
+    });
+    if (result.error) {
+        console.error(`make commit failed: ${result.error.message}`);
+        return false;
+    }
+    if (result.status !== 0) {
+        console.error(`make commit exited with status ${result.status}`);
+        return false;
+    }
+    return true;
+}
+
+async function assertHostCleanOrCommit() {
+    if (isHostClean()) return;
+    while (!isHostClean()) {
+        const r = hostGit(['status', '--short']);
+        console.error('\nrarebert working tree is not clean:');
+        process.stderr.write(r.stdout);
+        if (process.stdin.isTTY !== true) {
+            console.error('Non-interactive; aborting. Run `make commit` first.');
+            process.exit(1);
+        }
+        const ok = await new Confirm({
+            name: 'commit',
+            message: 'Run `make commit` now?'
+        }).run().catch(() => false);
+        if (!ok) {
+            console.error('Aborted. Commit or clean the rarebert repo before continuing.');
+            process.exit(1);
+        }
+        const success = await runHostCommit();
+        if (!success) process.exit(1);
+    }
+    console.error('rarebert working tree is clean.');
 }
 
 function ensureCloned() {
@@ -90,7 +200,7 @@ function walkMarkdown(dir, acc = [], base = dir) {
 }
 
 function listSections() {
-    const sections = walkMarkdown(SRC_DIR);
+    const sections = walkMarkdown(SRC_DIR).filter(s => s.rel !== `src/${TOC_FILENAME}`);
     sections.sort((a, b) => a.rel.localeCompare(b.rel));
     return sections;
 }
@@ -186,6 +296,14 @@ function isReportClean() {
     return r.ok && r.stdout.trim() === '';
 }
 
+function assertReportClean() {
+    if (isReportClean()) return;
+    const r = reportGit(['status', '--short']);
+    console.error('Report working tree is not clean. Commit or resolve changes before editing:');
+    process.stderr.write(r.stdout);
+    process.exit(1);
+}
+
 function assertCleanBeforeSwitch() {
     if (isReportClean()) return;
     const r = reportGit(['status', '--short']);
@@ -243,13 +361,17 @@ async function editSection(model, sectionPath, sectionRel) {
         finalStatus = first.code;
     }
 
+    if (finalStatus === 0) rebuildAndOpen();
     return finalStatus;
 }
 
 function sectionExists(name) {
-    const rel = name.replace(/^\.?\/?/, '').replace(/^src\//, '');
-    const full = path.join(SRC_DIR, rel.endsWith('.md') ? rel : `${rel}.md`);
-    return fs.existsSync(full) ? full : null;
+    try {
+        const rel = normalizeSectionRel(name);
+        if (rel === TOC_FILENAME) return TOC_PATH;
+        const full = path.join(SRC_DIR, rel);
+        return fs.existsSync(full) ? full : null;
+    } catch { return null; }
 }
 
 async function manageSections() {
@@ -260,6 +382,7 @@ async function manageSections() {
     } else {
         sections.forEach(s => console.error(`  ${s.rel}`));
     }
+    console.error(`  src/${TOC_FILENAME} (table of contents, auto-managed)`);
 
     const actionPrompt = new Select({
         name: 'action',
@@ -276,12 +399,24 @@ async function manageSections() {
 
     if (action === 'add') {
         const namePrompt = new Input({
-            message: 'New section path (e.g. methods/data.md):',
-            validate: v => (v && v.trim() ? true : 'Path is required')
+            message: 'New section name (created under src/, e.g. methods/data.md):',
+            validate: v => {
+                if (!v || !v.trim()) return 'Section name is required';
+                try { normalizeSectionRel(v); return true; }
+                catch (e) { return e.message; }
+            }
         });
         const name = (await namePrompt.run()).trim();
-        const rel = name.replace(/^\.?\/?/, '').replace(/^src\//, '');
-        const full = path.join(SRC_DIR, rel.endsWith('.md') ? rel : `${rel}.md`);
+        let rel;
+        try { rel = normalizeSectionRel(name); }
+        catch (e) { console.error(`Error: ${e.message}`); return; }
+
+        if (rel === TOC_FILENAME) {
+            console.error(`'${TOC_FILENAME}' is reserved for the table of contents.`);
+            return;
+        }
+
+        const full = path.join(SRC_DIR, rel);
         if (fs.existsSync(full)) {
             console.error(`Already exists: ${relPath(full)}`);
             return;
@@ -290,16 +425,23 @@ async function manageSections() {
         const title = path.basename(rel, '.md').replace(/[-_]/g, ' ');
         fs.writeFileSync(full, `# ${title}\n\n`);
         console.error(`Created: ${relPath(full)}`);
+
+        console.error(`Linking ${rel} in src/${TOC_FILENAME}...`);
+        appendToTOC(rel);
+        rebuildAndOpen();
     } else if (action === 'remove') {
         if (sections.length === 0) { console.error('Nothing to remove.'); return; }
         const choices = sections.map(s => ({ name: s.path, message: s.rel }));
         const pick = new Select({ name: 'section', message: 'Remove which section?', choices });
         const picked = await pick.run();
-        const rel = sections.find(s => s.path === picked).rel;
+        const section = sections.find(s => s.path === picked);
+        const rel = section.rel;
         const ok = await new Confirm({ name: 'ok', message: `Delete ${rel}?` }).run();
         if (!ok) { console.error('Cancelled.'); return; }
         fs.unlinkSync(picked);
         console.error(`Removed: ${rel}`);
+        removeFromTOC(section.rel.replace(/^src\//, ''));
+        rebuildAndOpen();
     }
 }
 
@@ -316,7 +458,12 @@ async function makeTodoNote() {
     let target;
     try { target = await targetPrompt.run(); } catch { return; }
 
-    const full = target === 'NOTES.md' ? path.join(REPORT_DIR, 'NOTES.md') : target;
+    const isNotes = target === 'NOTES.md';
+    const full = isNotes ? path.join(REPORT_DIR, 'NOTES.md') : target;
+    if (!isNotes && path.basename(full) === TOC_FILENAME) {
+        console.error(`'${TOC_FILENAME}' is auto-managed; pick a different section.`);
+        return;
+    }
     const notePrompt = new Input({
         message: 'TODO note (single line):',
         validate: v => (v && v.trim() ? true : 'Note is required')
@@ -326,11 +473,12 @@ async function makeTodoNote() {
     const line = `- [ ] TODO (${stamp}): ${note}\n`;
     if (!fs.existsSync(full)) {
         fs.mkdirSync(path.dirname(full), { recursive: true });
-        fs.writeFileSync(full, target === 'NOTES.md' ? `# Notes\n\n${line}` : `${line}`);
+        fs.writeFileSync(full, isNotes ? `# Notes\n\n${line}` : `${line}`);
     } else {
         fs.appendFileSync(full, line);
     }
     console.error(`Appended TODO to ${relPath(full)}`);
+    if (!isNotes) rebuildAndOpen();
 }
 
 async function runMenu(args) {
@@ -340,7 +488,9 @@ async function runMenu(args) {
     const modelArg = nonFlag[1];
 
     ensureCloned();
+    await assertHostCleanOrCommit();
     await promptBranch();
+    assertReportClean();
     if (!runMake('report')) {
         console.error('continuing despite build failure (toolchain may be missing).');
     }
@@ -494,7 +644,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     main(process.argv.slice(2));
 }
 
-export { ensureCloned, runMake, listSections, promptSection, isReportClean, editSection, commitSection, manageSections, makeTodoNote, runMenu, main };
+export { ensureCloned, runMake, listSections, promptSection, isReportClean, isHostClean, assertReportClean, assertHostCleanOrCommit, editSection, commitSection, manageSections, makeTodoNote, runMenu, normalizeSectionRel, appendToTOC, removeFromTOC, rebuildAndOpen, main };
 
 export default {
     name: 'article',
