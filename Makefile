@@ -1,6 +1,6 @@
 # Auto-generated Makefile
 
-.PHONY: add check commit create diff edit jump memo reload undo implement help open
+.PHONY: add article check commit create diff edit jump memo reload run undo implement help open
 
 
 add:
@@ -11,6 +11,9 @@ add:
 	  git add -A; \
 	  $${EDITOR:-nano} $$EDITOR_FLAGS "$$file"; \
 	  opencode run "Implement the module in $$file" --auto -m $(MODEL)
+
+article:
+	node index.js article
 
 check:
 	node index.js check
@@ -36,6 +39,9 @@ memo:
 reload:
 	node index.js reload
 	  @if [ -n "$$FORGET" ]; then rm -f .last-module; fi
+
+run:
+	node index.js run
 
 undo:
 	node index.js undo

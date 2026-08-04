@@ -33,3 +33,6 @@ dist-ssr
 *.memo
 *.mjs.
 *.js.
+
+# Academic report working tree (managed by scripts/article.mjs)
+report/
