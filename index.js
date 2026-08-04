@@ -45,7 +45,7 @@ async function helpVerbose() {
     }
 }
 
-const HELP_PREFIXES = ['help', 'h', '--lib', '--scripts', '--script'];
+const HELP_PREFIXES = ['help', 'h', '--lib', '--scripts', '--script', '--src'];
 
 async function main(argv) {
     const cmd = argv[2];
