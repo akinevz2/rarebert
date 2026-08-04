@@ -1,0 +1,17 @@
+{
+  "name": "open-in-editor",
+  "description": "Open a file in VS Code using the 'code' command with remote flag",
+  "commands": [
+    {
+      "action": "bash",
+      "prompt": "Run: code {{file}} -r"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "file",
+      "type": "string",
+      "description": "Path to the file to open in VS Code"
+    }
+  ]
+}
