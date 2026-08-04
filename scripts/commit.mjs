@@ -97,7 +97,7 @@ async function promptModifyPrompt() {
     const prompt = new Enquirer.Confirm({
         name: 'modify',
         message: 'Modify the instruction line sent to opencode? (No = yeet the default)',
-        initial: true
+        initial: false
     });
 
     try {
