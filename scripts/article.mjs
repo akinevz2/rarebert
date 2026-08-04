@@ -137,6 +137,50 @@ async function promptSection(sections, sectionArg) {
     }
 }
 
+function currentBranch() {
+    const r = reportGit(['rev-parse', '--abbrev-ref', 'HEAD']);
+    return r.ok ? r.stdout.trim() : '';
+}
+
+function branchExists(name) {
+    const r = reportGit(['rev-parse', '--verify', '--quiet', `refs/heads/${name}`]);
+    return r.ok && r.status === 0;
+}
+
+async function promptBranch() {
+    const cur = currentBranch();
+    if (cur && cur !== 'template' && cur !== 'HEAD') {
+        console.error(`on branch: ${cur}`);
+        return;
+    }
+    const fallback = `article/${new Date().toISOString().slice(0, 10)}`;
+    let name;
+    if (process.stdin.isTTY === true) {
+        const input = new Input({
+            name: 'branch',
+            message: 'New branch name (off template):',
+            default: fallback,
+            validate: v => (v && v.trim() && /^\S+$/.test(v.trim()) ? true : 'Branch name is required (no spaces)')
+        });
+        try { name = (await input.run()).trim(); }
+        catch { console.error('\nAborted.'); process.exit(130); }
+    } else {
+        name = fallback;
+    }
+
+    let res;
+    if (branchExists(name)) {
+        res = reportGit(['checkout', name]);
+    } else {
+        res = reportGit(['checkout', '-b', name, 'template']);
+    }
+    if (!res.ok) {
+        console.error(`git checkout failed: ${res.stderr.trim() || res.stdout.trim()}`);
+        process.exit(1);
+    }
+    console.error(`switched to branch: ${name}`);
+}
+
 function isReportClean() {
     const r = reportGit(['status', '--porcelain']);
     return r.ok && r.stdout.trim() === '';
@@ -296,6 +340,7 @@ async function runMenu(args) {
     const modelArg = nonFlag[1];
 
     ensureCloned();
+    await promptBranch();
     if (!runMake('report')) {
         console.error('continuing despite build failure (toolchain may be missing).');
     }
@@ -312,7 +357,7 @@ async function runMenu(args) {
         const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
         const status = await editSection(model, section.path, section.rel);
         if (status !== 0) console.error(`edit session exited with status ${status}.`);
-        commitSection(section.path, section.rel);
+        await confirmCommit(`update ${section.rel}`);
         process.exit(status);
     }
 
@@ -337,7 +382,13 @@ async function runMenu(args) {
         catch { console.error('\nAborted.'); process.exit(130); }
 
         if (choice === 'exit') { process.exit(0); }
-        if (choice === 'manage') { await manageSections(); continue; }
+        if (choice === 'manage') {
+            const before = isReportClean();
+            await manageSections();
+            const after = isReportClean();
+            if (before && !after) await confirmCommit('manage sections');
+            continue;
+        }
         if (choice === 'todo') { await makeTodoNote(); continue; }
         if (choice === 'edit') {
             assertCleanBeforeSwitch();
@@ -350,7 +401,7 @@ async function runMenu(args) {
             const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
             const status = await editSection(model, section.path, section.rel);
             if (status !== 0) console.error(`edit session exited with status ${status}.`);
-            commitSection(section.path, section.rel);
+            await confirmCommit(`update ${section.rel}`);
         }
     }
 }
@@ -369,6 +420,50 @@ function commitSection(sectionPath, sectionRel) {
     }
 
     const message = `article: update ${sectionRel}`;
+    const commitResult = reportGit(['commit', '-m', message], { stdio: 'inherit' });
+    if (!commitResult.ok) {
+        console.error(`git commit exited with status ${commitResult.status}`);
+        return false;
+    }
+    console.error(`committed: ${message}`);
+    return true;
+}
+
+async function confirmCommit(label) {
+    if (process.stdin.isTTY !== true) {
+        console.error('Non-interactive; skipping manual commit confirmation.');
+        return false;
+    }
+    const dirty = !isReportClean();
+    if (!dirty) {
+        console.error('No uncommitted changes.');
+        return false;
+    }
+    const r = reportGit(['status', '--short']);
+    process.stderr.write(r.stdout);
+    const ok = await new Confirm({
+        name: 'commit',
+        message: `Commit ${label ? `${label} ` : ''}changes now?`
+    }).run().catch(() => false);
+    if (!ok) {
+        console.error('Skipped commit; changes left in working tree.');
+        return false;
+    }
+    const msgPrompt = new Input({
+        name: 'message',
+        message: 'Commit message:',
+        default: label ? `article: ${label}` : 'article: update',
+        validate: v => (v && v.trim() ? true : 'Message is required')
+    });
+    let message;
+    try { message = (await msgPrompt.run()).trim(); }
+    catch { console.error('Commit cancelled.'); return false; }
+
+    const addResult = reportGit(['add', '-A']);
+    if (!addResult.ok) {
+        console.error(`git add failed: ${addResult.stderr.trim()}`);
+        return false;
+    }
     const commitResult = reportGit(['commit', '-m', message], { stdio: 'inherit' });
     if (!commitResult.ok) {
         console.error(`git commit exited with status ${commitResult.status}`);
