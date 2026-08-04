@@ -10,7 +10,9 @@ import { exitIDE } from '../lib/ide.mjs';
 import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
 import { relPath } from '../lib/libs.mjs';
 
-const REPORT_REMOTE = 'https://github.com/akinevz2/academic-report.git';
+const { Select, Input, Confirm } = Enquirer;
+
+const REPORT_REMOTE = 'https://github.com/akinevz2/report-template.git';
 const REPORT_DIR = path.join(PROJECT_ROOT, 'report');
 const SRC_DIR = path.join(REPORT_DIR, 'src');
 
@@ -200,6 +202,159 @@ async function editSection(model, sectionPath, sectionRel) {
     return finalStatus;
 }
 
+function sectionExists(name) {
+    const rel = name.replace(/^\.?\/?/, '').replace(/^src\//, '');
+    const full = path.join(SRC_DIR, rel.endsWith('.md') ? rel : `${rel}.md`);
+    return fs.existsSync(full) ? full : null;
+}
+
+async function manageSections() {
+    const sections = listSections();
+    console.error('\n=== Sections ===');
+    if (sections.length === 0) {
+        console.error('(none)');
+    } else {
+        sections.forEach(s => console.error(`  ${s.rel}`));
+    }
+
+    const actionPrompt = new Select({
+        name: 'action',
+        message: 'Manage sections',
+        choices: [
+            { name: 'add', message: 'Add a new section' },
+            { name: 'remove', message: 'Remove a section' },
+            { name: 'back', message: 'Back to menu' }
+        ]
+    });
+    let action;
+    try { action = await actionPrompt.run(); }
+    catch { return; }
+
+    if (action === 'add') {
+        const namePrompt = new Input({
+            message: 'New section path (e.g. methods/data.md):',
+            validate: v => (v && v.trim() ? true : 'Path is required')
+        });
+        const name = (await namePrompt.run()).trim();
+        const rel = name.replace(/^\.?\/?/, '').replace(/^src\//, '');
+        const full = path.join(SRC_DIR, rel.endsWith('.md') ? rel : `${rel}.md`);
+        if (fs.existsSync(full)) {
+            console.error(`Already exists: ${relPath(full)}`);
+            return;
+        }
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        const title = path.basename(rel, '.md').replace(/[-_]/g, ' ');
+        fs.writeFileSync(full, `# ${title}\n\n`);
+        console.error(`Created: ${relPath(full)}`);
+    } else if (action === 'remove') {
+        if (sections.length === 0) { console.error('Nothing to remove.'); return; }
+        const choices = sections.map(s => ({ name: s.path, message: s.rel }));
+        const pick = new Select({ name: 'section', message: 'Remove which section?', choices });
+        const picked = await pick.run();
+        const rel = sections.find(s => s.path === picked).rel;
+        const ok = await new Confirm({ name: 'ok', message: `Delete ${rel}?` }).run();
+        if (!ok) { console.error('Cancelled.'); return; }
+        fs.unlinkSync(picked);
+        console.error(`Removed: ${rel}`);
+    }
+}
+
+async function makeTodoNote() {
+    const sections = listSections();
+    const targetPrompt = new Select({
+        name: 'target',
+        message: 'Append TODO to which section?',
+        choices: [
+            ...sections.map(s => ({ name: s.path, message: s.rel })),
+            { name: 'NOTES.md', message: 'report/NOTES.md (scratch pad)' }
+        ]
+    });
+    let target;
+    try { target = await targetPrompt.run(); } catch { return; }
+
+    const full = target === 'NOTES.md' ? path.join(REPORT_DIR, 'NOTES.md') : target;
+    const notePrompt = new Input({
+        message: 'TODO note (single line):',
+        validate: v => (v && v.trim() ? true : 'Note is required')
+    });
+    const note = (await notePrompt.run()).trim();
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const line = `- [ ] TODO (${stamp}): ${note}\n`;
+    if (!fs.existsSync(full)) {
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, target === 'NOTES.md' ? `# Notes\n\n${line}` : `${line}`);
+    } else {
+        fs.appendFileSync(full, line);
+    }
+    console.error(`Appended TODO to ${relPath(full)}`);
+}
+
+async function runMenu(args) {
+    const preview = args.includes('--preview') || args.includes('-p');
+    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const sectionArg = nonFlag[0];
+    const modelArg = nonFlag[1];
+
+    ensureCloned();
+    if (!runMake('report')) {
+        console.error('continuing despite build failure (toolchain may be missing).');
+    }
+    if (preview) runMake('open');
+
+    if (sectionArg) {
+        assertCleanBeforeSwitch();
+        const sections = listSections();
+        if (sections.length === 0) {
+            console.error(`No markdown sections found under ${relPath(SRC_DIR)}/.`);
+            process.exit(1);
+        }
+        const section = await promptSection(sections, sectionArg);
+        const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
+        const status = await editSection(model, section.path, section.rel);
+        if (status !== 0) console.error(`edit session exited with status ${status}.`);
+        commitSection(section.path, section.rel);
+        process.exit(status);
+    }
+
+    if (process.stdin.isTTY !== true) {
+        console.error('Non-interactive; pass a section path as an argument.');
+        process.exit(1);
+    }
+
+    while (true) {
+        const menu = new Select({
+            name: 'mode',
+            message: 'Article mode',
+            choices: [
+                { name: 'manage', message: 'Manage sections' },
+                { name: 'edit', message: 'Edit a section' },
+                { name: 'todo', message: 'Make a TODO note' },
+                { name: 'exit', message: 'Exit' }
+            ]
+        });
+        let choice;
+        try { choice = await menu.run(); }
+        catch { console.error('\nAborted.'); process.exit(130); }
+
+        if (choice === 'exit') { process.exit(0); }
+        if (choice === 'manage') { await manageSections(); continue; }
+        if (choice === 'todo') { await makeTodoNote(); continue; }
+        if (choice === 'edit') {
+            assertCleanBeforeSwitch();
+            const sections = listSections();
+            if (sections.length === 0) {
+                console.error(`No markdown sections found under ${relPath(SRC_DIR)}/.`);
+                continue;
+            }
+            const section = await promptSection(sections, null);
+            const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
+            const status = await editSection(model, section.path, section.rel);
+            if (status !== 0) console.error(`edit session exited with status ${status}.`);
+            commitSection(section.path, section.rel);
+        }
+    }
+}
+
 function commitSection(sectionPath, sectionRel) {
     const addResult = reportGit(['add', sectionPath]);
     if (!addResult.ok) {
@@ -229,54 +384,22 @@ async function main(args = []) {
         console.error('  Usage: node index.js article [--preview] [section] [model]');
         console.error('  --preview   build the report then open it (make report && make open)');
         console.error('  section     path under report/src/ (e.g. introduction/introduction.md)');
+        console.error('              if omitted, opens an interactive menu (manage/edit/todo/exit)');
         console.error('  model       opencode model id (otherwise prompted from opencode.json)');
-        console.error('  Clones akinevz2/academic-report.git into ./report/ if absent,');
+        console.error('  Clones akinevz2/report-template.git into ./report/ if absent,');
         console.error('  builds with `make report`, lets you pick a section, edits it in');
         console.error('  $EDITOR alongside opencode, then commits the section on exit.');
         return;
     }
 
-    const preview = args.includes('--preview') || args.includes('-p');
-    const nonFlag = args.filter(a => !a.startsWith('-') && a);
-    const sectionArg = nonFlag[0];
-    const modelArg = nonFlag[1];
-
-    ensureCloned();
-
-    if (!runMake('report')) {
-        console.error('continuing despite build failure (toolchain may be missing).');
-    }
-    if (preview) {
-        runMake('open');
-    }
-
-    assertCleanBeforeSwitch();
-
-    const sections = listSections();
-    if (sections.length === 0) {
-        console.error(`No markdown sections found under ${relPath(SRC_DIR)}/.`);
-        process.exit(1);
-    }
-
-    const section = await promptSection(sections, sectionArg);
-    const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
-
-    const status = await editSection(model, section.path, section.rel);
-
-    if (status !== 0) {
-        console.error(`edit session exited with status ${status}.`);
-    }
-
-    commitSection(section.path, section.rel);
-
-    process.exit(status);
+    await runMenu(args);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
     main(process.argv.slice(2));
 }
 
-export { ensureCloned, runMake, listSections, promptSection, isReportClean, editSection, commitSection, main };
+export { ensureCloned, runMake, listSections, promptSection, isReportClean, editSection, commitSection, manageSections, makeTodoNote, runMenu, main };
 
 export default {
     name: 'article',
