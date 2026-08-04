@@ -3,7 +3,14 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import { PROJECT_ROOT, SCRIPTS_DIR, LIB_DIR, normalizeModuleName, discover } from '../lib/core.mjs';
+import {
+    PROJECT_ROOT,
+    SCRIPTS_DIR,
+    LIB_DIR,
+    normalizeModuleName,
+    discover,
+    exit
+} from '../lib/core.mjs';
 
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
 const DEFAULT_MODULE = path.join(SRC_DIR, 'main.py');
@@ -47,7 +54,7 @@ async function main(args = []) {
     if (!moduleArg) {
         if (!fs.existsSync(DEFAULT_MODULE)) {
             console.error(`Default module not found: ${rel(DEFAULT_MODULE)}`);
-            process.exit(1);
+            return exit(1);
         }
         runProcess('python3', [DEFAULT_MODULE, ...rest]);
         return;
@@ -59,7 +66,7 @@ async function main(args = []) {
         const pyPath = findPyModule(moduleArg);
         if (!pyPath) {
             console.error(`Python module not found: ${moduleArg}`);
-            process.exit(1);
+            return exit(1);
         }
         runProcess('python3', [pyPath, ...rest]);
         return;
@@ -69,7 +76,7 @@ async function main(args = []) {
         const jsMod = findJsModule(moduleArg);
         if (!jsMod) {
             console.error(`Module not found: ${moduleArg}`);
-            process.exit(1);
+            return exit(1);
         }
         runProcess(process.execPath, [jsMod.path, ...rest]);
         return;
@@ -88,7 +95,7 @@ async function main(args = []) {
     }
 
     console.error(`Module not found: ${moduleArg}`);
-    process.exit(1);
+    return exit(1);
 }
 
 export { main };

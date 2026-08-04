@@ -2,7 +2,7 @@
 
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { PROJECT_ROOT } from '../lib/core.mjs';
+import { PROJECT_ROOT, exit } from '../lib/core.mjs';
 import { listAllModules } from '../lib/modules.mjs';
 import * as memo from '../lib/memo.mjs';
 
@@ -35,7 +35,7 @@ async function main(args = []) {
     const modules = listAllModules();
     if (modules.length === 0) {
         console.error('No modules found in lib/ or scripts/.');
-        process.exit(1);
+        exit(1);
     }
 
     let failures = 0;
@@ -64,7 +64,7 @@ async function main(args = []) {
     console.log(
         `\nchecked ${modules.length} module${modules.length === 1 ? '' : 's'}, ${failures} failure${failures === 1 ? '' : 's'}`
     );
-    process.exit(failures === 0 ? 0 : 1);
+    exit(failures === 0 ? 0 : 1);
 }
 
 export { runNodeCheck, main };

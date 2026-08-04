@@ -5,7 +5,7 @@ import { spawn, spawnSync } from 'child_process';
 import { resolveModel } from '../lib/models.mjs';
 import { input, isInteractive, confirm, AbortError } from '../lib/cli.mjs';
 import * as server from '../lib/server.mjs';
-import { PROJECT_ROOT } from '../lib/core.mjs';
+import { PROJECT_ROOT, exit } from '../lib/core.mjs';
 import { resolveActiveFiles } from '../lib/editor.mjs';
 import { resolveOpencode } from '../lib/opencode.mjs';
 import { run } from '../lib/cli.mjs';
@@ -46,14 +46,14 @@ function runHeadless({ entries, context, model, instruction }) {
     }
     const out = (result.stdout ?? '').trim();
     if (out) console.log(out);
-    process.exit(result.status ?? 0);
+    return exit(result.status ?? 0);
 }
 
 async function runInteractive(args) {
     const { entries, context } = await resolveActiveFiles(args, {
         message: 'Select a module to implement'
     });
-    if (entries.length === 0) process.exit(1);
+    if (entries.length === 0) return exit(1);
 
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const model = await resolveModel(nonFlag[0]);
@@ -90,7 +90,7 @@ async function runInteractive(args) {
             });
             if (status !== 0) {
                 console.error(`implement: opencode run exited with status ${status}`);
-                if (!(await confirm('Retry prompt?', true))) process.exit(status);
+                if (!(await confirm('Retry prompt?', true))) return exit(status);
                 continue;
             }
         } else {
@@ -110,7 +110,7 @@ async function runInteractive(args) {
             });
             if (status !== 0) {
                 console.error(`implement: opencode TUI exited with status ${status}`);
-                if (!(await confirm('Retry prompt?', true))) process.exit(status);
+                if (!(await confirm('Retry prompt?', true))) return exit(status);
                 continue;
             }
             return;
@@ -157,12 +157,12 @@ async function main(args = []) {
         const fileArgs = nonFlag;
         if (fileArgs.length === 0) {
             console.error('Non-interactive: pass file or directory arguments to implement.');
-            process.exit(1);
+            return exit(1);
         }
         const { entries, context } = await resolveActiveFiles(fileArgs, {
             message: 'implement'
         });
-        if (entries.length === 0) process.exit(1);
+        if (entries.length === 0) return exit(1);
 
         const model = await resolveModel(null);
         const fileLabel =

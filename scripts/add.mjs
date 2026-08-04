@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { normalizeModuleName, SRC_DIR, PROJECT_ROOT } from '../lib/core.mjs';
+import { normalizeModuleName, SRC_DIR, PROJECT_ROOT, exit } from '../lib/core.mjs';
 import * as template from '../lib/template.mjs';
 import {
     findLibraries,
@@ -253,7 +253,7 @@ async function main(args = []) {
     const editorExit = await new Promise((resolve) => {
         editor.on('exit', (code) => resolve(code ?? 0));
     });
-    if (editorExit !== 0) process.exit(editorExit);
+    if (editorExit !== 0) return exit(editorExit);
 
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const modelArg = nonFlag[0];
@@ -287,7 +287,7 @@ async function main(args = []) {
     console.log(
         '\nNext: `make commit` if happy with the one-shot, or `make edit` then `make implement` to iterate.'
     );
-    process.exit(result.status ?? 0);
+    return exit(result.status ?? 0);
 }
 
 export { main, pickLanguage, ensureLanguage, buildPreamble };

@@ -8,7 +8,7 @@ import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
 import { editFile, writeLastModule } from '../lib/editor.mjs';
 import { runIDE, exitIDE } from '../lib/ide.mjs';
 import { relPath } from '../lib/libs.mjs';
-import { PROJECT_ROOT } from '../lib/core.mjs';
+import { PROJECT_ROOT, exit } from '../lib/core.mjs';
 import * as git from '../lib/git.mjs';
 import { select, confirm, isInteractive } from '../lib/cli.mjs';
 
@@ -16,7 +16,7 @@ async function main(args = []) {
     const modules = listAllModules();
     if (modules.length === 0) {
         console.error('No modules found.');
-        process.exit(1);
+        return exit(1);
     }
 
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
@@ -28,7 +28,7 @@ async function main(args = []) {
 
     if (!fs.existsSync(target.path)) {
         console.error(`Module file not found: ${rel}`);
-        process.exit(1);
+        return exit(1);
     }
 
     writeLastModule(rel);
@@ -72,7 +72,7 @@ async function main(args = []) {
     }
 
     if (finalStatus !== 0) {
-        process.exit(finalStatus);
+        return exit(finalStatus);
     }
 
     console.log('\n--- running `node index.js commit` after opencode exit ---');
@@ -82,19 +82,19 @@ async function main(args = []) {
     });
     if (result.error) {
         console.error(`commit failed: ${result.error.message}`);
-        process.exit(1);
+        return exit(1);
     }
     if (result.status !== 0) {
         console.error(`commit exited with status ${result.status}`);
-        process.exit(result.status);
+        return exit(result.status);
     }
 
     if (!isInteractive()) {
-        process.exit(0);
+        return exit(0);
     }
 
     finalStatus = await postCommitMenu(rel, model);
-    process.exit(finalStatus);
+    return exit(finalStatus);
 }
 
 async function postCommitMenu(rel, model) {

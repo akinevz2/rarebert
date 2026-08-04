@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { PROJECT_ROOT, normalizeModuleName } from '../lib/core.mjs';
+import { PROJECT_ROOT, normalizeModuleName, exit } from '../lib/core.mjs';
 import { readLastModule, clearLastModule } from '../lib/editor.mjs';
 import { confirm } from '../lib/cli.mjs';
 import fs from 'fs';
@@ -10,7 +10,7 @@ async function main(args = []) {
     const rel = readLastModule();
     if (!rel) {
         console.error('Nothing to undo. No .last-module marker found.');
-        process.exit(1);
+        return exit(1);
     }
 
     const absPath = path.isAbsolute(rel) ? rel : path.join(PROJECT_ROOT, rel);
@@ -22,7 +22,7 @@ async function main(args = []) {
         );
         if (!confirmed) {
             console.error('Aborted.');
-            process.exit(0);
+            return exit(0);
         }
         fs.unlinkSync(absPath);
         console.log(`✓ Removed module: ${rel}`);

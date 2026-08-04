@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import path from 'path';
-import { PROJECT_ROOT } from '../lib/core.mjs';
+import { PROJECT_ROOT, exit } from '../lib/core.mjs';
 import * as server from '../lib/server.mjs';
 import { resolveModel } from '../lib/models.mjs';
 
@@ -14,7 +14,7 @@ async function main(args = []) {
     if (running) {
         console.log(`open: connecting to running server ${running.url} (mini TUI)`);
         const status = server.attachMini(running);
-        process.exit(status);
+        return exit(status);
     }
 
     console.log('open: no running server; starting mini TUI at project root');
@@ -25,7 +25,7 @@ async function main(args = []) {
         port,
         prompt: null
     });
-    process.exit(status);
+    return exit(status);
 }
 
 export { main };

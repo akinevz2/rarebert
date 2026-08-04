@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { PROJECT_ROOT } from '../lib/core.mjs';
+import { PROJECT_ROOT, exit } from '../lib/core.mjs';
 import { listAllModules } from '../lib/modules.mjs';
 import * as git from '../lib/git.mjs';
 import { readOpendeConfig, listModels, promptModel, resolveModel } from '../lib/models.mjs';
@@ -96,7 +96,7 @@ function bailCommit(reason) {
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
     }
     console.error(`Bailed: ${reason}; index restored (non-destructive).`);
-    process.exit(0);
+    exit(0);
 }
 
 function previewDiff() {
@@ -218,7 +218,7 @@ async function main(args = []) {
 
     if (!status.stdout.trim()) {
         console.log('Nothing to commit: working tree clean.');
-        process.exit(0);
+        return exit(0);
     }
 
     const choice = interactive ? await promptCommitChoice() : 'later';
@@ -240,7 +240,7 @@ async function main(args = []) {
             // print the staged files
             git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
             console.error('Aborted; restored index (non-destructive).');
-            process.exit(0);
+            return exit(0);
         }
     }
 
@@ -265,7 +265,7 @@ async function main(args = []) {
 
         if (!summary && !interactive) {
             console.error('No summary produced and not interactive; aborting.');
-            process.exit(1);
+            return exit(1);
         }
 
         if (interactive && (await promptBail('Summary looks bad — bail instead of editing it?'))) {
@@ -320,7 +320,7 @@ async function editSummaryInEditor(summary, interactive) {
     if (!stripped) {
         console.error('Commit message erased; unstaging all changes so you can cherry-pick files.');
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
-        process.exit(0);
+        exit(0);
     }
 
     return ['-m', stripped];
@@ -339,7 +339,7 @@ function stageAndCommit(commitArgs) {
         const addResult = git.add([], { all: true, stdio: 'inherit' });
         if (!addResult.ok) {
             console.error(`git add failed (status ${addResult.status})`);
-            process.exit(addResult.status ?? 1);
+            exit(addResult.status ?? 1);
         }
     }
 
@@ -353,11 +353,11 @@ function stageAndCommit(commitArgs) {
             } else {
                 console.error(`git commit exited with status ${result.status}`);
             }
-            process.exit(result.status ?? 1);
+            exit(result.status ?? 1);
         }
     } catch (err) {
         console.error(`Commit failed: ${err.message}`);
-        process.exit(1);
+        exit(1);
     }
 }
 

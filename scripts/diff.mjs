@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process';
-import { PROJECT_ROOT } from '../lib/core.mjs';
+import { PROJECT_ROOT, exit } from '../lib/core.mjs';
 import * as git from '../lib/git.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { relPath } from '../lib/libs.mjs';
@@ -52,7 +52,7 @@ async function main(args = []) {
 
     const usePager = process.stdin.isTTY === true && process.stdout.isTTY === true;
     const status = showDiff(diffArgs, usePager);
-    process.exit(status);
+    return exit(status);
 }
 
 export { main };
