@@ -48,13 +48,18 @@ function printAllMemos() {
         console.log('No memos found.');
         return false;
     }
+
+    const flat = [];
     for (const { module, memos, lastModified } of all) {
         const rel = path.relative(PROJECT_ROOT, module.path);
-        const ts = new Date(lastModified).toISOString().replace('T', ' ').slice(0, 19);
-        console.log(`${module.name}  (${rel})  [${ts}]`);
         for (const content of memos) {
-            console.log(`  - ${content}`);
+            flat.push({ rel, content, lastModified });
         }
+    }
+    flat.sort((a, b) => a.lastModified - b.lastModified);
+
+    for (const { rel, content } of flat) {
+        console.log(`${rel}  ${content}`);
     }
     return true;
 }
@@ -68,10 +73,6 @@ async function addMemo(moduleArg, memoContentArg) {
     const memoContent = memoContentArg.trim() || (await promptMemoContent(target.name));
     remember(target.name, memoContent);
     console.log(`\x1b[33m✓\x1b[0m Memo added to ${path.relative(PROJECT_ROOT, target.path)}`);
-    console.log(`  When run, prints: ${target.name}: ${memoContent}`);
-    if (process.env.FORGET) {
-        console.log('>>FORGET env var is set: memo array will drop previous memos.');
-    }
 }
 
 async function bare(args) {
@@ -164,16 +165,15 @@ async function main(args = []) {
     const flags = args.filter((a) => a.startsWith('-'));
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
 
-    const isForget = flags.includes('--forget');
+    const isForget = flags.includes('--forget') || 'FORGET' in process.env;
     const isForgetAll = flags.includes('--forget') && flags.includes('--all');
     const isAll = flags.includes('--all') && !isForget;
     const isDrop = flags.includes('--drop');
     const isAdd = flags.includes('--add');
     const isBare = !flags.length && !nonFlag.length;
 
-    if (isBare) {
-        await bare(args);
-        return;
+    if (isAll) {
+        printAllMemos();
     }
 
     if (isAdd) {
@@ -181,14 +181,8 @@ async function main(args = []) {
         return;
     }
 
-    if (isAll) {
-        printAllMemos();
-        return;
-    }
-
     if (isDrop) {
         await dropMemos(nonFlag[0]);
-        return;
     }
 
     if (isForgetAll) {
@@ -198,6 +192,10 @@ async function main(args = []) {
 
     if (isForget) {
         await forgetMemosForModule(nonFlag[0], flags.includes('--recursive'));
+    }
+
+    if (isBare) {
+        await bare(args);
         return;
     }
 
