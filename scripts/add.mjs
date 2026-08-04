@@ -3,21 +3,25 @@
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { normalizeModuleName } from '../lib/core.mjs';
-import { getExtension, findLibraries, createModule, relPath } from '../lib/libs.mjs';
+import { findLibraries, createModule, relPath } from '../lib/libs.mjs';
 import { writeLastModule, editFile } from '../lib/editor.mjs';
 import * as git from '../lib/git.mjs';
 import { runIDE } from '../lib/ide.mjs';
 import { resolveModel } from '../lib/models.mjs';
+import { chooseLanguage } from './project.mjs';
 
 async function main(args = []) {
     console.error('\n=== Rarebert Module Creator ===\n');
 
+    const lang = await chooseLanguage();
+    const ext = `.${lang}`;
+
     const namePrompt = new Enquirer.Input({
-        message: 'Enter the module name (supports .js, .mjs, .py extensions; defaults to .mjs):',
+        message: `Enter the module name (.${lang} extension added automatically):`,
         validate: (input) => {
             if (!input.trim()) return 'Module name is required';
             try {
-                normalizeModuleName(input);
+                normalizeModuleName(input, [ext]);
                 return true;
             } catch (e) {
                 return e.message;
@@ -37,18 +41,17 @@ async function main(args = []) {
         process.exit(130);
     }
 
-    const ext = getExtension(name);
-    const normalizedName = normalizeModuleName(name);
+    const normalizedName = normalizeModuleName(name, [ext]);
 
     if (ext === '.py') {
-        console.error('Python modules not yet supported in this refactor. Use .js or .mjs extension.');
+        console.error('Python modules use `make create` (scripts/create.mjs) for proper preamble handling.');
         process.exit(1);
     }
 
     const nonFlag = args.filter(a => !a.startsWith('-') && a);
     const modelArg = nonFlag[0];
 
-    console.error('\nGenerating module skeleton...');
+    console.error(`\nGenerating ${lang} module skeleton...`);
     const modulePath = createModule('scripts', normalizedName, ext);
     const rel = relPath(modulePath);
 
