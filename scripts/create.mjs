@@ -9,24 +9,25 @@ import * as template from '../lib/template.mjs';
 import { editFile, writeLastModule } from '../lib/editor.mjs';
 
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
+const PY_LIB_DIR = path.join(PROJECT_ROOT, 'lib', 'py');
 
 function listPythonLibs() {
-    const libDir = path.join(PROJECT_ROOT, 'lib');
-    if (!fs.existsSync(libDir)) return [];
-    return fs.readdirSync(libDir)
-        .filter(f => f.endsWith('.py') && f !== 'core.py')
-        .map(f => f.replace(/\.py$/, ''));
+    if (!fs.existsSync(PY_LIB_DIR)) return [];
+    return fs
+        .readdirSync(PY_LIB_DIR)
+        .filter((f) => f.endsWith('.py') && f !== '__init__.py' && f !== 'core.py')
+        .map((f) => f.replace(/\.py$/, ''));
 }
 
 async function promptLibraryImports(libs) {
     if (libs.length === 0) return [];
     if (process.stdin.isTTY !== true) return [];
 
-    const choices = libs.map(lib => ({ name: lib, message: `lib/${lib}.py` }));
+    const choices = libs.map((lib) => ({ name: lib, message: `lib/py/${lib}.py` }));
 
     const prompt = new Enquirer.MultiSelect({
         name: 'libraries',
-        message: 'Select Python libraries from lib/ to add to the preamble:',
+        message: 'Select Python libraries from lib/py/ to add to the preamble:',
         choices,
         result(names) {
             return Array.isArray(names) ? names : [names];
@@ -44,21 +45,23 @@ async function promptLibraryImports(libs) {
 
 function buildPreamble(selectedLibs) {
     if (selectedLibs.length === 0) return '';
-    const lines = selectedLibs.map(lib => `from lib import ${lib}`);
+    const lines = selectedLibs.map((lib) => `from lib.py import ${lib}`);
     return lines.join('\n');
 }
 
 function generatePythonBoilerplate(moduleName, selectedLibs) {
-    return template.resolve('.py', {
-        MODULE_NAME: moduleName,
-        LIB_IMPORTS: buildPreamble(selectedLibs)
-    }).join('\n');
+    return template
+        .resolve('.py', {
+            MODULE_NAME: moduleName,
+            LIB_IMPORTS: buildPreamble(selectedLibs)
+        })
+        .join('\n');
 }
 
 async function main(args = []) {
     console.error('\n=== Rarebert Python Module Creator ===\n');
 
-    const nameArg = args.find(a => !a.startsWith('-'));
+    const nameArg = args.find((a) => !a.startsWith('-'));
     let name = nameArg;
 
     if (!name) {
@@ -95,13 +98,13 @@ async function main(args = []) {
 
     const normalizedName = normalizeModuleName(name.endsWith('.py') ? name : `${name}.py`);
 
-    console.error('\nScanning lib/ for Python libraries...');
+    console.error('\nScanning lib/py/ for Python libraries...');
     const libs = listPythonLibs();
     if (libs.length > 0) {
         console.error(`Found ${libs.length} Python librar${libs.length === 1 ? 'y' : 'ies'}:`);
-        libs.forEach(lib => console.error(`  - lib/${lib}.py`));
+        libs.forEach((lib) => console.error(`  - lib/py/${lib}.py`));
     } else {
-        console.error('No Python libraries found in lib/.');
+        console.error('No Python libraries found in lib/py/.');
     }
 
     const selectedLibs = await promptLibraryImports(libs);
@@ -120,7 +123,7 @@ async function main(args = []) {
     console.error(`\n✓ Created module: ${rel}`);
     if (selectedLibs.length > 0) {
         console.error('  Preamble imports:');
-        selectedLibs.forEach(lib => console.error(`    - from lib import ${lib}`));
+        selectedLibs.forEach((lib) => console.error(`    - from lib.py import ${lib}`));
     } else {
         console.error('  No library imports added to preamble.');
     }
@@ -130,7 +133,7 @@ async function main(args = []) {
 
     console.error(`\nOpening ${rel} in $EDITOR...`);
     const child = editFile(modulePath);
-    child.on('exit', code => {
+    child.on('exit', (code) => {
         if (code !== 0) console.error(`Editor exited with code ${code}`);
     });
 }

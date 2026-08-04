@@ -23,7 +23,18 @@ const meta = {
 };
 
 function buildPreamble(targetNames) {
-    return [HEADER, '', '.DEFAULT_GOAL := list', '', `.PHONY: list ${targetNames.join(' ')}`, '', 'list:', '\tnode index.js'].join('\n') + '\n';
+    return (
+        [
+            HEADER,
+            '',
+            '.DEFAULT_GOAL := list',
+            '',
+            `.PHONY: list ${targetNames.join(' ')}`,
+            '',
+            'list:',
+            '\tnode index.js'
+        ].join('\n') + '\n'
+    );
 }
 
 function buildBody(names) {
@@ -35,7 +46,7 @@ function buildBody(names) {
         if (names.includes(name)) continue;
         blocks.push(`${name}:\n\t${recipe}`);
     }
-    return blocks.map(b => `\n\n${b}`).join('') + '\n';
+    return blocks.map((b) => `\n\n${b}`).join('') + '\n';
 }
 
 async function main(args = []) {
@@ -44,20 +55,24 @@ async function main(args = []) {
     }
 
     const scripts = discoverScripts();
-    console.error(`discover scripts/ -> ${scripts.length} found: ${scripts.map(s => s.name).join(', ') || '(none)'}`);
+    console.error(
+        `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => s.name).join(', ') || '(none)'}`
+    );
 
     const makefilePath = path.join(PROJECT_ROOT, 'Makefile');
     const rel = path.relative(PROJECT_ROOT, makefilePath);
-    const names = scripts.map(s => s.name);
+    const names = scripts.map((s) => s.name);
 
-    const phony = [...names, ...Object.keys(EXTRA_TARGETS).filter(n => !names.includes(n))];
+    const phony = [...names, ...Object.keys(EXTRA_TARGETS).filter((n) => !names.includes(n))];
     const content = buildPreamble(phony) + buildBody(names);
 
     if (fs.existsSync(makefilePath) && fs.readFileSync(makefilePath, 'utf-8') === content) {
         console.error(`up-to-date ${rel} (no changes)`);
     } else {
         fs.writeFileSync(makefilePath, content);
-        console.error(`refresh ${rel} (${scripts.length} script targets + ${Object.keys(EXTRA_TARGETS).length} extras)`);
+        console.error(
+            `refresh ${rel} (${scripts.length} script targets + ${Object.keys(EXTRA_TARGETS).length} extras)`
+        );
     }
     console.error(`done: ${scripts.length} module(s), ${makefilePath}`);
 }

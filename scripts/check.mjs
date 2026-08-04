@@ -21,7 +21,7 @@ function runNodeCheck(filePath) {
         if (!m) continue;
         const lineNo = m[1];
         const msgMatch = output.match(/SyntaxError:\s+(.+)/);
-        const msg = msgMatch ? msgMatch[1].trim() : lines[i + 1] ?? '';
+        const msg = msgMatch ? msgMatch[1].trim() : (lines[i + 1] ?? '');
         locations.push({ line: lineNo, message: msg });
         break;
     }
@@ -61,7 +61,9 @@ async function main(args = []) {
         }
     }
 
-    console.error(`\nchecked ${modules.length} module${modules.length === 1 ? '' : 's'}, ${failures} failure${failures === 1 ? '' : 's'}`);
+    console.error(
+        `\nchecked ${modules.length} module${modules.length === 1 ? '' : 's'}, ${failures} failure${failures === 1 ? '' : 's'}`
+    );
     process.exit(failures === 0 ? 0 : 1);
 }
 

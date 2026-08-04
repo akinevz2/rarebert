@@ -16,7 +16,10 @@ async function main(args = []) {
     const absPath = path.isAbsolute(rel) ? rel : path.join(PROJECT_ROOT, rel);
 
     if (fs.existsSync(absPath)) {
-        const confirmed = await confirm(`Remove module '${rel}' and clear .last-module marker?`, false);
+        const confirmed = await confirm(
+            `Remove module '${rel}' and clear .last-module marker?`,
+            false
+        );
         if (!confirmed) {
             console.error('Aborted.');
             process.exit(0);

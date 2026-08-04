@@ -8,7 +8,7 @@ assertProjectRoot();
 
 async function runModule(name, args = []) {
     const scripts = discoverScripts();
-    const script = scripts.find(s => normalizeModuleName(s.name) === name);
+    const script = scripts.find((s) => normalizeModuleName(s.name) === name);
     if (!script) {
         console.error('Module not found:', name);
         process.exit(1);
@@ -52,7 +52,7 @@ async function main(argv) {
     const rest = argv.slice(3);
 
     if (cmd === '-v' || cmd === '--verbose') return helpVerbose();
-    if (!cmd || HELP_PREFIXES.some(p => cmd.startsWith(p))) {
+    if (!cmd || HELP_PREFIXES.some((p) => cmd.startsWith(p))) {
         return listModules([cmd, ...rest].filter(Boolean));
     }
 

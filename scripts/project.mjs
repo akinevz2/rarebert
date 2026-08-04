@@ -1,21 +1,33 @@
 #!/usr/bin/env node
 
 import Enquirer from 'enquirer';
-import { listLanguages, supportedExtensions, installLanguage, isSupported } from '../lib/languages.mjs';
-import { run, select, input, confirm, isInteractive, nonInteractive, ok, fail } from '../lib/cli.mjs';
+import {
+    listLanguages,
+    supportedExtensions,
+    installLanguage,
+    isSupported
+} from '../lib/languages.mjs';
+import {
+    run,
+    select,
+    input,
+    confirm,
+    isInteractive,
+    nonInteractive,
+    ok,
+    fail
+} from '../lib/cli.mjs';
 
 const meta = {
     name: 'project',
     description: 'Choose or install a module language before scaffolding a destination file',
     usage: 'node index.js project [list | install <lang> | choose]',
-    options: [
-        { flag: 'force', label: '', description: 'overwrite an installed template' }
-    ]
+    options: [{ flag: 'force', label: '', description: 'overwrite an installed template' }]
 };
 
 function describeChoices() {
     const langs = listLanguages();
-    const choices = langs.map(l => ({ name: l, message: `.${l}` }));
+    const choices = langs.map((l) => ({ name: l, message: `.${l}` }));
     choices.push({ name: '__install__', message: 'Install a new language via opencode...' });
     return choices;
 }
@@ -40,12 +52,15 @@ export async function chooseLanguage() {
 
 async function installNewLanguage() {
     const lang = await input('Language to install (e.g. ts, rb, go):', {
-        validate: (v) => v.trim() ? true : 'Language is required'
+        validate: (v) => (v.trim() ? true : 'Language is required')
     });
     const name = lang.replace(/^\.+/, '').toLowerCase();
 
     if (isSupported(name)) {
-        const overwrite = await confirm(`Language "${name}" is already installed. Overwrite?`, false);
+        const overwrite = await confirm(
+            `Language "${name}" is already installed. Overwrite?`,
+            false
+        );
         if (!overwrite) ok('Not overwritten.');
     }
 
@@ -56,7 +71,7 @@ async function installNewLanguage() {
 }
 
 async function install(args = []) {
-    const nameArg = args.find(a => !a.startsWith('-') && a);
+    const nameArg = args.find((a) => !a.startsWith('-') && a);
     const force = args.includes('--force');
     if (!nameArg) fail('Usage: node index.js project install <lang> [--force]');
 

@@ -18,7 +18,11 @@ const meta = {
     usage: 'node index.js article [--preview] [section] [model]',
     options: [
         { flag: 'preview', label: '', description: 'build the report then open it' },
-        { label: 'section', description: 'path under report/src/ (e.g. introduction/introduction.md); if omitted, opens an interactive menu' },
+        {
+            label: 'section',
+            description:
+                'path under report/src/ (e.g. introduction/introduction.md); if omitted, opens an interactive menu'
+        },
         { label: 'model', description: 'opencode model id (otherwise prompted from opencode.json)' }
     ]
 };
@@ -31,14 +35,21 @@ const SRC_DIR = path.join(REPORT_DIR, 'src');
 const TOC_FILENAME = 'TOC.md';
 const TOC_PATH = path.join(SRC_DIR, TOC_FILENAME);
 const PREAMBLE_FILENAMES = ['REPORT.md', 'TEMPLATE.md'];
-const PREAMBLE_PATH = path.join(REPORT_DIR, PREAMBLE_FILENAMES.find(f => fs.existsSync(path.join(REPORT_DIR, f))) || PREAMBLE_FILENAMES[1]);
+const PREAMBLE_PATH = path.join(
+    REPORT_DIR,
+    PREAMBLE_FILENAMES.find((f) => fs.existsSync(path.join(REPORT_DIR, f))) || PREAMBLE_FILENAMES[1]
+);
 
 function normalizeSectionRel(name) {
-    let rel = String(name).trim()
+    let rel = String(name)
+        .trim()
         .replace(/^\.?\/?/, '')
         .replace(/^(report\/)?src\//, '')
         .replace(/^report\//, '');
-    rel = rel.split('/').filter(p => p && p !== '.' && p !== '..').join('/');
+    rel = rel
+        .split('/')
+        .filter((p) => p && p !== '.' && p !== '..')
+        .join('/');
     if (!rel) throw new Error('Invalid section path');
     return rel.endsWith('.md') ? rel : `${rel}.md`;
 }
@@ -145,7 +156,9 @@ async function assertHostCleanOrCommit() {
         const ok = await new Confirm({
             name: 'commit',
             message: 'Run `make commit` now?'
-        }).run().catch(() => false);
+        })
+            .run()
+            .catch(() => false);
         if (!ok) {
             console.error('Aborted. Commit or clean the rarebert repo before continuing.');
             process.exit(1);
@@ -161,7 +174,9 @@ function ensureCloned() {
     if (fs.existsSync(REPORT_DIR)) {
         const entries = fs.readdirSync(REPORT_DIR);
         if (entries.length > 0) {
-            console.error(`report/ exists but is not a git clone (contains ${entries.length} entries): ${REPORT_DIR}`);
+            console.error(
+                `report/ exists but is not a git clone (contains ${entries.length} entries): ${REPORT_DIR}`
+            );
             console.error('Remove it or clone manually before continuing.');
             process.exit(1);
         }
@@ -201,8 +216,11 @@ function runMake(target) {
 
 function walkMarkdown(dir, acc = [], base = dir) {
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-    catch { return acc; }
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return acc;
+    }
     for (const entry of entries) {
         if (entry.name.startsWith('.')) continue;
         const full = path.join(dir, entry.name);
@@ -216,7 +234,7 @@ function walkMarkdown(dir, acc = [], base = dir) {
 }
 
 function listSections() {
-    const sections = walkMarkdown(SRC_DIR).filter(s => s.rel !== `src/${TOC_FILENAME}`);
+    const sections = walkMarkdown(SRC_DIR).filter((s) => s.rel !== `src/${TOC_FILENAME}`);
     sections.sort((a, b) => a.rel.localeCompare(b.rel));
     return sections;
 }
@@ -224,11 +242,12 @@ function listSections() {
 async function promptSection(sections, sectionArg) {
     if (sectionArg) {
         const norm = sectionArg.replace(/^\.?\/?/, '');
-        const match = sections.find(s =>
-            s.rel === norm ||
-            s.rel === `src/${norm}` ||
-            path.basename(s.rel) === norm ||
-            s.rel.endsWith(norm)
+        const match = sections.find(
+            (s) =>
+                s.rel === norm ||
+                s.rel === `src/${norm}` ||
+                path.basename(s.rel) === norm ||
+                s.rel.endsWith(norm)
         );
         if (!match) {
             console.error(`Report section not found: ${sectionArg}`);
@@ -242,7 +261,7 @@ async function promptSection(sections, sectionArg) {
         process.exit(1);
     }
 
-    const choices = sections.map(s => ({ name: s.path, message: s.rel }));
+    const choices = sections.map((s) => ({ name: s.path, message: s.rel }));
     const prompt = new Enquirer.AutoComplete({
         name: 'section',
         message: 'Select a report section to work on',
@@ -250,13 +269,13 @@ async function promptSection(sections, sectionArg) {
         choices,
         suggest(input) {
             const q = (input || '').toLowerCase().trim();
-            return q ? choices.filter(c => c.message.toLowerCase().includes(q)) : choices;
+            return q ? choices.filter((c) => c.message.toLowerCase().includes(q)) : choices;
         }
     });
 
     try {
         const answer = await prompt.run();
-        return sections.find(s => s.path === answer);
+        return sections.find((s) => s.path === answer);
     } catch {
         console.error('\nAborted.');
         process.exit(130);
@@ -286,10 +305,17 @@ async function promptBranch() {
             name: 'branch',
             message: 'New branch name (off template):',
             default: fallback,
-            validate: v => (v && v.trim() && /^\S+$/.test(v.trim()) ? true : 'Branch name is required (no spaces)')
+            validate: (v) =>
+                v && v.trim() && /^\S+$/.test(v.trim())
+                    ? true
+                    : 'Branch name is required (no spaces)'
         });
-        try { name = (await input.run()).trim(); }
-        catch { console.error('\nAborted.'); process.exit(130); }
+        try {
+            name = (await input.run()).trim();
+        } catch {
+            console.error('\nAborted.');
+            process.exit(130);
+        }
     } else {
         name = fallback;
     }
@@ -323,7 +349,9 @@ function assertReportClean() {
 function assertCleanBeforeSwitch() {
     if (isReportClean()) return;
     const r = reportGit(['status', '--short']);
-    console.error('Report working tree is not clean. Commit or resolve changes before switching to a new section:');
+    console.error(
+        'Report working tree is not clean. Commit or resolve changes before switching to a new section:'
+    );
     process.stderr.write(r.stdout);
     process.exit(1);
 }
@@ -358,8 +386,8 @@ async function editSection(model, sectionPath, sectionRel) {
     });
 
     const first = await Promise.race([
-        editorExit.then(code => ({ kind: 'editor', code })),
-        ideExit.then(code => ({ kind: 'ide', code }))
+        editorExit.then((code) => ({ kind: 'editor', code })),
+        ideExit.then((code) => ({ kind: 'ide', code }))
     ]);
 
     if (first.kind === 'editor') {
@@ -381,7 +409,11 @@ async function editPreamble(model) {
         return 1;
     }
     console.error(`Editing preamble: ${relPath(PREAMBLE_PATH)}`);
-    const status = await editSection(model, PREAMBLE_PATH, path.relative(REPORT_DIR, PREAMBLE_PATH));
+    const status = await editSection(
+        model,
+        PREAMBLE_PATH,
+        path.relative(REPORT_DIR, PREAMBLE_PATH)
+    );
     if (status !== 0) console.error(`edit session exited with status ${status}.`);
     await confirmCommit('update preamble');
     return status;
@@ -393,7 +425,9 @@ function sectionExists(name) {
         if (rel === TOC_FILENAME) return TOC_PATH;
         const full = path.join(SRC_DIR, rel);
         return fs.existsSync(full) ? full : null;
-    } catch { return null; }
+    } catch {
+        return null;
+    }
 }
 
 async function manageSections() {
@@ -402,7 +436,7 @@ async function manageSections() {
     if (sections.length === 0) {
         console.error('(none)');
     } else {
-        sections.forEach(s => console.error(`  ${s.rel}`));
+        sections.forEach((s) => console.error(`  ${s.rel}`));
     }
     console.error(`  src/${TOC_FILENAME} (table of contents, auto-managed)`);
 
@@ -416,22 +450,33 @@ async function manageSections() {
         ]
     });
     let action;
-    try { action = await actionPrompt.run(); }
-    catch { return; }
+    try {
+        action = await actionPrompt.run();
+    } catch {
+        return;
+    }
 
     if (action === 'add') {
         const namePrompt = new Input({
             message: 'New section name (created under src/, e.g. methods/data.md):',
-            validate: v => {
+            validate: (v) => {
                 if (!v || !v.trim()) return 'Section name is required';
-                try { normalizeSectionRel(v); return true; }
-                catch (e) { return e.message; }
+                try {
+                    normalizeSectionRel(v);
+                    return true;
+                } catch (e) {
+                    return e.message;
+                }
             }
         });
         const name = (await namePrompt.run()).trim();
         let rel;
-        try { rel = normalizeSectionRel(name); }
-        catch (e) { console.error(`Error: ${e.message}`); return; }
+        try {
+            rel = normalizeSectionRel(name);
+        } catch (e) {
+            console.error(`Error: ${e.message}`);
+            return;
+        }
 
         if (rel === TOC_FILENAME) {
             console.error(`'${TOC_FILENAME}' is reserved for the table of contents.`);
@@ -452,14 +497,20 @@ async function manageSections() {
         appendToTOC(rel);
         rebuildAndOpen();
     } else if (action === 'remove') {
-        if (sections.length === 0) { console.error('Nothing to remove.'); return; }
-        const choices = sections.map(s => ({ name: s.path, message: s.rel }));
+        if (sections.length === 0) {
+            console.error('Nothing to remove.');
+            return;
+        }
+        const choices = sections.map((s) => ({ name: s.path, message: s.rel }));
         const pick = new Select({ name: 'section', message: 'Remove which section?', choices });
         const picked = await pick.run();
-        const section = sections.find(s => s.path === picked);
+        const section = sections.find((s) => s.path === picked);
         const rel = section.rel;
         const ok = await new Confirm({ name: 'ok', message: `Delete ${rel}?` }).run();
-        if (!ok) { console.error('Cancelled.'); return; }
+        if (!ok) {
+            console.error('Cancelled.');
+            return;
+        }
         fs.unlinkSync(picked);
         console.error(`Removed: ${rel}`);
         removeFromTOC(section.rel.replace(/^src\//, ''));
@@ -473,12 +524,16 @@ async function makeTodoNote() {
         name: 'target',
         message: 'Append TODO to which section?',
         choices: [
-            ...sections.map(s => ({ name: s.path, message: s.rel })),
+            ...sections.map((s) => ({ name: s.path, message: s.rel })),
             { name: 'NOTES.md', message: 'report/NOTES.md (scratch pad)' }
         ]
     });
     let target;
-    try { target = await targetPrompt.run(); } catch { return; }
+    try {
+        target = await targetPrompt.run();
+    } catch {
+        return;
+    }
 
     const isNotes = target === 'NOTES.md';
     const full = isNotes ? path.join(REPORT_DIR, 'NOTES.md') : target;
@@ -488,7 +543,7 @@ async function makeTodoNote() {
     }
     const notePrompt = new Input({
         message: 'TODO note (single line):',
-        validate: v => (v && v.trim() ? true : 'Note is required')
+        validate: (v) => (v && v.trim() ? true : 'Note is required')
     });
     const note = (await notePrompt.run()).trim();
     const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
@@ -505,7 +560,7 @@ async function makeTodoNote() {
 
 async function runMenu(args) {
     const preview = args.includes('--preview') || args.includes('-p');
-    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const sectionArg = nonFlag[0];
     const modelArg = nonFlag[1];
 
@@ -551,10 +606,16 @@ async function runMenu(args) {
             ]
         });
         let choice;
-        try { choice = await menu.run(); }
-        catch { console.error('\nAborted.'); process.exit(130); }
+        try {
+            choice = await menu.run();
+        } catch {
+            console.error('\nAborted.');
+            process.exit(130);
+        }
 
-        if (choice === 'exit') { process.exit(0); }
+        if (choice === 'exit') {
+            process.exit(0);
+        }
         if (choice === 'manage') {
             const before = isReportClean();
             await manageSections();
@@ -562,7 +623,10 @@ async function runMenu(args) {
             if (before && !after) await confirmCommit('manage sections');
             continue;
         }
-        if (choice === 'todo') { await makeTodoNote(); continue; }
+        if (choice === 'todo') {
+            await makeTodoNote();
+            continue;
+        }
         if (choice === 'preamble') {
             assertCleanBeforeSwitch();
             const model = await resolveModel(modelArg);
@@ -637,7 +701,9 @@ async function confirmCommit(label) {
     const ok = await new Confirm({
         name: 'commit',
         message: `Commit ${label ? `${label} ` : ''}changes now?`
-    }).run().catch(() => false);
+    })
+        .run()
+        .catch(() => false);
     if (!ok) {
         console.error('Skipped commit; launching a shell in report/ (exit to resume).');
         await launchShell();
@@ -647,11 +713,15 @@ async function confirmCommit(label) {
         name: 'message',
         message: 'Commit message:',
         default: label ? `article: ${label}` : 'article: update',
-        validate: v => (v && v.trim() ? true : 'Message is required')
+        validate: (v) => (v && v.trim() ? true : 'Message is required')
     });
     let message;
-    try { message = (await msgPrompt.run()).trim(); }
-    catch { console.error('Commit cancelled.'); return false; }
+    try {
+        message = (await msgPrompt.run()).trim();
+    } catch {
+        console.error('Commit cancelled.');
+        return false;
+    }
 
     const addResult = reportGit(['add', '-A']);
     if (!addResult.ok) {
@@ -671,7 +741,27 @@ async function main(args = []) {
     await runMenu(args);
 }
 
-export { ensureCloned, runMake, listSections, promptSection, isReportClean, isHostClean, assertReportClean, assertHostCleanOrCommit, editSection, editPreamble, commitSection, manageSections, makeTodoNote, runMenu, normalizeSectionRel, appendToTOC, removeFromTOC, rebuildAndOpen, main };
+export {
+    ensureCloned,
+    runMake,
+    listSections,
+    promptSection,
+    isReportClean,
+    isHostClean,
+    assertReportClean,
+    assertHostCleanOrCommit,
+    editSection,
+    editPreamble,
+    commitSection,
+    manageSections,
+    makeTodoNote,
+    runMenu,
+    normalizeSectionRel,
+    appendToTOC,
+    removeFromTOC,
+    rebuildAndOpen,
+    main
+};
 
 export default {
     name: 'article',

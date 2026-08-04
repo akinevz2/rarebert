@@ -1,0 +1,135 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1200 560"
+  width="1200"
+  height="560"
+  font-family="-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#0d1117" />
+      <stop offset="1" stop-color="#010409" />
+    </linearGradient>
+    <linearGradient id="rb" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#7d3cff" />
+      <stop offset="0.5" stop-color="#ff3c8a" />
+      <stop offset="1" stop-color="#ffb13c" />
+    </linearGradient>
+    <linearGradient id="oc" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#ffb13c" />
+      <stop offset="1" stop-color="#3cffb1" />
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2" result="b" />
+      <feMerge>
+        <feMergeNode in="b" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <marker id="arrowr" markerWidth="11" markerHeight="11" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ff3c8a" />
+    </marker>
+    <marker id="arrowg" markerWidth="11" markerHeight="11" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3cffb1" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="560" fill="url(#bg)" rx="18" />
+
+  <!-- title -->
+  <text x="600" y="64" text-anchor="middle" font-size="46" font-weight="700" fill="#e6edf3" filter="url(#soft)">
+    <tspan fill="url(#rb)">rarebert</tspan>
+    <tspan fill="#e6edf3" font-weight="400" font-size="28">  &lt;3  </tspan>
+    <tspan fill="url(#oc)">opencode</tspan>
+  </text>
+  <text x="600" y="100" text-anchor="middle" font-size="15" fill="#7d8590" letter-spacing="1.4">
+    a self-modifying scripting environment for interactive, AI-driven development
+  </text>
+
+  <!-- RAREBERT NODE (left) -->
+  <g transform="translate(80, 150)">
+    <rect width="380" height="360" rx="14" fill="#161b22" stroke="#30363d" />
+    <rect width="380" height="40" rx="14" fill="#21262d" />
+    <text x="22" y="26" font-size="14" fill="#e6edf3" font-weight="600">rarebert runtime <tspan fill="#7d8590" font-size="12" font-weight="400" font-family="ui-monospace, monospace">{node index.js}</tspan></text>
+    <circle cx="340" cy="20" r="4" fill="#ff3c8a" />
+    <circle cx="326" cy="20" r="4" fill="#ffb13c" />
+    <circle cx="312" cy="20" r="4" fill="#3cffb1" />
+
+    <!-- scripts/ -->
+    <text x="22" y="68" font-size="11" fill="#7d8590" letter-spacing="1.2">scripts/</text>
+    <g font-size="12" fill="#c9d1d9" font-family="ui-monospace, SFMono-Regular, monospace">
+      <rect x="18" y="78" width="344" height="26" rx="5" fill="#0d1117" stroke="#30363d" />
+      <text x="30" y="95">add   <tspan fill="#7d8590">scaffold + open + implement</tspan></text>
+      <rect x="18" y="108" width="344" height="26" rx="5" fill="#0d1117" stroke="#30363d" />
+      <text x="30" y="125">edit  <tspan fill="#7d8590">edit module in $EDITOR</tspan></text>
+      <rect x="18" y="138" width="344" height="26" rx="5" fill="#0d1117" stroke="#30363d" />
+      <text x="30" y="155">commit <tspan fill="#7d8590">summarise + commit</tspan></text>
+      <rect x="18" y="168" width="344" height="26" rx="5" fill="#0d1117" stroke="#30363d" />
+      <text x="30" y="185">run   <tspan fill="#7d8590">run module in src/ or scripts/</tspan></text>
+      <rect x="18" y="198" width="344" height="26" rx="5" fill="#0d1117" stroke="#30363d" />
+      <text x="30" y="215">memo  <tspan fill="#7d8590">inject memory into main()</tspan></text>
+    </g>
+
+    <!-- lib/ -->
+    <text x="22" y="246" font-size="11" fill="#7d8590" letter-spacing="1.2">lib/  (framework runtime)</text>
+    <g font-size="11" fill="#c9d1d9" font-family="ui-monospace, SFMono-Regular, monospace">
+      <rect x="18" y="256" width="165" height="24" rx="5" fill="#0d1117" stroke="#30363d" />
+      <text x="28" y="272">core.mjs</text>
+      <rect x="197" y="256" width="165" height="24" rx="5" fill="#0d1117" stroke="#30363d" />
+      <text x="207" y="272">memo.mjs <tspan fill="#ff3c8a" font-size="9">memo</tspan></text>
+    </g>
+
+    <!-- lib/{lang}/ -->
+    <text x="22" y="300" font-size="11" fill="#7d8590" letter-spacing="1.2">lib/{lang}/  (project-specific)</text>
+    <g font-size="10.5" fill="#c9d1d9" font-family="ui-monospace, SFMono-Regular, monospace">
+      <rect x="18" y="310" width="108" height="22" rx="4" fill="#0d1117" stroke="#3cb1ff" />
+      <text x="28" y="325" fill="#3cb1ff">lib/py/</text>
+      <rect x="135" y="310" width="108" height="22" rx="4" fill="#0d1117" stroke="#ff3c8a" />
+      <text x="145" y="325" fill="#ff3c8a">lib/mjs/</text>
+      <rect x="252" y="310" width="108" height="22" rx="4" fill="#0d1117" stroke="#7d3cff" />
+      <text x="262" y="325" fill="#7d3cff">lib/{lang}/</text>
+    </g>
+  </g>
+
+  <!-- OPENCODE NODE (right) -->
+  <g transform="translate(740, 150)">
+    <rect width="380" height="360" rx="14" fill="#161b22" stroke="#30363d" />
+    <rect width="380" height="40" rx="14" fill="#21262d" />
+    <text x="22" y="26" font-size="14" fill="#e6edf3" font-weight="600">opencode session <tspan fill="#7d8590" font-size="12" font-weight="400" font-family="ui-monospace, monospace">{opencode run … --auto}</tspan></text>
+    <circle cx="340" cy="20" r="4" fill="#3cffb1" />
+    <circle cx="326" cy="20" r="4" fill="#ffb13c" />
+    <circle cx="312" cy="20" r="4" fill="#ff3c8a" />
+
+    <!-- model -->
+    <text x="22" y="68" font-size="11" fill="#7d8590" letter-spacing="1.2">model</text>
+    <rect x="18" y="78" width="344" height="48" rx="6" fill="#0d1117" stroke="#30363d" />
+    <text x="30" y="100" font-size="15" fill="url(#oc)" filter="url(#soft)" font-weight="600">glm-5.2:cloud</text>
+    <text x="30" y="118" font-size="11" fill="#7d8590" font-family="ui-monospace, monospace">ollama / openai-compatible</text>
+
+    <!-- prompt -->
+    <text x="22" y="148" font-size="11" fill="#7d8590" letter-spacing="1.2">prompt</text>
+    <rect x="18" y="158" width="344" height="90" rx="6" fill="#0d1117" stroke="#30363d" />
+    <g font-size="12" fill="#c9d1d9" font-family="ui-monospace, monospace">
+      <text x="30" y="180"><tspan fill="#ff3c8a">def</tspan> main(args):</text>
+      <text x="30" y="198">  <tspan fill="#ffb13c">remember</tspan>(self, ...)</text>
+      <text x="30" y="216">  <tspan fill="#ffb13c">recall</tspan>_imports(import.meta.url)</text>
+      <text x="30" y="234">  <tspan fill="#3cffb1">return</tspan> ide.write(...)</text>
+    </g>
+
+    <!-- instructions -->
+    <text x="22" y="270" font-size="11" fill="#7d8590" letter-spacing="1.2">instructions</text>
+    <rect x="18" y="280" width="344" height="28" rx="6" fill="#0d1117" stroke="#30363d" />
+    <text x="30" y="299" font-size="12" fill="#c9d1d9" font-family="ui-monospace, monospace">AGENTS.md <tspan fill="#7d8590">+ opencode.json</tspan></text>
+
+    <!-- memo -->
+    <text x="22" y="332" font-size="11" fill="#7d8590" letter-spacing="1.2">cascading memo buffer</text>
+    <text x="18" y="352" font-size="12" fill="#ff3c8a" font-family="ui-monospace, monospace">▸ name: content</text>
+  </g>
+
+  <!-- connectors between the two nodes -->
+  <path d="M 460,290 C 560,290 560,220 660,220" fill="none" stroke="#ff3c8a" stroke-width="2.5" marker-end="url(#arrowr)" filter="url(#soft)" />
+  <path d="M 660,360 C 560,360 560,430 460,430" fill="none" stroke="#3cffb1" stroke-width="2.5" marker-end="url(#arrowg)" filter="url(#soft)" />
+
+  <text x="560" y="212" text-anchor="middle" font-size="12" fill="#ff3c8a" font-family="ui-monospace, monospace">implement / edit / commit</text>
+  <text x="560" y="448" text-anchor="middle" font-size="12" fill="#3cffb1" font-family="ui-monospace, monospace">summary, diffs, memos</text>
+</svg>

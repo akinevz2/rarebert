@@ -1,23 +1,23 @@
 {
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": ["AGENTS.md"],
-  "model": "ollama/glm-5.2:cloud",
-  "provider": {
-    "ollama": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama (local)",
-      "options": {
-        "baseURL": "http://ws-rarebox:11434/v1"
-      },
-      "models": {
-        "laguna-xs-2.1:latest": {
-          "name": "Laguna XS 2.1"
-        },
-        "glm-5.2:cloud": {
-          "name": "GLM 5.2 Cloud",
-          "baseURL": "http://ws-rarebox:11434/v1"
+    "$schema": "https://opencode.ai/config.json",
+    "instructions": ["AGENTS.md"],
+    "model": "ollama/glm-5.2:cloud",
+    "provider": {
+        "ollama": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Ollama (local)",
+            "options": {
+                "baseURL": "http://ws-rarebox:11434/v1"
+            },
+            "models": {
+                "laguna-xs-2.1:latest": {
+                    "name": "Laguna XS 2.1"
+                },
+                "glm-5.2:cloud": {
+                    "name": "GLM 5.2 Cloud",
+                    "baseURL": "http://ws-rarebox:11434/v1"
+                }
+            }
         }
-      }
     }
-  }
 }

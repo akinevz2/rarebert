@@ -1,0 +1,11 @@
+node_modules/
+.last-module
+*.memo
+*.mjs.
+*.js.
+.opencode/system/
+report/
+.last-module
+.cache/
+dist/
+docs/assets/*.svg

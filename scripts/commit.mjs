@@ -26,7 +26,7 @@ const meta = {
 function stripCommitMessage(raw) {
     return raw
         .split('\n')
-        .filter(line => !line.startsWith('#'))
+        .filter((line) => !line.startsWith('#'))
         .join('\n')
         .replace(/\n+$/, '');
 }
@@ -118,7 +118,7 @@ async function promptPromptFirstLine() {
         name: 'firstLine',
         message: 'Edit the instruction line sent to opencode:',
         initial: DEFAULT_PROMPT_FIRST_LINE,
-        result: v => v.trim()
+        result: (v) => v.trim()
     });
 
     try {
@@ -146,7 +146,9 @@ function summariseChangelist(model, changelist, firstLine) {
 
     const args = ['run', prompt, '-m', model, '--auto'];
     const promptFirstLine = prompt.split('\n')[0];
-    console.error(`$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${promptFirstLine}">" -m ${model} --auto`);
+    console.error(
+        `$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${promptFirstLine}">" -m ${model} --auto`
+    );
 
     const result = spawnSync(resolveOpencode(), args, {
         cwd: PROJECT_ROOT,
@@ -172,8 +174,8 @@ async function main(args = []) {
     const diffStat = git.git('diff', ['HEAD', '--stat']);
     const diffFull = git.git('diff', ['HEAD']);
 
-    const memoLines = listAllModules().flatMap(mod =>
-        loadMemos(mod.name).map(content => `${mod.name}: ${content}`)
+    const memoLines = listAllModules().flatMap((mod) =>
+        loadMemos(mod.name).map((content) => `${mod.name}: ${content}`)
     );
 
     const changelist = [
@@ -195,18 +197,16 @@ async function main(args = []) {
         process.exit(0);
     }
 
-    const choice = interactive
-        ? await promptCommitChoice()
-        : 'proceed';
+    const choice = interactive ? await promptCommitChoice() : 'proceed';
 
-    if (interactive && await promptPreview()) {
+    if (interactive && (await promptPreview())) {
         previewDiff();
         const prompt = new Enquirer.Confirm({
             name: 'unstage',
             message: 'Continue?',
             initial: true
         });
-        if (!await prompt.run()) {
+        if (!(await prompt.run())) {
             console.error('Aborted; restoring index (non-destructive).');
             git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
             process.exit(0);
@@ -218,13 +218,11 @@ async function main(args = []) {
         return;
     }
 
-    const model = await resolveModel(args.find(a => !a.startsWith('-') && a));
+    const model = await resolveModel(args.find((a) => !a.startsWith('-') && a));
 
     if (choice === 'proceed') {
         const modify = await promptModifyPrompt();
-        const firstLine = modify
-            ? await promptPromptFirstLine()
-            : DEFAULT_PROMPT_FIRST_LINE;
+        const firstLine = modify ? await promptPromptFirstLine() : DEFAULT_PROMPT_FIRST_LINE;
         const summary = summariseAndShow(model, changelist, firstLine);
 
         if (!summary && !interactive) {
@@ -263,22 +261,26 @@ function buildCommitPlan(summary, interactive, yeet = false) {
 async function editSummaryInEditor(summary, interactive) {
     const templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
     fs.writeFileSync(templateFile, summary + '\n');
-    
+
     const editorChild = editFile(templateFile);
-    
+
     await new Promise((resolve) => {
         editorChild.on('exit', (code) => resolve(code ?? 0));
     });
-    
+
     const stripped = stripCommitMessage(fs.readFileSync(templateFile, 'utf-8'));
-    try { fs.unlinkSync(templateFile); } catch { /* gone */ }
-    
+    try {
+        fs.unlinkSync(templateFile);
+    } catch {
+        /* gone */
+    }
+
     if (!stripped) {
         console.error('Commit message erased; unstaging all changes so you can cherry-pick files.');
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
         process.exit(0);
     }
-    
+
     return ['-m', stripped];
 }
 

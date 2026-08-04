@@ -17,7 +17,7 @@ async function main(args = []) {
         process.exit(1);
     }
 
-    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const moduleArg = nonFlag[0];
     const modelArg = nonFlag[1];
 
@@ -56,8 +56,8 @@ async function main(args = []) {
     });
 
     const first = await Promise.race([
-        editorExit.then(code => ({ kind: 'editor', code })),
-        ideExit.then(code => ({ kind: 'ide', code }))
+        editorExit.then((code) => ({ kind: 'editor', code })),
+        ideExit.then((code) => ({ kind: 'ide', code }))
     ]);
 
     if (first.kind === 'editor') {

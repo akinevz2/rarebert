@@ -1,0 +1,140 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1200 660"
+  width="1200"
+  height="660"
+  font-family="-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#0d1117" />
+      <stop offset="1" stop-color="#010409" />
+    </linearGradient>
+    <linearGradient id="add" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#7d3cff" />
+      <stop offset="1" stop-color="#ff3c8a" />
+    </linearGradient>
+    <linearGradient id="edit" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#ff3c8a" />
+      <stop offset="1" stop-color="#ffb13c" />
+    </linearGradient>
+    <linearGradient id="commit" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#ffb13c" />
+      <stop offset="1" stop-color="#3cffb1" />
+    </linearGradient>
+    <linearGradient id="run" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#3cffb1" />
+      <stop offset="1" stop-color="#3cb1ff" />
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2" result="b" />
+      <feMerge>
+        <feMergeNode in="b" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7d8590" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="660" fill="url(#bg)" rx="16" />
+  <text x="600" y="48" text-anchor="middle" font-size="24" fill="#e6edf3" font-weight="600" filter="url(#soft)">
+    the rarebert <tspan fill="url(#add)">loop</tspan>: scaffold → edit → implement → commit → run
+  </text>
+
+  <!-- 5 stages, each 200x150 with 40px gap, total 5*200+4*40 = 1160, start x=20 -->
+  <!-- 1. add -->
+  <g transform="translate(20, 90)">
+    <rect width="200" height="150" rx="10" fill="#161b22" stroke="#30363d" />
+    <rect width="200" height="32" rx="10" fill="#21262d" />
+    <text x="100" y="21" text-anchor="middle" font-size="13" fill="url(#add)" font-weight="600" font-family="ui-monospace, monospace">make add</text>
+    <g font-size="11" fill="#c9d1d9" font-family="ui-monospace, monospace">
+      <text x="16" y="56">prompt language + name</text>
+      <text x="16" y="76">generate boilerplate</text>
+      <text x="16" y="96">git add -A</text>
+      <text x="16" y="116">$EDITOR <tspan fill="#7d8590">+ opencode run</tspan></text>
+      <text x="16" y="136" fill="#7d8590">→ .last-module</text>
+    </g>
+  </g>
+
+  <!-- 2. edit -->
+  <g transform="translate(260, 90)">
+    <rect width="200" height="150" rx="10" fill="#161b22" stroke="#30363d" />
+    <rect width="200" height="32" rx="10" fill="#21262d" />
+    <text x="100" y="21" text-anchor="middle" font-size="13" fill="url(#edit)" font-weight="600" font-family="ui-monospace, monospace">make edit</text>
+    <g font-size="11" fill="#c9d1d9" font-family="ui-monospace, monospace">
+      <text x="16" y="56">autocomplete modules</text>
+      <text x="16" y="76">$EDITOR + opencode</text>
+      <text x="16" y="96">side-by-side, race exit</text>
+      <text x="16" y="116">on editor exit, kill ide</text>
+      <text x="16" y="136" fill="#7d8590">→ make commit</text>
+    </g>
+  </g>
+
+  <!-- 3. commit -->
+  <g transform="translate(500, 90)">
+    <rect width="200" height="150" rx="10" fill="#161b22" stroke="#30363d" />
+    <rect width="200" height="32" rx="10" fill="#21262d" />
+    <text x="100" y="21" text-anchor="middle" font-size="13" fill="url(#commit)" font-weight="600" font-family="ui-monospace, monospace">make commit</text>
+    <g font-size="11" fill="#c9d1d9" font-family="ui-monospace, monospace">
+      <text x="16" y="56">git diff HEAD</text>
+      <text x="16" y="76">opencode summary</text>
+      <text x="16" y="96">edit message in $EDITOR</text>
+      <text x="16" y="116">git commit</text>
+      <text x="16" y="136" fill="#7d8590">SIGINT → restore index</text>
+    </g>
+  </g>
+
+  <!-- 4. run -->
+  <g transform="translate(740, 90)">
+    <rect width="200" height="150" rx="10" fill="#161b22" stroke="#30363d" />
+    <rect width="200" height="32" rx="10" fill="#21262d" />
+    <text x="100" y="21" text-anchor="middle" font-size="13" fill="url(#run)" font-weight="600" font-family="ui-monospace, monospace">make run</text>
+    <g font-size="11" fill="#c9d1d9" font-family="ui-monospace, monospace">
+      <text x="16" y="56">find module in scripts/</text>
+      <text x="16" y="76">or src/ (.py via python3)</text>
+      <text x="16" y="96">recall memo imports</text>
+      <text x="16" y="116">spawn + forward argv</text>
+      <text x="16" y="136" fill="#7d8590">→ flush memo buffer</text>
+    </g>
+  </g>
+
+  <!-- 5. check -->
+  <g transform="translate(980, 90)">
+    <rect width="200" height="150" rx="10" fill="#161b22" stroke="#30363d" />
+    <rect width="200" height="32" rx="10" fill="#21262d" />
+    <text x="100" y="21" text-anchor="middle" font-size="13" fill="#ffb13c" font-weight="600" font-family="ui-monospace, monospace">make check</text>
+    <g font-size="11" fill="#c9d1d9" font-family="ui-monospace, monospace">
+      <text x="16" y="56">node --check each</text>
+      <text x="16" y="76">memo on syntax err</text>
+      <text x="16" y="96">print prior memos</text>
+      <text x="16" y="116">exit ≠0 on failure</text>
+      <text x="16" y="136" fill="#7d8590">iterate the loop</text>
+    </g>
+  </g>
+
+  <!-- flow arrows between stages -->
+  <g stroke="#7d8590" stroke-width="2" fill="none" marker-end="url(#arr)">
+    <line x1="220" y1="165" x2="260" y2="165" />
+    <line x1="460" y1="165" x2="500" y2="165" />
+    <line x1="700" y1="165" x2="740" y2="165" />
+    <line x1="940" y1="165" x2="980" y2="165" />
+  </g>
+
+  <!-- loop back arc -->
+  <path d="M 1080,240 C 1080,400 120,400 120,240" fill="none" stroke="#7d8590" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr)" />
+  <text x="600" y="420" text-anchor="middle" font-size="13" fill="#7d8590" font-style="italic">iterate — each cycle builds, learns, and commits</text>
+
+  <!-- memo subsystem -->
+  <g transform="translate(20, 470)">
+    <rect width="1160" height="160" rx="12" fill="#161b22" stroke="#30363d" />
+    <rect width="1160" height="36" rx="12" fill="#21262d" />
+    <text x="580" y="24" text-anchor="middle" font-size="14" fill="#ff3c8a" font-weight="600" font-family="ui-monospace, monospace">memo subsystem  (lib/memo.mjs)</text>
+    <g font-size="12.5" fill="#c9d1d9" font-family="ui-monospace, monospace">
+      <text x="24" y="72"><tspan fill="#ffb13c">remember(name, content)</tspan>  persist as JSON sidecar at module path + <tspan fill="#ff3c8a">.</tspan></text>
+      <text x="24" y="100"><tspan fill="#ffb13c">recallImports(callerRef)</tspan>    parse caller's imports, prepend memoized lines to cascading buffer</text>
+      <text x="24" y="128"><tspan fill="#ffb13c">flush()</tspan>                       on process exit / SIGINT, print buffer to stderr for the model to observe</text>
+    </g>
+  </g>
+</svg>

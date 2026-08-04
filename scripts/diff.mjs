@@ -35,7 +35,7 @@ function showDiff(diffArgs, usePager) {
 async function main(args = []) {
     const staged = args.includes('--staged');
     const stat = args.includes('--stat');
-    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const moduleArg = nonFlag[0];
 
     let pathspecs = [];

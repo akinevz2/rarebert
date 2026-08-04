@@ -44,11 +44,13 @@ async function main(args = []) {
     const normalizedName = normalizeModuleName(name, [ext]);
 
     if (ext === '.py') {
-        console.error('Python modules use `make create` (scripts/create.mjs) for proper preamble handling.');
+        console.error(
+            'Python modules use `make create` (scripts/create.mjs) for proper preamble handling.'
+        );
         process.exit(1);
     }
 
-    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const modelArg = nonFlag[0];
 
     console.error(`\nGenerating ${lang} module skeleton...`);
@@ -59,10 +61,11 @@ async function main(args = []) {
     console.error('\n--- Boilerplate Instructions ---');
     const libraries = findLibraries();
     if (libraries.length > 0) {
-        libraries.forEach(lib => console.error(`- Shared library: lib/${lib}.mjs`));
+        libraries.forEach((lib) => console.error(`- Framework library: lib/${lib}.mjs`));
     } else {
-        console.error('- No shared utilities yet (core.mjs created in lib/)');
+        console.error('- No framework utilities yet (core.mjs created in lib/)');
     }
+    console.error('- Project-specific libraries live in lib/{lang}/ (e.g. lib/py/, lib/mjs/)');
     console.error('- Import shared utilities from ../lib/core.mjs as needed');
     console.error('- Implement the main() function with your logic');
     console.error('-------------------------------');
@@ -90,6 +93,7 @@ export { main };
 
 export default {
     name: 'add',
-    description: 'Scaffold a new module, git add, edit in $EDITOR, then run opencode to implement it',
+    description:
+        'Scaffold a new module, git add, edit in $EDITOR, then run opencode to implement it',
     main
 };

@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 
 import Enquirer from 'enquirer';
-import { listLanguages, supportedExtensions, installLanguage, isSupported } from '../lib/languages.mjs';
+import {
+    listLanguages,
+    supportedExtensions,
+    installLanguage,
+    isSupported
+} from '../lib/languages.mjs';
 import { run, input, confirm, ok, fail } from '../lib/cli.mjs';
 
 const meta = {
     name: 'languages',
     description: 'Install or list supported module languages (templates under lib/supports/)',
     usage: 'node index.js languages [install <lang> [--force]]',
-    options: [
-        { flag: 'force', label: '', description: 'overwrite an existing template' }
-    ]
+    options: [{ flag: 'force', label: '', description: 'overwrite an existing template' }]
 };
 
 function showLanguages() {
@@ -26,19 +29,22 @@ function showLanguages() {
 }
 
 async function install(args = []) {
-    const nameArg = args.find(a => !a.startsWith('-') && a);
+    const nameArg = args.find((a) => !a.startsWith('-') && a);
     const force = args.includes('--force');
 
     let lang = nameArg;
     if (!lang) {
         lang = await input('Language to install (e.g. ts, rb, go):', {
-            validate: (v) => v.trim() ? true : 'Language is required'
+            validate: (v) => (v.trim() ? true : 'Language is required')
         });
     }
     lang = lang.replace(/^\.+/, '').toLowerCase();
 
     if (isSupported(lang) && !force) {
-        const overwrite = await confirm(`Language "${lang}" is already installed. Overwrite?`, false);
+        const overwrite = await confirm(
+            `Language "${lang}" is already installed. Overwrite?`,
+            false
+        );
         if (!overwrite) ok('Not overwritten.');
     }
 

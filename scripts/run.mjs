@@ -3,7 +3,13 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import { PROJECT_ROOT, SCRIPTS_DIR, LIB_DIR, normalizeModuleName, discoverScripts } from '../lib/core.mjs';
+import {
+    PROJECT_ROOT,
+    SCRIPTS_DIR,
+    LIB_DIR,
+    normalizeModuleName,
+    discoverScripts
+} from '../lib/core.mjs';
 
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
 const DEFAULT_MODULE = path.join(SRC_DIR, 'main.py');
@@ -18,17 +24,17 @@ function runProcess(cmd, args) {
         stdio: 'inherit',
         cwd: PROJECT_ROOT
     });
-    child.on('error', err => {
+    child.on('error', (err) => {
         console.error(`Failed to launch ${cmd}: ${err.message}`);
         process.exit(1);
     });
-    child.on('exit', code => process.exit(code ?? 0));
+    child.on('exit', (code) => process.exit(code ?? 0));
 }
 
 function findJsModule(name) {
     const normalized = normalizeModuleName(name);
     const all = [...discoverScripts(SCRIPTS_DIR), ...discoverScripts(LIB_DIR)];
-    return all.find(s => normalizeModuleName(s.name) === normalized);
+    return all.find((s) => normalizeModuleName(s.name) === normalized);
 }
 
 function findPyModule(name) {
@@ -36,11 +42,11 @@ function findPyModule(name) {
         path.join(SRC_DIR, name.endsWith('.py') ? name : `${name}.py`),
         path.isAbsolute(name) ? name : null
     ].filter(Boolean);
-    return candidates.find(p => fs.existsSync(p));
+    return candidates.find((p) => fs.existsSync(p));
 }
 
 async function main(args = []) {
-    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const moduleArg = nonFlag[0];
     const rest = nonFlag.slice(1);
 

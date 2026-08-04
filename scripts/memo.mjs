@@ -17,7 +17,7 @@ async function promptMemoContent() {
 
     const prompt = new Enquirer.Input({
         message: 'Enter the memo content:',
-        validate: (input) => input.trim() ? true : 'Memo content is required'
+        validate: (input) => (input.trim() ? true : 'Memo content is required')
     });
 
     try {
@@ -40,11 +40,13 @@ function memoImportPath(modulePath) {
 function ensureMemoLibImport(lines, modulePath) {
     const importPath = memoImportPath(modulePath);
     const importStatement = `import * as ${MEMO_LIB_NAME} from '${importPath}';`;
-    const already = lines.some(l => {
+    const already = lines.some((l) => {
         const trimmed = l.trim();
-        return trimmed.startsWith('import') &&
+        return (
+            trimmed.startsWith('import') &&
             trimmed.includes(MEMO_LIB_NAME) &&
-            trimmed.includes(importPath);
+            trimmed.includes(importPath)
+        );
     });
     if (already) return { lines, added: false };
 
@@ -105,23 +107,30 @@ function injectMemoLine(filePath, moduleName, memoContent) {
     const lines = fs.readFileSync(filePath, 'utf-8').split(/\r?\n/);
 
     const recallPattern = `${MEMO_LIB_NAME}.remember('${escapeForSingleQuoteString(moduleName)}', '${escapeForSingleQuoteString(memoContent)}')`;
-    if (lines.some(l => l.includes(recallPattern))) {
+    if (lines.some((l) => l.includes(recallPattern))) {
         return { changed: false, reason: 'memo line already present' };
     }
 
     const importResult = ensureMemoLibImport(lines, filePath);
     const insertIndex = findMainInsertIndex(importResult.lines);
     if (insertIndex === -1) {
-        return { changed: false, reason: 'could not locate main() body (library modules are not directly memoizable; their memos are prepended by importing scripts)' };
+        return {
+            changed: false,
+            reason: 'could not locate main() body (library modules are not directly memoizable; their memos are prepended by importing scripts)'
+        };
     }
 
     const refLine = importResult.lines[insertIndex] ?? '';
     const indent = (refLine.match(/^(\s*)/) || [])[1] || '    ';
     const newLines = [...importResult.lines];
 
-    const hasRecall = newLines.some(l => l.includes(`${MEMO_LIB_NAME}.recallImports(`));
+    const hasRecall = newLines.some((l) => l.includes(`${MEMO_LIB_NAME}.recallImports(`));
     if (!hasRecall) {
-        newLines.splice(insertIndex, 0, `${indent}${MEMO_LIB_NAME}.recallImports(import.meta.url);`);
+        newLines.splice(
+            insertIndex,
+            0,
+            `${indent}${MEMO_LIB_NAME}.recallImports(import.meta.url);`
+        );
     }
 
     const recallLine = `${indent}${MEMO_LIB_NAME}.remember('${escapeForSingleQuoteString(moduleName)}', '${escapeForSingleQuoteString(memoContent)}');`;
@@ -132,7 +141,7 @@ function injectMemoLine(filePath, moduleName, memoContent) {
 }
 
 async function main(args = []) {
-    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const moduleArg = nonFlag[0];
     const memoContentArg = nonFlag.slice(1).join(' ');
 
@@ -148,7 +157,7 @@ async function main(args = []) {
         process.exit(1);
     }
 
-    const memoContent = memoContentArg.trim() || await promptMemoContent();
+    const memoContent = memoContentArg.trim() || (await promptMemoContent());
 
     const result = injectMemoLine(target.path, target.name, memoContent);
     if (!result.changed) {
@@ -167,6 +176,6 @@ export { injectMemoLine, main };
 
 export default {
     name: 'memo',
-    description: 'Inject a memo line into a module\'s main() function',
+    description: "Inject a memo line into a module's main() function",
     main
 };

@@ -1,0 +1,273 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1280 820"
+  width="1280"
+  height="820"
+  font-family="-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#0d1117" />
+      <stop offset="1" stop-color="#010409" />
+    </linearGradient>
+    <linearGradient id="rb" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#7d3cff" />
+      <stop offset="0.5" stop-color="#ff3c8a" />
+      <stop offset="1" stop-color="#ffb13c" />
+    </linearGradient>
+    <linearGradient id="pyg" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#3cb1ff" />
+      <stop offset="1" stop-color="#ffd43c" />
+    </linearGradient>
+    <linearGradient id="mjsg" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#ff3c8a" />
+      <stop offset="1" stop-color="#3cffb1" />
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2" result="b" />
+      <feMerge>
+        <feMergeNode in="b" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="820" fill="url(#bg)" rx="16" />
+  <text x="640" y="50" text-anchor="middle" font-size="26" font-weight="700" fill="#e6edf3" filter="url(#soft)">
+    rarebert <tspan fill="url(#rb)">repository</tspan> layout
+  </text>
+  <text x="640" y="80" text-anchor="middle" font-size="14" fill="#7d8590" letter-spacing="1.2">
+    framework runtime lives at lib/ root · project-specific libs live under lib/{lang}/
+  </text>
+
+  <!-- root -->
+  <g transform="translate(580, 110)">
+    <rect width="120" height="44" rx="8" fill="#21262d" stroke="#30363d" />
+    <text x="60" y="28" text-anchor="middle" font-size="14" fill="#e6edf3" font-weight="600" font-family="ui-monospace, monospace">rarebert/</text>
+  </g>
+
+  <!-- level 1 children: index.js, Makefile, scripts/, src/, lib/ -->
+  <!-- vertical down 44 -->
+  <g stroke="#30363d" stroke-width="1.5" fill="none">
+    <line x1="640" y1="154" x2="640" y2="184" />
+    <line x1="200" y1="184" x2="1080" y2="184" />
+    <line x1="200" y1="184" x2="200" y2="210" />
+    <line x1="420" y1="184" x2="420" y2="210" />
+    <line x1="640" y1="184" x2="640" y2="210" />
+    <line x1="860" y1="184" x2="860" y2="210" />
+    <line x1="1080" y1="184" x2="1080" y2="210" />
+  </g>
+
+  <!-- index.js -->
+  <g transform="translate(140, 210)">
+    <rect width="120" height="40" rx="6" fill="#161b22" stroke="#30363d" />
+    <text x="60" y="25" text-anchor="middle" font-size="12.5" fill="url(#rb)" font-family="ui-monospace, monospace" font-weight="600">index.js</text>
+  </g>
+  <text x="200" y="266" text-anchor="middle" font-size="11" fill="#7d8590" font-family="ui-monospace, monospace">entry: dispatch by name</text>
+
+  <!-- Makefile -->
+  <g transform="translate(360, 210)">
+    <rect width="120" height="40" rx="6" fill="#161b22" stroke="#30363d" />
+    <text x="60" y="25" text-anchor="middle" font-size="12.5" fill="#e6edf3" font-family="ui-monospace, monospace">Makefile</text>
+  </g>
+  <text x="420" y="266" text-anchor="middle" font-size="11" fill="#7d8590" font-family="ui-monospace, monospace">pure index of targets</text>
+
+  <!-- scripts/ -->
+  <g transform="translate(580, 210)">
+    <rect width="120" height="40" rx="6" fill="#161b22" stroke="#3cffb1" stroke-width="1.5" />
+    <text x="60" y="25" text-anchor="middle" font-size="12.5" fill="#3cffb1" font-family="ui-monospace, monospace" font-weight="600">scripts/</text>
+  </g>
+  <text x="640" y="266" text-anchor="middle" font-size="11" fill="#7d8590" font-family="ui-monospace, monospace">14 CLI commands</text>
+
+  <!-- src/ -->
+  <g transform="translate(800, 210)">
+    <rect width="120" height="40" rx="6" fill="#161b22" stroke="#3cb1ff" stroke-width="1.5" />
+    <text x="60" y="25" text-anchor="middle" font-size="12.5" fill="#3cb1ff" font-family="ui-monospace, monospace" font-weight="600">src/</text>
+  </g>
+  <text x="860" y="266" text-anchor="middle" font-size="11" fill="#7d8590" font-family="ui-monospace, monospace">python entrypoints</text>
+
+  <!-- lib/ -->
+  <g transform="translate(1020, 210)">
+    <rect width="120" height="40" rx="6" fill="#161b22" stroke="#ff3c8a" stroke-width="1.5" />
+    <text x="60" y="25" text-anchor="middle" font-size="12.5" fill="#ff3c8a" font-family="ui-monospace, monospace" font-weight="600">lib/</text>
+  </g>
+
+  <!-- scripts/ children (3 sample) -->
+  <g stroke="#30363d" stroke-width="1" fill="none" stroke-dasharray="3 3">
+    <line x1="640" y1="250" x2="640" y2="300" />
+    <line x1="520" y1="300" x2="760" y2="300" />
+    <line x1="520" y1="300" x2="520" y2="320" />
+    <line x1="640" y1="300" x2="640" y2="320" />
+    <line x1="760" y1="300" x2="760" y2="320" />
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="11">
+    <g transform="translate(470, 320)">
+      <rect width="100" height="24" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="16" text-anchor="middle" fill="#c9d1d9">add.mjs</text>
+    </g>
+    <g transform="translate(590, 320)">
+      <rect width="100" height="24" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="16" text-anchor="middle" fill="#c9d1d9">commit.mjs</text>
+    </g>
+    <g transform="translate(710, 320)">
+      <rect width="100" height="24" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="16" text-anchor="middle" fill="#c9d1d9">article.mjs</text>
+    </g>
+  </g>
+  <text x="640" y="362" text-anchor="middle" font-size="10" fill="#7d8590" font-family="ui-monospace, monospace">… 14 scripts total</text>
+
+  <!-- src/ children -->
+  <g stroke="#30363d" stroke-width="1" fill="none" stroke-dasharray="3 3">
+    <line x1="860" y1="250" x2="860" y2="300" />
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="11">
+    <g transform="translate(810, 320)">
+      <rect width="100" height="24" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="16" text-anchor="middle" fill="#3cb1ff">main.py</text>
+    </g>
+  </g>
+
+  <!-- lib/ subtree: framework .mjs row + supports/ + lib/{lang}/ rows -->
+  <g stroke="#30363d" stroke-width="1.5" fill="none">
+    <line x1="1080" y1="250" x2="1080" y2="300" />
+    <line x1="940" y1="300" x2="1220" y2="300" />
+    <line x1="940" y1="300" x2="940" y2="330" />
+    <line x1="1080" y1="300" x2="1080" y2="330" />
+    <line x1="1220" y1="300" x2="1220" y2="330" />
+  </g>
+
+  <text x="1080" y="318" text-anchor="middle" font-size="10" fill="#ff3c8a" font-family="ui-monospace, monospace" letter-spacing="0.8">framework .mjs</text>
+  <g font-family="ui-monospace, monospace" font-size="11">
+    <g transform="translate(890, 330)">
+      <rect width="100" height="26" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="17" text-anchor="middle" fill="#c9d1d9">core.mjs</text>
+    </g>
+    <g transform="translate(1030, 330)">
+      <rect width="100" height="26" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="17" text-anchor="middle" fill="#c9d1d9">memo.mjs</text>
+    </g>
+    <g transform="translate(1170, 330)">
+      <rect width="100" height="26" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="17" text-anchor="middle" fill="#c9d1d9">cli.mjs</text>
+    </g>
+  </g>
+  <text x="1080" y="372" text-anchor="middle" font-size="10" fill="#7d8590" font-family="ui-monospace, monospace">editor · git · ide · libs · models · opencode · template · modules · languages · list</text>
+
+  <!-- supports/ (staggered to center, branching off the lib/ trunk at y=386) -->
+  <g stroke="#30363d" stroke-width="1.2" fill="none" stroke-dasharray="3 3">
+    <path d="M 1080,386 L 1080,396 L 640,396 L 640,430" />
+  </g>
+  <g transform="translate(570, 430)">
+    <rect width="140" height="30" rx="6" fill="#161b22" stroke="#ffb13c" stroke-width="1.3" />
+    <text x="70" y="19" text-anchor="middle" font-size="12" fill="#ffb13c" font-family="ui-monospace, monospace" font-weight="600">supports/</text>
+  </g>
+  <g stroke="#30363d" stroke-width="1" fill="none" stroke-dasharray="3 3">
+    <line x1="640" y1="460" x2="640" y2="485" />
+    <line x1="550" y1="485" x2="730" y2="485" />
+    <line x1="550" y1="485" x2="550" y2="505" />
+    <line x1="640" y1="485" x2="640" y2="505" />
+    <line x1="730" y1="485" x2="730" y2="505" />
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="10.5">
+    <g transform="translate(505, 505)">
+      <rect width="90" height="24" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="45" y="16" text-anchor="middle" fill="#c9d1d9">mjs.json</text>
+    </g>
+    <g transform="translate(595, 505)">
+      <rect width="90" height="24" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="45" y="16" text-anchor="middle" fill="#c9d1d9">js.json</text>
+    </g>
+    <g transform="translate(685, 505)">
+      <rect width="90" height="24" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="45" y="16" text-anchor="middle" fill="#c9d1d9">py.json</text>
+    </g>
+  </g>
+  <text x="640" y="546" text-anchor="middle" font-size="10" fill="#7d8590" font-family="ui-monospace, monospace">per-language boilerplate templates</text>
+
+  <!-- lib/{lang}/ project-specific subtree -->
+  <g stroke="#30363d" stroke-width="1.5" fill="none">
+    <line x1="1080" y1="396" x2="1080" y2="560" stroke-dasharray="0" />
+  </g>
+  <g stroke="#30363d" stroke-width="1.5" fill="none">
+    <line x1="1080" y1="570" x2="1080" y2="590" />
+    <line x1="900" y1="590" x2="1220" y2="590" />
+    <line x1="900" y1="590" x2="900" y2="620" />
+    <line x1="1080" y1="590" x2="1080" y2="620" />
+    <line x1="1220" y1="590" x2="1220" y2="620" />
+  </g>
+  <text x="1080" y="582" text-anchor="middle" font-size="10" fill="#7d8590" font-family="ui-monospace, monospace" letter-spacing="0.8">project-specific</text>
+
+  <!-- lib/py/ -->
+  <g transform="translate(840, 620)">
+    <rect width="120" height="30" rx="6" fill="#161b22" stroke="url(#pyg)" stroke-width="1.4" />
+    <text x="60" y="19" text-anchor="middle" font-size="12" fill="url(#pyg)" font-family="ui-monospace, monospace" font-weight="600">lib/py/</text>
+  </g>
+  <g stroke="#30363d" stroke-width="1" fill="none" stroke-dasharray="3 3">
+    <line x1="900" y1="650" x2="900" y2="675" />
+    <line x1="840" y1="675" x2="960" y2="675" />
+    <line x1="840" y1="675" x2="840" y2="695" />
+    <line x1="900" y1="675" x2="900" y2="695" />
+    <line x1="960" y1="675" x2="960" y2="695" />
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="10">
+    <g transform="translate(800, 695)">
+      <rect width="80" height="22" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="40" y="15" text-anchor="middle" fill="#c9d1d9">__init__.py</text>
+    </g>
+    <g transform="translate(860, 695)">
+      <rect width="80" height="22" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="40" y="15" text-anchor="middle" fill="#c9d1d9">loader.py</text>
+    </g>
+    <g transform="translate(920, 695)">
+      <rect width="80" height="22" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="40" y="15" text-anchor="middle" fill="#c9d1d9">tagger.py</text>
+    </g>
+  </g>
+  <text x="900" y="734" text-anchor="middle" font-size="10" fill="#7d8590" font-family="ui-monospace, monospace">import: from lib.py import X</text>
+
+  <!-- lib/mjs/ -->
+  <g transform="translate(1020, 620)">
+    <rect width="120" height="30" rx="6" fill="#161b22" stroke="url(#mjsg)" stroke-width="1.4" />
+    <text x="60" y="19" text-anchor="middle" font-size="12" fill="url(#mjsg)" font-family="ui-monospace, monospace" font-weight="600">lib/mjs/</text>
+  </g>
+  <g stroke="#30363d" stroke-width="1" fill="none" stroke-dasharray="3 3">
+    <line x1="1080" y1="650" x2="1080" y2="695" />
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="10">
+    <g transform="translate(1030, 695)">
+      <rect width="100" height="22" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="15" text-anchor="middle" fill="#c9d1d9">… your .mjs</text>
+    </g>
+  </g>
+  <text x="1080" y="734" text-anchor="middle" font-size="10" fill="#7d8590" font-family="ui-monospace, monospace">import: from '../lib/mjs/X.mjs'</text>
+
+  <!-- lib/{lang}/ -->
+  <g transform="translate(1160, 620)">
+    <rect width="120" height="30" rx="6" fill="#161b22" stroke="#7d3cff" stroke-width="1.4" />
+    <text x="60" y="19" text-anchor="middle" font-size="12" fill="#7d3cff" font-family="ui-monospace, monospace" font-weight="600">lib/{lang}/</text>
+  </g>
+  <g stroke="#30363d" stroke-width="1" fill="none" stroke-dasharray="3 3">
+    <line x1="1220" y1="650" x2="1220" y2="695" />
+  </g>
+  <g font-family="ui-monospace, monospace" font-size="10">
+    <g transform="translate(1170, 695)">
+      <rect width="100" height="22" rx="4" fill="#0d1117" stroke="#30363d" />
+      <text x="50" y="15" text-anchor="middle" fill="#c9d1d9">extensible</text>
+    </g>
+  </g>
+  <text x="1220" y="734" text-anchor="middle" font-size="10" fill="#7d8590" font-family="ui-monospace, monospace">per language</text>
+
+  <!-- legend -->
+  <g transform="translate(40, 780)" font-family="ui-monospace, monospace" font-size="11">
+    <rect width="14" height="14" rx="3" fill="#161b22" stroke="#ff3c8a" />
+    <text x="22" y="11" fill="#c9d1d9">framework runtime</text>
+    <rect x="170" width="14" height="14" rx="3" fill="#161b22" stroke="#3cffb1" />
+    <text x="192" y="11" fill="#c9d1d9">CLI scripts</text>
+    <rect x="290" width="14" height="14" rx="3" fill="#161b22" stroke="#3cb1ff" />
+    <text x="312" y="11" fill="#c9d1d9">python entrypoints</text>
+    <rect x="450" width="14" height="14" rx="3" fill="#161b22" stroke="#ffb13c" />
+    <text x="472" y="11" fill="#c9d1d9">language templates</text>
+    <rect x="610" width="14" height="14" rx="3" fill="#161b22" stroke="url(#pyg)" />
+    <text x="632" y="11" fill="#c9d1d9">project-specific libs (per language)</text>
+  </g>
+</svg>

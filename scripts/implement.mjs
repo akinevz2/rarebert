@@ -11,7 +11,7 @@ async function main(args = []) {
         process.exit(1);
     }
 
-    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const model = await resolveModel(nonFlag[0]);
 
     const { status } = runIDE(model, file, { implement: true });
