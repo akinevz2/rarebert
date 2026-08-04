@@ -3,13 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import {
-    PROJECT_ROOT,
-    SCRIPTS_DIR,
-    LIB_DIR,
-    normalizeModuleName,
-    discoverScripts
-} from '../lib/core.mjs';
+import { PROJECT_ROOT, SCRIPTS_DIR, LIB_DIR, normalizeModuleName, discover } from '../lib/core.mjs';
 
 const SRC_DIR = path.join(PROJECT_ROOT, 'src');
 const DEFAULT_MODULE = path.join(SRC_DIR, 'main.py');
@@ -19,7 +13,7 @@ function rel(p) {
 }
 
 function runProcess(cmd, args) {
-    console.error(`$ ${cmd} ${args.join(' ')}`);
+    console.log(`$ ${cmd} ${args.join(' ')}`);
     const child = spawn(cmd, args, {
         stdio: 'inherit',
         cwd: PROJECT_ROOT
@@ -33,7 +27,7 @@ function runProcess(cmd, args) {
 
 function findJsModule(name) {
     const normalized = normalizeModuleName(name);
-    const all = [...discoverScripts(SCRIPTS_DIR), ...discoverScripts(LIB_DIR)];
+    const all = [...discover(SCRIPTS_DIR), ...discover(LIB_DIR)];
     return all.find((s) => normalizeModuleName(s.name) === normalized);
 }
 

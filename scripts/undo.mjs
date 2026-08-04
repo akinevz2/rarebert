@@ -25,13 +25,13 @@ async function main(args = []) {
             process.exit(0);
         }
         fs.unlinkSync(absPath);
-        console.error(`✓ Removed module: ${rel}`);
+        console.log(`✓ Removed module: ${rel}`);
     } else {
         console.error(`Module file not found (already removed?): ${rel}`);
     }
 
     clearLastModule();
-    console.error('✓ Cleared .last-module marker');
+    console.log('✓ Cleared .last-module marker');
 }
 
 export { main };

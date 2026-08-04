@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
-import { assertProjectRoot, normalizeModuleName, discoverScripts } from './lib/core.mjs';
+import { assertProjectRoot, normalizeModuleName, discover } from './lib/core.mjs';
 import { listModules } from './lib/list.mjs';
 import { loadForRun } from './lib/memo.mjs';
 import { ensureConfig } from './lib/backend.mjs';
+import { installSignalHandlers } from './lib/cli.mjs';
 
 assertProjectRoot();
+installSignalHandlers();
 
 const SKIP_ONBOARD = new Set([
     'backend',
     'onboard',
+    'reload',
     'help',
     'h',
     '--help',
@@ -27,7 +30,7 @@ async function maybeOnboard(cmd) {
 }
 
 async function runModule(name, args = []) {
-    const scripts = discoverScripts();
+    const scripts = discover();
     const script = scripts.find((s) => normalizeModuleName(s.name) === name);
     if (!script) {
         console.error('Module not found:', name);
@@ -47,7 +50,8 @@ async function runModule(name, args = []) {
 }
 
 async function helpVerbose() {
-    const scripts = discoverScripts();
+    const scripts = discover();
+
     for (const script of scripts) {
         if (script !== scripts[0]) console.log();
         try {

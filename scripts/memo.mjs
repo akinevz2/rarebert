@@ -5,6 +5,7 @@ import path from 'path';
 import Enquirer from 'enquirer';
 import { PROJECT_ROOT } from '../lib/core.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
+import { AbortError } from '../lib/cli.mjs';
 
 const MEMO_LIB = path.join(PROJECT_ROOT, 'lib', 'memo.mjs');
 const MEMO_LIB_NAME = 'memo';
@@ -23,8 +24,7 @@ async function promptMemoContent() {
     try {
         return (await prompt.run()).trim();
     } catch {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
 }
 
@@ -165,10 +165,10 @@ async function main(args = []) {
         process.exit(1);
     }
 
-    console.error(`✓ Memo injected into ${path.relative(PROJECT_ROOT, target.path)}`);
-    console.error(`  When run, prints: ${target.name}: ${memoContent}`);
+    console.log(`✓ Memo injected into ${path.relative(PROJECT_ROOT, target.path)}`);
+    console.log(`  When run, prints: ${target.name}: ${memoContent}`);
     if (process.env.FORGET) {
-        console.error('  FORGET is set: memo array will be cleared after printing.');
+        console.log('  FORGET is set: memo array will be cleared after printing.');
     }
 }
 

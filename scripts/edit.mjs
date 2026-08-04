@@ -10,6 +10,14 @@ import { relPath } from '../lib/libs.mjs';
 import { PROJECT_ROOT } from '../lib/core.mjs';
 import { spawnSync } from 'child_process';
 
+// TODO: edit→implement auto-scheduling. After the editor closes, instead of
+// (or in addition to) running `node index.js commit`, schedule
+// `node index.js implement <files-of-concern>` with the file list the user
+// identified in the TUI/IDE session. This overloads the implement call with
+// explicit file args, reducing context size by scoping opencode to only the
+// modules of concern. See scripts/implement.mjs `runHeadless` for the
+// non-interactive file-args entry point.
+
 async function main(args = []) {
     const modules = listAllModules();
     if (modules.length === 0) {
@@ -39,7 +47,7 @@ async function main(args = []) {
 
     const { status, child: ideChild } = runIDE(model, rel);
 
-    console.error(`Opening $EDITOR ${rel}`);
+    console.log(`Opening $EDITOR ${rel}`);
     const editorChild = editFile(target.path);
 
     let finalStatus = 0;
@@ -70,7 +78,7 @@ async function main(args = []) {
     }
 
     if (finalStatus === 0) {
-        console.error('\n--- running `node index.js commit` after opencode exit ---');
+        console.log('\n--- running `node index.js commit` after opencode exit ---');
         const result = spawnSync('node', ['index.js', 'commit'], {
             cwd: PROJECT_ROOT,
             stdio: 'inherit'

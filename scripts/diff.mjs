@@ -13,7 +13,7 @@ function showDiff(diffArgs, usePager) {
         return result.status ?? 1;
     }
     if (!result.stdout.trim()) {
-        console.error('(no changes)');
+        console.log('(no changes)');
         return 0;
     }
     if (!usePager) {

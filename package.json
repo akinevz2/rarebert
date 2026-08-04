@@ -6,10 +6,11 @@
         ".": "./index.js"
     },
     "scripts": {
-        "add": "make add",
-        "list": "make list",
-        "memo": "make memo",
-        "reload": "make reload",
+        "list": "node index.js",
+        "opencode": "node index.js opencode",
+        "reload": "node index.js reload",
+        "memo": "node index.js memo",
+        "forgetMemo": "FORGET=true node index.js memo",
         "format": "prettier --write lib/ scripts/ index.js *.json *.md",
         "format:check": "prettier --check lib/ scripts/ index.js *.json *.md"
     },

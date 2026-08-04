@@ -12,7 +12,7 @@ import { readOpendeConfig, listModels, promptModel, resolveModel } from '../lib/
 import { loadMemos } from '../lib/memo.mjs';
 import { editFile } from '../lib/editor.mjs';
 import { resolveOpencode } from '../lib/opencode.mjs';
-import { run } from '../lib/cli.mjs';
+import { run, AbortError, onAbort } from '../lib/cli.mjs';
 
 const meta = {
     name: 'commit',
@@ -41,16 +41,16 @@ async function promptCommitChoice() {
         message: 'How would you like to commit?',
         choices: [
             { name: 'proceed', message: 'Proceed with opencode summary' },
+            { name: 'later', message: 'Just return me to the shell' },
             { name: 'raw', message: 'Write a regular commit message' }
         ],
         initial: 0
     });
 
     try {
-        return await prompt.run();
+        const result = await prompt.run();
     } catch {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
 }
 
@@ -68,8 +68,7 @@ async function promptPreview() {
     try {
         return await prompt.run();
     } catch {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
 }
 
@@ -103,14 +102,13 @@ async function promptModifyPrompt() {
     try {
         return await prompt.run();
     } catch {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
 }
 
 async function promptPromptFirstLine() {
     if (process.stdin.isTTY !== true) {
-        console.error('Non-interactive; using the default prompt instruction line.');
+        console.log('Non-interactive; using the default prompt instruction line.');
         return DEFAULT_PROMPT_FIRST_LINE;
     }
 
@@ -125,8 +123,7 @@ async function promptPromptFirstLine() {
         const edited = await prompt.run();
         return edited || DEFAULT_PROMPT_FIRST_LINE;
     } catch {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
 }
 
@@ -146,7 +143,7 @@ function summariseChangelist(model, changelist, firstLine) {
 
     const args = ['run', prompt, '-m', model, '--auto'];
     const promptFirstLine = prompt.split('\n')[0];
-    console.error(
+    console.log(
         `$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${promptFirstLine}">" -m ${model} --auto`
     );
 
@@ -193,7 +190,7 @@ async function main(args = []) {
     ].join('\n');
 
     if (!status.stdout.trim()) {
-        console.error('Nothing to commit: working tree clean.');
+        console.log('Nothing to commit: working tree clean.');
         process.exit(0);
     }
 
@@ -203,14 +200,21 @@ async function main(args = []) {
         previewDiff();
         const prompt = new Enquirer.Confirm({
             name: 'unstage',
-            message: 'Continue?',
-            initial: true
+            message: 'Are you ready to commit?',
+            initial: false
         });
         if (!(await prompt.run())) {
-            console.error('Aborted; restoring index (non-destructive).');
+            git.git('status', [], { stdio: 'inherit' });
+            // print the staged files
             git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
+            console.error('Aborted; restored index (non-destructive).');
             process.exit(0);
         }
+    }
+
+    if (choice === 'later') {
+        git.git('status');
+        return;
     }
 
     if (choice === 'raw') {
@@ -237,14 +241,14 @@ async function main(args = []) {
 }
 
 function summariseAndShow(model, changelist, firstLine) {
-    console.error('\n--- opencode summary ---');
+    console.log('\n--- opencode summary ---');
     const summary = summariseChangelist(model, changelist, firstLine);
     if (summary) {
-        console.error(summary);
+        console.log(summary);
     } else {
-        console.error('(no summary produced)');
+        console.log('(no summary produced)');
     }
-    console.error('--- end summary ---\n');
+    console.log('--- end summary ---\n');
     return summary;
 }
 
@@ -285,10 +289,9 @@ async function editSummaryInEditor(summary, interactive) {
 }
 
 function stageAndCommit(commitArgs) {
-    process.on('SIGINT', () => {
+    onAbort(() => {
         console.error('\nInterrupted; restoring index (non-destructive).');
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
-        process.exit(130);
     });
 
     // Only mutate the index if nothing is staged yet. If the user already

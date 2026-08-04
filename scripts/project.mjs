@@ -64,9 +64,9 @@ async function installNewLanguage() {
         if (!overwrite) ok('Not overwritten.');
     }
 
-    console.error(`project: installing "${name}"...`);
+    console.log(`project: installing "${name}"...`);
     const result = await installLanguage(name, { force: true });
-    console.error(`\n✓ Installed language: ${result.name} (${result.path})`);
+    console.log(`\n✓ Installed language: ${result.name} (${result.path})`);
     return result.name;
 }
 
@@ -77,20 +77,20 @@ async function install(args = []) {
 
     const name = nameArg.replace(/^\.+/, '').toLowerCase();
     const result = await installLanguage(name, { force });
-    console.error(`\n✓ Installed language: ${result.name}`);
-    console.error(`  template: ${result.path}`);
-    console.error(`  lines: ${Object.keys(result.template.lines).length}`);
+    console.log(`\n✓ Installed language: ${result.name}`);
+    console.log(`  template: ${result.path}`);
+    console.log(`  lines: ${Object.keys(result.template.lines).length}`);
     ok(`Done. New modules can now use .${result.name}`);
 }
 
 function showList() {
     const langs = listLanguages();
     if (langs.length === 0) {
-        console.error('project: no languages installed (lib/supports/ is empty)');
+        console.log('project: no languages installed (lib/supports/ is empty)');
         return;
     }
-    console.error(`project: ${langs.length} installed`);
-    for (const l of langs) console.error(`  - ${l}  (.${l})`);
+    console.log(`project: ${langs.length} installed`);
+    for (const l of langs) console.log(`  - ${l}  (.${l})`);
 }
 
 async function main(args = []) {

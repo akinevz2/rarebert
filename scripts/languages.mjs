@@ -19,12 +19,12 @@ const meta = {
 function showLanguages() {
     const langs = listLanguages();
     if (langs.length === 0) {
-        console.error('languages: no templates installed (lib/supports/ is empty)');
+        console.log('languages: no templates installed (lib/supports/ is empty)');
         return;
     }
-    console.error(`languages: ${langs.length} installed`);
+    console.log(`languages: ${langs.length} installed`);
     for (const lang of langs) {
-        console.error(`  - ${lang}  (extension: .${lang})`);
+        console.log(`  - ${lang}  (extension: .${lang})`);
     }
 }
 
@@ -48,12 +48,12 @@ async function install(args = []) {
         if (!overwrite) ok('Not overwritten.');
     }
 
-    console.error(`languages: installing "${lang}"...`);
+    console.log(`languages: installing "${lang}"...`);
     const result = await installLanguage(lang, { force });
-    console.error(`\n✓ Installed language: ${result.name}`);
-    console.error(`  template: ${result.path}`);
-    console.error(`  lines: ${Object.keys(result.template.lines).length}`);
-    console.error(`  sections: ${Object.keys(result.template.sections).join(', ')}`);
+    console.log(`\n✓ Installed language: ${result.name}`);
+    console.log(`  template: ${result.path}`);
+    console.log(`  lines: ${Object.keys(result.template.lines).length}`);
+    console.log(`  sections: ${Object.keys(result.template.sections).join(', ')}`);
     ok(`Done. New modules can now use .${result.name}`);
 }
 

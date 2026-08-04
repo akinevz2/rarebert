@@ -10,7 +10,7 @@ import { exitIDE } from '../lib/ide.mjs';
 import { resolveOpencode } from '../lib/opencode.mjs';
 import { readOpendeConfig, listModels, promptModel, resolveModel } from '../lib/models.mjs';
 import { relPath } from '../lib/libs.mjs';
-import { run } from '../lib/cli.mjs';
+import { run, AbortError } from '../lib/cli.mjs';
 
 const meta = {
     name: 'article',
@@ -85,7 +85,7 @@ function removeFromTOC(rel) {
 }
 
 function rebuildAndOpen() {
-    console.error('\n--- rebuilding report and opening updated view ---');
+    console.log('\n--- rebuilding report and opening updated view ---');
     if (!runMake('open')) {
         console.error('(build/open failed; continuing)');
     }
@@ -127,7 +127,7 @@ function isHostClean() {
 }
 
 async function runHostCommit() {
-    console.error('\n--- rarebert repo has uncommitted changes; running `make commit` ---');
+    console.log('\n--- rarebert repo has uncommitted changes; running `make commit` ---');
     const result = spawnSync('make', ['commit'], {
         cwd: PROJECT_ROOT,
         stdio: 'inherit'
@@ -166,7 +166,7 @@ async function assertHostCleanOrCommit() {
         const success = await runHostCommit();
         if (!success) process.exit(1);
     }
-    console.error('rarebert working tree is clean.');
+    console.log('rarebert working tree is clean.');
 }
 
 function ensureCloned() {
@@ -181,7 +181,7 @@ function ensureCloned() {
             process.exit(1);
         }
     }
-    console.error(`cloning ${REPORT_REMOTE} -> ${relPath(REPORT_DIR)}/`);
+    console.log(`cloning ${REPORT_REMOTE} -> ${relPath(REPORT_DIR)}/`);
     const result = spawnSync('git', ['clone', REPORT_REMOTE, REPORT_DIR], {
         stdio: 'inherit',
         encoding: 'utf-8'
@@ -197,7 +197,7 @@ function ensureCloned() {
 }
 
 function runMake(target) {
-    console.error(`$ make ${target} (cwd: ${relPath(REPORT_DIR)})`);
+    console.log(`$ make ${target} (cwd: ${relPath(REPORT_DIR)})`);
     const result = spawnSync('make', [target], {
         cwd: REPORT_DIR,
         stdio: 'inherit',
@@ -277,8 +277,7 @@ async function promptSection(sections, sectionArg) {
         const answer = await prompt.run();
         return sections.find((s) => s.path === answer);
     } catch {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
 }
 
@@ -295,7 +294,7 @@ function branchExists(name) {
 async function promptBranch() {
     const cur = currentBranch();
     if (cur && cur !== 'template' && cur !== 'HEAD') {
-        console.error(`on branch: ${cur}`);
+        console.log(`on branch: ${cur}`);
         return;
     }
     const fallback = `article/${new Date().toISOString().slice(0, 10)}`;
@@ -313,8 +312,7 @@ async function promptBranch() {
         try {
             name = (await input.run()).trim();
         } catch {
-            console.error('\nAborted.');
-            process.exit(130);
+            throw new AbortError();
         }
     } else {
         name = fallback;
@@ -330,7 +328,7 @@ async function promptBranch() {
         console.error(`git checkout failed: ${res.stderr.trim() || res.stdout.trim()}`);
         process.exit(1);
     }
-    console.error(`switched to branch: ${name}`);
+    console.log(`switched to branch: ${name}`);
 }
 
 function isReportClean() {
@@ -359,7 +357,7 @@ function assertCleanBeforeSwitch() {
 function runOpencode(model) {
     const bin = resolveOpencode();
     const args = [REPORT_DIR, '-m', model, '--mini'];
-    console.error(`$ opencode ${args.join(' ')}`);
+    console.log(`$ opencode ${args.join(' ')}`);
     const child = spawn(bin, args, {
         stdio: 'inherit',
         cwd: REPORT_DIR
@@ -373,7 +371,7 @@ function runOpencode(model) {
 
 async function editSection(model, sectionPath, sectionRel) {
     const ideChild = runOpencode(model);
-    console.error(`Opening $EDITOR ${relPath(sectionPath)}`);
+    console.log(`Opening $EDITOR ${relPath(sectionPath)}`);
     const editorChild = editFile(sectionPath);
 
     let finalStatus = 0;
@@ -408,7 +406,7 @@ async function editPreamble(model) {
         console.error(`Preamble file not found: ${relPath(PREAMBLE_PATH)}`);
         return 1;
     }
-    console.error(`Editing preamble: ${relPath(PREAMBLE_PATH)}`);
+    console.log(`Editing preamble: ${relPath(PREAMBLE_PATH)}`);
     const status = await editSection(
         model,
         PREAMBLE_PATH,
@@ -432,13 +430,13 @@ function sectionExists(name) {
 
 async function manageSections() {
     const sections = listSections();
-    console.error('\n=== Sections ===');
+    console.log('\n=== Sections ===');
     if (sections.length === 0) {
-        console.error('(none)');
+        console.log('(none)');
     } else {
-        sections.forEach((s) => console.error(`  ${s.rel}`));
+        sections.forEach((s) => console.log(`  ${s.rel}`));
     }
-    console.error(`  src/${TOC_FILENAME} (table of contents, auto-managed)`);
+    console.log(`  src/${TOC_FILENAME} (table of contents, auto-managed)`);
 
     const actionPrompt = new Select({
         name: 'action',
@@ -491,9 +489,9 @@ async function manageSections() {
         fs.mkdirSync(path.dirname(full), { recursive: true });
         const title = path.basename(rel, '.md').replace(/[-_]/g, ' ');
         fs.writeFileSync(full, `# ${title}\n\n`);
-        console.error(`Created: ${relPath(full)}`);
+        console.log(`Created: ${relPath(full)}`);
 
-        console.error(`Linking ${rel} in src/${TOC_FILENAME}...`);
+        console.log(`Linking ${rel} in src/${TOC_FILENAME}...`);
         appendToTOC(rel);
         rebuildAndOpen();
     } else if (action === 'remove') {
@@ -512,7 +510,7 @@ async function manageSections() {
             return;
         }
         fs.unlinkSync(picked);
-        console.error(`Removed: ${rel}`);
+        console.log(`Removed: ${rel}`);
         removeFromTOC(section.rel.replace(/^src\//, ''));
         rebuildAndOpen();
     }
@@ -554,7 +552,7 @@ async function makeTodoNote() {
     } else {
         fs.appendFileSync(full, line);
     }
-    console.error(`Appended TODO to ${relPath(full)}`);
+    console.log(`Appended TODO to ${relPath(full)}`);
     if (!isNotes) rebuildAndOpen();
 }
 
@@ -609,8 +607,7 @@ async function runMenu(args) {
         try {
             choice = await menu.run();
         } catch {
-            console.error('\nAborted.');
-            process.exit(130);
+            throw new AbortError();
         }
 
         if (choice === 'exit') {
@@ -668,13 +665,13 @@ function commitSection(sectionPath, sectionRel) {
         console.error(`git commit exited with status ${commitResult.status}`);
         return false;
     }
-    console.error(`committed: ${message}`);
+    console.log(`committed: ${message}`);
     return true;
 }
 
 async function launchShell() {
     if (process.stdin.isTTY !== true) {
-        console.error('Non-interactive; skipping shell.');
+        console.log('Non-interactive; skipping shell.');
         return;
     }
     const shell = process.env.SHELL || '/bin/bash';
@@ -688,12 +685,12 @@ async function launchShell() {
 
 async function confirmCommit(label) {
     if (process.stdin.isTTY !== true) {
-        console.error('Non-interactive; skipping manual commit confirmation.');
+        console.log('Non-interactive; skipping manual commit confirmation.');
         return false;
     }
     const dirty = !isReportClean();
     if (!dirty) {
-        console.error('No uncommitted changes.');
+        console.log('No uncommitted changes.');
         return false;
     }
     const r = reportGit(['status', '--short']);
@@ -705,7 +702,7 @@ async function confirmCommit(label) {
         .run()
         .catch(() => false);
     if (!ok) {
-        console.error('Skipped commit; launching a shell in report/ (exit to resume).');
+        console.log('Skipped commit; launching a shell in report/ (exit to resume).');
         await launchShell();
         return false;
     }
@@ -733,7 +730,7 @@ async function confirmCommit(label) {
         console.error(`git commit exited with status ${commitResult.status}`);
         return false;
     }
-    console.error(`committed: ${message}`);
+    console.log(`committed: ${message}`);
     return true;
 }
 

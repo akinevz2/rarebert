@@ -1,0 +1,17 @@
+{
+    "name": "check-consistency",
+    "description": "Check that implementation code across the rarebert repository is consistent w.r.t. to user-specified topic",
+    "commands": [
+        {
+            "action": "bash",
+            "prompt": "echo 'You should learn to use <make implement> non-interactively, and tell it about [{topic}]"
+        }
+    ],
+    "parameters": [
+        {
+            "name": "topic",
+            "type": "string",
+            "description": "The user noticed inconsistency in how this topic within rarebert is implemented"
+        }
+    ]
+}

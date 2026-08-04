@@ -44,24 +44,24 @@ async function main(args = []) {
         const { ok, locations } = runNodeCheck(mod.path);
 
         if (ok) {
-            console.error(`ok   ${rel}`);
+            console.log(`ok   ${rel}`);
         } else {
             failures++;
-            console.error(`FAIL ${rel}`);
+            console.log(`FAIL ${rel}`);
             for (const loc of locations) {
                 const content = `line ${loc.line}: ${loc.message}`;
                 memo.remember(mod.name, content);
-                console.error(`     ${content}`);
+                console.log(`     ${content}`);
             }
         }
 
         const prior = memo.loadMemos(mod.name);
         for (const content of prior) {
-            console.error(`     memo ${mod.name}: ${content}`);
+            console.log(`     memo ${mod.name}: ${content}`);
         }
     }
 
-    console.error(
+    console.log(
         `\nchecked ${modules.length} module${modules.length === 1 ? '' : 's'}, ${failures} failure${failures === 1 ? '' : 's'}`
     );
     process.exit(failures === 0 ? 0 : 1);

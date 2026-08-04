@@ -2,8 +2,9 @@
 
 import fs from 'fs';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { normalizeModuleName, SRC_DIR } from '../lib/core.mjs';
+import { normalizeModuleName, SRC_DIR, PROJECT_ROOT } from '../lib/core.mjs';
 import * as template from '../lib/template.mjs';
 import {
     findLibraries,
@@ -12,10 +13,10 @@ import {
     projectLibDir,
     relPath
 } from '../lib/libs.mjs';
-import { writeLastModule, editFile } from '../lib/editor.mjs';
+import { writeLastModule, editFile, loadContent } from '../lib/editor.mjs';
 import * as git from '../lib/git.mjs';
-import * as server from '../lib/server.mjs';
 import { resolveModel } from '../lib/models.mjs';
+import { resolveOpencode } from '../lib/opencode.mjs';
 import { listLanguages, isSupported, installLanguage } from '../lib/languages.mjs';
 import {
     run,
@@ -25,13 +26,14 @@ import {
     isInteractive,
     nonInteractive,
     ok,
-    fail
+    fail,
+    AbortError
 } from '../lib/cli.mjs';
 
 const meta = {
     name: 'add',
     description:
-        'Scaffold a new module: pick project (core/non-core), pick language, then git add, edit, and run opencode to implement',
+        'Scaffold a new module: pick project (core/non-core), pick language, then git add, edit, and run opencode headlessly to implement',
     usage: 'node index.js add [model]',
     options: [{ flag: 'force', label: '', description: 'overwrite an installed language template' }]
 };
@@ -53,9 +55,9 @@ function languageChoices() {
 async function ensureLanguage(lang, options = {}) {
     if (isSupported(lang)) return lang;
     if (!isInteractive()) nonInteractive(`language "${lang}" is not scaffolded.`);
-    console.error(`add: language "${lang}" is not scaffolded yet; running languages toolkit...`);
+    console.log(`add: language "${lang}" is not scaffolded yet; running languages toolkit...`);
     const result = await installLanguage(lang, { force: options.force });
-    console.error(`\n✓ Installed language: ${result.name} (${result.path})`);
+    console.log(`\n✓ Installed language: ${result.name} (${result.path})`);
     return result.name;
 }
 
@@ -88,9 +90,9 @@ async function installNewLanguage() {
         if (!overwrite) ok('Not overwritten.');
     }
 
-    console.error(`add: installing "${name}"...`);
+    console.log(`add: installing "${name}"...`);
     const result = await installLanguage(name, { force: true });
-    console.error(`\n✓ Installed language: ${result.name} (${result.path})`);
+    console.log(`\n✓ Installed language: ${result.name} (${result.path})`);
     return result.name;
 }
 
@@ -111,8 +113,7 @@ async function promptModuleName(lang) {
     try {
         return await namePrompt.run();
     } catch {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
 }
 
@@ -138,8 +139,7 @@ async function promptProjectLibs(lang) {
         const answer = await prompt.run();
         return Array.isArray(answer) ? answer : [answer];
     } catch {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
 }
 
@@ -177,7 +177,7 @@ async function scaffoldSrcModule(lang, moduleName) {
 }
 
 async function main(args = []) {
-    console.error('\n=== Rarebert Module Creator ===\n');
+    console.log('\n=== Rarebert Module Creator ===\n');
 
     const project = await select('Select a project for the new module:', projectChoices(), {
         nonInteractiveBehavior: 'fail',
@@ -198,12 +198,11 @@ async function main(args = []) {
     const ext = `.${lang}`;
     const name = await promptModuleName(lang);
     if (!name || !name.trim()) {
-        console.error('\nAborted.');
-        process.exit(130);
+        throw new AbortError();
     }
     const normalizedName = normalizeModuleName(name, [ext]);
 
-    console.error(`\nGenerating ${lang} module skeleton in ${directory}/...`);
+    console.log(`\nGenerating ${lang} module skeleton in ${directory}/...`);
     let modulePath;
     let selectedLibs = [];
     if (directory === 'src') {
@@ -215,31 +214,31 @@ async function main(args = []) {
     }
 
     const rel = relPath(modulePath);
-    console.error(`\n✓ Created module: ${rel}`);
+    console.log(`\n✓ Created module: ${rel}`);
 
     if (directory === 'src' && selectedLibs.length > 0) {
-        console.error('  Preamble imports:');
+        console.log('  Preamble imports:');
         selectedLibs.forEach((lib) => {
             const line =
                 lang === 'py'
                     ? `    - from lib.${lang} import ${lib}`
                     : `    - import * as ${lib} from '../lib/${lang}/${lib}.${lang}'`;
-            console.error(line);
+            console.log(line);
         });
     }
 
     if (directory === 'scripts') {
-        console.error('\n--- Boilerplate Instructions ---');
+        console.log('\n--- Boilerplate Instructions ---');
         const libraries = findLibraries();
         if (libraries.length > 0) {
-            libraries.forEach((lib) => console.error(`- Framework library: lib/${lib}.mjs`));
+            libraries.forEach((lib) => console.log(`- Framework library: lib/${lib}.mjs`));
         } else {
-            console.error('- No framework utilities yet (core.mjs created in lib/)');
+            console.log('- No framework utilities yet (core.mjs created in lib/)');
         }
-        console.error('- Project-specific libraries live in lib/{lang}/ (e.g. lib/py/, lib/mjs/)');
-        console.error('- Import shared utilities from ../lib/core.mjs as needed');
-        console.error('- Implement the main() function with your logic');
-        console.error('-------------------------------');
+        console.log('- Project-specific libraries live in lib/{lang}/ (e.g. lib/py/, lib/mjs/)');
+        console.log('- Import shared utilities from ../lib/core.mjs as needed');
+        console.log('- Implement the main() function with your logic');
+        console.log('-------------------------------');
     }
 
     writeLastModule(rel);
@@ -260,24 +259,35 @@ async function main(args = []) {
     const modelArg = nonFlag[0];
     const model = await resolveModel(modelArg);
 
-    const cwd = server.cwdForModule(rel);
-    const running = server.getRunningServer();
-    if (running) {
-        console.error(`add: connecting to running server ${running.url} (mini TUI)`);
-        const status = server.attachMini(running);
-        if (status && status !== 0) process.exit(status);
-        return;
-    }
+    const context = loadContent(modulePath) || '';
+    const instruction = [
+        `Implement the module in ${rel}.`,
+        '',
+        '--- active files context ---',
+        context
+    ]
+        .filter((s) => s && s.trim())
+        .join('\n');
 
-    const port = server.DEFAULT_PORT;
-    console.error(`add: starting full TUI on port ${port} (password=${port})`);
-    const status = server.startFullTUI({
-        cwd,
-        model,
-        port,
-        prompt: `Implement the module in ${rel}`
+    const ocArgs = ['run', instruction, '-m', model, '--auto'];
+    console.log(
+        `$ opencode run "<prompt: ${instruction.length} bytes, 1 file>" -m ${model} --auto`
+    );
+    const result = spawnSync(resolveOpencode(), ocArgs, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'inherit']
     });
-    if (status && status !== 0) process.exit(status);
+    if (result.status !== 0) {
+        console.error(`add: opencode run exited with status ${result.status ?? 0}`);
+    }
+    const out = (result.stdout ?? '').trim();
+    if (out) console.log(out);
+
+    console.log(
+        '\nNext: `make commit` if happy with the one-shot, or `make edit` then `make implement` to iterate.'
+    );
+    process.exit(result.status ?? 0);
 }
 
 export { main, pickLanguage, ensureLanguage, buildPreamble };

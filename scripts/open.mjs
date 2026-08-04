@@ -12,12 +12,12 @@ async function main(args = []) {
 
     const running = server.getRunningServer();
     if (running) {
-        console.error(`open: connecting to running server ${running.url} (mini TUI)`);
+        console.log(`open: connecting to running server ${running.url} (mini TUI)`);
         const status = server.attachMini(running);
         process.exit(status);
     }
 
-    console.error('open: no running server; starting mini TUI at project root');
+    console.log('open: no running server; starting mini TUI at project root');
     const port = server.DEFAULT_PORT;
     const status = server.startFullTUI({
         cwd: PROJECT_ROOT,
@@ -32,6 +32,7 @@ export { main };
 
 export default {
     name: 'open',
-    description: 'Connect to a running opencode server (mini TUI), or start one at the project root',
+    description:
+        'Connect to a running opencode server (mini TUI), or start one at the project root',
     main
 };

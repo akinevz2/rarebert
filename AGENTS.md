@@ -81,3 +81,48 @@ Use `--model PROVIDER/MODEL` to override default, e.g.:
 ```
 node index.js edit mymodule --model ollama_wsvision/qwen3-coder:latest
 ```
+
+### Signal handling & abort flow (ctrl-c / ctrl-d)
+
+All process abort paths are centralized in `lib/cli.mjs`. Do not install
+`SIGINT`/`SIGHUP`/`SIGTERM` listeners or call `process.exit(130)` outside
+that module.
+
+- `installSignalHandlers()` is called once at startup in `index.js`. It
+  registers a single handler for `SIGINT`, `SIGHUP`, `SIGTERM`, and
+  `process.on('exit')` that runs every registered `onAbort` callback (in
+  registration order) and then exits with code 130.
+- `onAbort(callback)` registers a cleanup callback. Use it for any work
+  that must run on abort (e.g. restoring the git index, flushing memos).
+  Returns an unsubscribe function. `lib/memo.mjs` registers `flush` this way.
+- `AbortError` (exported from `lib/cli.mjs`) is the canonical way for a
+  non-`cli.mjs` module to signal an abort. Enquirer prompts reject on
+  ctrl-c/escape — wrap `await prompt.run()` in try/catch and
+  `throw new AbortError()` from the catch. The `run(meta, main)` wrapper
+  catches it and calls `abort()` once, which prints `\nAborted.` to stderr,
+  runs the cleanup callbacks, and exits 130.
+- `die(message, code)` routes the message to `console.log` when
+  `code === EXIT_OK` and to `console.error` otherwise. Always use `die()`
+  for terminal exits instead of calling `process.exit()` directly with a
+  manual print.
+
+### Console output streams
+
+- `console.log` — regular program output: progress echoes (`$ opencode ...`),
+  success markers (`✓ Created ...`), banners, status lines (`ok ./mod`),
+  non-interactive fallback notices that are not errors, section lists.
+- `console.error` — true errors (`Failed to launch ...`,
+  `git commit exited with status N`), warnings
+  (`memo: performing a forgetful remember ...`), and abort/die messages
+  routed through `lib/cli.mjs`.
+- `console.dir` — structured object dumps (used by `ok()`).
+
+When in doubt, run `audit-consistency console-streams` to verify.
+
+### Consistency audits
+
+The `audit-consistency` skill (`.opencode/skills/audit-consistency/SKILL.md`)
+exercises `make check` and `make edit` non-interactively to verify a named
+topic across the codebase. Invoke it as `audit-consistency {topic}` with one
+of: `console-streams`, `signal-handling`, `abort-flow`, `naming`. See the
+skill body for the per-topic rules.

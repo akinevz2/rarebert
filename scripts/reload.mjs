@@ -2,7 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { PROJECT_ROOT, discoverScripts } from '../lib/core.mjs';
+import { PROJECT_ROOT, discover } from '../lib/core.mjs';
 import { clearLastModule } from '../lib/editor.mjs';
 import { run } from '../lib/cli.mjs';
 
@@ -53,8 +53,8 @@ async function main(args = []) {
         clearLastModule();
     }
 
-    const scripts = discoverScripts();
-    console.error(
+    const scripts = discover();
+    console.log(
         `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => s.name).join(', ') || '(none)'}`
     );
 
@@ -66,14 +66,14 @@ async function main(args = []) {
     const content = buildPreamble(phony) + buildBody(names);
 
     if (fs.existsSync(makefilePath) && fs.readFileSync(makefilePath, 'utf-8') === content) {
-        console.error(`up-to-date ${rel} (no changes)`);
+        console.log(`up-to-date ${rel} (no changes)`);
     } else {
         fs.writeFileSync(makefilePath, content);
-        console.error(
+        console.log(
             `refresh ${rel} (${scripts.length} script targets + ${Object.keys(EXTRA_TARGETS).length} extras)`
         );
     }
-    console.error(`done: ${scripts.length} module(s), ${makefilePath}`);
+    console.log(`done: ${scripts.length} module(s), ${makefilePath}`);
 }
 
 export { main };
