@@ -1,6 +1,11 @@
 # Auto-generated Makefile: a pure index of `node index.js <name>` targets
 
-.PHONY: add article check commit create diff edit implement memo reload run undo install deps opencode
+.DEFAULT_GOAL := list
+
+.PHONY: list add article check commit create diff edit implement memo reload run undo install deps opencode
+
+list:
+	node index.js
 
 
 add:

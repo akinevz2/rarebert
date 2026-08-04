@@ -23,7 +23,7 @@ const meta = {
 };
 
 function buildPreamble(targetNames) {
-    return [HEADER, '', `.PHONY: ${targetNames.join(' ')}`].join('\n') + '\n';
+    return [HEADER, '', '.DEFAULT_GOAL := list', '', `.PHONY: list ${targetNames.join(' ')}`, '', 'list:', '\tnode index.js'].join('\n') + '\n';
 }
 
 function buildBody(names) {
