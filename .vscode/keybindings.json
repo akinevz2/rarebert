@@ -62,19 +62,23 @@
     },
     {
         "key": "ctrl+b",
-        "command": "workbench.action.togglePanel",
-        "when": "editorTextFocus || panelFocus"
+        "command": "workbench.action.toggleMaximizedPanel",
+        "when": "!editorTextFocus || panelMaximized"
     },
     {
         "key": "ctrl+b",
         "command": "workbench.action.closeSidebar",
         "when": "vim.active && sideBarVisible"
     },
-    // minimize the panel after it has been maximized (most specific — must be last)
     {
         "key": "ctrl+b",
-        "command": "workbench.action.toggleMaximizedPanel",
-        "when": "panelMaximized"
+        "command": "workbench.action.togglePanel",
+        "when": "editorTextFocus || panelFocus"
+    },
+    {
+        "key": "ctrl+b",
+        "command": "workbench.action.togglePanel",
+        "when": "(panelVisible || (panelFocus && !panelMaximized)) && !auxiliaryBarVisible"
     },
     // ───────────────────────── inline chat (alt+i) ─────────────────────────
     {
@@ -111,12 +115,7 @@
     {
         "key": "ctrl+i",
         "command": "workbench.action.toggleMaximizedPanel",
-        "when": "vim.mode == 'Insert' && editorTextFocus || panelVisible"
-    },
-    {
-        "key": "ctrl+i",
-        "command": "workbench.action.togglePanel",
-        "when": "(!panelVisible || (panelFocus && !panelMaximized)) && !auxiliaryBarVisible"
+        "when": "panelVisible"
     },
     {
         "key": "ctrl+i",
