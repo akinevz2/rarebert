@@ -58,7 +58,7 @@ async function helpVerbose() {
     for (const script of scripts) {
         if (script !== scripts[0]) console.log();
         try {
-            const mod = await import('file://' + script.path);
+            const mod = await import('file://' + project.absPath(script.path));
             const main = mod.default?.main ?? mod.main;
             if (typeof main === 'function') {
                 await main(['--help']);
@@ -72,14 +72,13 @@ async function helpVerbose() {
     }
 }
 
-const HELP_PREFIXES = ['help', 'h', '--lib', '--scripts', '--script', '--src'];
+const HELP_COMMANDS = new Set(['--help', '-h', 'help']);
 
 async function main(argv) {
     const cmd = argv[2];
     const rest = argv.slice(3);
 
-    if (cmd === '-v' || cmd === '--verbose') return helpVerbose();
-    if (!cmd || HELP_PREFIXES.some((p) => cmd.startsWith(p))) {
+    if (!cmd || HELP_COMMANDS.has(cmd)) {
         return list.listModules([cmd, ...rest].filter(Boolean));
     }
 
