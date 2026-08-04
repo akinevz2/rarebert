@@ -10,7 +10,7 @@ async function main(args = []) {
     const modelArg = nonFlag[0];
     const model = modelArg ? await models.resolve(modelArg) : null;
 
-    const running = server.getRunningServer();
+    const running = server.getRunning();
     if (running) {
         console.log(`open: connecting to running server ${running.url} (mini TUI)`);
         const status = server.attachMini(running);

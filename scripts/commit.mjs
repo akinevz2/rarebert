@@ -33,7 +33,7 @@ function stripCommitMessage(raw) {
 
 async function promptCommitChoice() {
     if (process.stdin.isTTY !== true) {
-        return 'proceed';
+        return 'raw';
     }
 
     const prompt = new Enquirer.Select({
@@ -48,7 +48,7 @@ async function promptCommitChoice() {
     });
 
     try {
-        const result = await prompt.run();
+        return await prompt.run();
     } catch {
         throw new AbortError();
     }
@@ -223,6 +223,7 @@ async function main(args = []) {
 
     const choice = interactive ? await promptCommitChoice() : 'later';
 
+
     if (choice === 'later') {
         git.git('status');
         return;
@@ -244,7 +245,7 @@ async function main(args = []) {
         }
     }
 
-    if (choice === 'raw') {
+    if (choice === 'raw' || !interactive) {
         if (interactive && (await promptBail('Bail before writing a commit message by hand?'))) {
             bailCommit('declined raw commit');
         }
