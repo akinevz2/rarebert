@@ -294,6 +294,7 @@ export { main, pickLanguage, ensureLanguage, buildPreamble };
 
 export default {
     name: 'add',
-    description: meta.description,
+    description:
+        'Scaffold a new module: pick project (core/non-core), pick language, then git add, edit, and run opencode headlessly to implement',
     main: run(meta, main)
 };

@@ -221,7 +221,12 @@ async function main(args = []) {
         process.exit(0);
     }
 
-    const choice = interactive ? await promptCommitChoice() : 'proceed';
+    const choice = interactive ? await promptCommitChoice() : 'later';
+
+    if (choice === 'later') {
+        git.git('status');
+        return;
+    }
 
     if (interactive && (await promptPreview())) {
         previewDiff();
@@ -239,10 +244,6 @@ async function main(args = []) {
         }
     }
 
-    if (choice === 'later') {
-        git.git('status');
-        return;
-    }
 
     if (choice === 'raw') {
         if (interactive && (await promptBail('Bail before writing a commit message by hand?'))) {
