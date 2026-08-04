@@ -28,9 +28,7 @@ For each file, document:
 
 Example for scripts/memo.mjs:
 ```
-main(args[]) - parses flags/non-flags -> dispatches to --all/--add/--drop/... or bare()
 addMemo(moduleArg, content) - prompts module selection, memo.remember(path, content)  
-bare(args) - prints memos + TUI menu (Add/Commit/Fresh/Exit)
 ```
 
 ## Supersession Tracking

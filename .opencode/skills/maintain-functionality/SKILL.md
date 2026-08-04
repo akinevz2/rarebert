@@ -24,8 +24,13 @@ await memo.remember('scripts/memo.mjs', 'memo content here');
 7. **--fresh [label]** - Snapshot + clear all local memos (clean slate)
 8. **bare mode** (default when no flags) - TUI showing: Add, Commit, Fresh slate, Exit
 
+## Operations Forbidden
+3. **--drop [module]** - Interactive multi-select memos for deletion
+4. **--commit [label]** - Snapshot working memos to git notes (refs/notes/memos)
+6. **--restore [ref]** - Restore memos from a commit ref
+7. **--fresh [label]** - Snapshot + clear all local memos (clean slate)
+8. **bare mode** (default when no flags) - TUI showing: Add, Commit, Fresh slate, Exit
+
+
 ## Functions Called by main()
 - `addMemo(moduleArg, content)` → memo.remember()
-- `dropMemos()` → multiSelectMemos(), file update
-- `memo.snapshot()` → git.notesAdd()
-- `memo.log()`, `memo.restore()`, etc.

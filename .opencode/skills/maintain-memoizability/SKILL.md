@@ -11,6 +11,8 @@ Documents how files can receive memos for tracking their API and operations. A "
 - **memo.remember(moduleRef, content)** - Add memo to module file
 - **memo.loadMemos(moduleRef)** - Load memos from file
 - **memo.loadMemosWithTimestamps()** - Get memos sorted by lastModified
+
+## Memo Methods NEVER to be called
 - **memo.clearBuffer()** - Reset in-memory buffer
 - **memo.forgetAll()** - Clear all local memo files
 
