@@ -601,6 +601,20 @@ function commitSection(sectionPath, sectionRel) {
     return true;
 }
 
+async function launchShell() {
+    if (process.stdin.isTTY !== true) {
+        console.error('Non-interactive; skipping shell.');
+        return;
+    }
+    const shell = process.env.SHELL || '/bin/bash';
+    const result = spawnSync(shell, [], {
+        cwd: REPORT_DIR,
+        stdio: 'inherit',
+        env: { ...process.env, PWD: REPORT_DIR }
+    });
+    if (result.error) console.error(`shell failed: ${result.error.message}`);
+}
+
 async function confirmCommit(label) {
     if (process.stdin.isTTY !== true) {
         console.error('Non-interactive; skipping manual commit confirmation.');
@@ -618,7 +632,8 @@ async function confirmCommit(label) {
         message: `Commit ${label ? `${label} ` : ''}changes now?`
     }).run().catch(() => false);
     if (!ok) {
-        console.error('Skipped commit; changes left in working tree.');
+        console.error('Skipped commit; launching a shell in report/ (exit to resume).');
+        await launchShell();
         return false;
     }
     const msgPrompt = new Input({
