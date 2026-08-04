@@ -1,6 +1,6 @@
 # Auto-generated Makefile
 
-.PHONY: add check commit edit implement jump memo reload undo help open
+.PHONY: add check commit create diff edit jump memo reload undo implement help open
 
 
 add:
@@ -18,13 +18,14 @@ check:
 commit:
 	node index.js commit
 
+create:
+	node index.js create
+
+diff:
+	node index.js diff
+
 edit:
 	node index.js edit
-
-implement:
-	@file=$$(cat .last-module); \
-	  [ -n "$$file" ] || { echo 'Run make add first'; exit 1; }; \
-	  opencode run "Implement the module in $$file" --auto -m $(MODEL)
 
 jump:
 	node index.js jump
@@ -38,6 +39,11 @@ reload:
 
 undo:
 	node index.js undo
+
+implement:
+	@file=$$(cat .last-module); \
+	  [ -n "$$file" ] || { echo 'Run make add first'; exit 1; }; \
+	  opencode run "Implement the module in $$file" --auto -m $(MODEL)
 
 help:
 	node index.js
