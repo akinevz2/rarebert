@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process';
-import { PROJECT_ROOT, exit } from '../lib/core.mjs';
-import * as git from '../lib/git.mjs';
+import { project, exit } from '../lib/core.mjs';
+import { git } from '../lib/git.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
-import { relPath } from '../lib/libs.mjs';
+import { libs } from '../lib/libs.mjs';
 
 function showDiff(diffArgs, usePager) {
     const result = git.git('diff', diffArgs);
@@ -41,7 +41,7 @@ async function main(args = []) {
     let pathspecs = [];
     if (moduleArg) {
         const target = await promptModule(listAllModules(), moduleArg, 'Select a module to diff');
-        pathspecs = [relPath(target.path)];
+        pathspecs = [libs.relPath(target.path)];
     }
 
     const diffArgs = [];

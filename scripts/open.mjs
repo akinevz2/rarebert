@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 import path from 'path';
-import { PROJECT_ROOT, exit } from '../lib/core.mjs';
-import * as server from '../lib/server.mjs';
-import { resolveModel } from '../lib/models.mjs';
+import { project, exit } from '../lib/core.mjs';
+import { server } from '../lib/server.mjs';
+import { models } from '../lib/models.mjs';
 
 async function main(args = []) {
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const modelArg = nonFlag[0];
-    const model = modelArg ? await resolveModel(modelArg) : null;
+    const model = modelArg ? await models.resolve(modelArg) : null;
 
     const running = server.getRunningServer();
     if (running) {
@@ -20,8 +20,8 @@ async function main(args = []) {
     console.log('open: no running server; starting mini TUI at project root');
     const port = server.DEFAULT_PORT;
     const status = server.startFullTUI({
-        cwd: PROJECT_ROOT,
-        model: model || (await resolveModel()),
+        cwd: project.root,
+        model: model || (await models.resolve()),
         port,
         prompt: null
     });

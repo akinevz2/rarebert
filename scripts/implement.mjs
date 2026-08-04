@@ -2,13 +2,12 @@
 
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
-import { resolveModel } from '../lib/models.mjs';
-import { input, isInteractive, confirm, AbortError } from '../lib/cli.mjs';
-import * as server from '../lib/server.mjs';
-import { PROJECT_ROOT, exit } from '../lib/core.mjs';
-import { resolveActiveFiles } from '../lib/editor.mjs';
-import { resolveOpencode } from '../lib/opencode.mjs';
-import { run } from '../lib/cli.mjs';
+import { models } from '../lib/models.mjs';
+import { cli, AbortError } from '../lib/cli.mjs';
+import { server, DEFAULT_PORT } from '../lib/server.mjs';
+import { project, exit } from '../lib/core.mjs';
+import { editor } from '../lib/editor.mjs';
+import { opencode } from '../lib/opencode.mjs';
 
 const meta = {
     name: 'implement',
@@ -22,9 +21,9 @@ const meta = {
 };
 
 function relCwdFor(absCwd) {
-    if (absCwd === PROJECT_ROOT) return './';
-    if (path.isAbsolute(absCwd) && !absCwd.startsWith(PROJECT_ROOT)) return `${absCwd}/`;
-    return `${path.relative(PROJECT_ROOT, absCwd)}/`;
+    if (absCwd === project.root) return './';
+    if (path.isAbsolute(absCwd) && !absCwd.startsWith(project.root)) return `${absCwd}/`;
+    return `${path.relative(project.root, absCwd)}/`;
 }
 
 function runHeadless({ entries, context, model, instruction }) {
@@ -36,8 +35,8 @@ function runHeadless({ entries, context, model, instruction }) {
     console.log(
         `$ opencode run "<prompt: ${prompt.length} bytes, ${entries.length} file(s)>" -m ${model} --auto`
     );
-    const result = spawnSync(resolveOpencode(), args, {
-        cwd: PROJECT_ROOT,
+    const result = spawnSync(opencode.resolve(), args, {
+        cwd: project.root,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'inherit']
     });
@@ -50,13 +49,13 @@ function runHeadless({ entries, context, model, instruction }) {
 }
 
 async function runInteractive(args) {
-    const { entries, context } = await resolveActiveFiles(args, {
+    const { entries, context } = await editor.resolveActiveFiles(args, {
         message: 'Select a module to implement'
     });
     if (entries.length === 0) return exit(1);
 
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-    const model = await resolveModel(nonFlag[0]);
+    const model = await models.resolve(nonFlag[0]);
 
     const fileLabel =
         entries.length === 1
@@ -68,15 +67,15 @@ async function runInteractive(args) {
     while (true) {
         const defaultInstruction =
             entries.length === 1 ? `Implement the module in ${entries[0].rel}` : '';
-        const instruction = await input(`Instruction for opencode (file: ${fileLabel}):`, {
+        const instruction = await cli.input(`Instruction for opencode (file: ${fileLabel}):`, {
             initial: defaultInstruction
         });
         if (!instruction.trim() && entries.length === 1) {
-            if (!(await confirm('No instruction entered. Exit implement?', true))) continue;
+            if (!(await cli.confirm('No instruction entered. Exit implement?', true))) continue;
             throw new AbortError();
         }
 
-        const running = server.getRunningServer();
+        const running = server.getRunning();
         if (running) {
             console.log(
                 `implement: running on existing server ${running.url} (--auto, non-interactive)`
@@ -90,13 +89,13 @@ async function runInteractive(args) {
             });
             if (status !== 0) {
                 console.error(`implement: opencode run exited with status ${status}`);
-                if (!(await confirm('Retry prompt?', true))) return exit(status);
+                if (!(await cli.confirm('Retry prompt?', true))) return exit(status);
                 continue;
             }
         } else {
             const cwd = server.cwdForModule(entries[0].rel);
             const relCwd = relCwdFor(cwd);
-            const port = server.DEFAULT_PORT;
+            const port = DEFAULT_PORT;
             console.log(
                 `implement: no running server; starting full TUI on port ${port} (password=${port})`
             );
@@ -110,7 +109,7 @@ async function runInteractive(args) {
             });
             if (status !== 0) {
                 console.error(`implement: opencode TUI exited with status ${status}`);
-                if (!(await confirm('Retry prompt?', true))) return exit(status);
+                if (!(await cli.confirm('Retry prompt?', true))) return exit(status);
                 continue;
             }
             return;
@@ -153,18 +152,18 @@ function runEditorThenBash(entries, moduleLabel) {
 async function main(args = []) {
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
 
-    if (!isInteractive()) {
+    if (!cli.isInteractive()) {
         const fileArgs = nonFlag;
         if (fileArgs.length === 0) {
             console.error('Non-interactive: pass file or directory arguments to implement.');
             return exit(1);
         }
-        const { entries, context } = await resolveActiveFiles(fileArgs, {
+        const { entries, context } = await editor.resolveActiveFiles(fileArgs, {
             message: 'implement'
         });
         if (entries.length === 0) return exit(1);
 
-        const model = await resolveModel(null);
+        const model = await models.resolve(null);
         const fileLabel =
             entries.length === 1
                 ? entries[0].rel
@@ -182,5 +181,5 @@ export { main };
 export default {
     name: 'implement',
     description: meta.description,
-    main: run(meta, main)
+    main: cli.run(meta, main)
 };

@@ -5,14 +5,14 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { PROJECT_ROOT, exit } from '../lib/core.mjs';
+import { project, exit } from '../lib/core.mjs';
 import { listAllModules } from '../lib/modules.mjs';
-import * as git from '../lib/git.mjs';
+import { git } from '../lib/git.mjs';
 import { readOpendeConfig, listModels, promptModel, resolveModel } from '../lib/models.mjs';
-import { loadMemos } from '../lib/memo.mjs';
-import { editFile } from '../lib/editor.mjs';
-import { resolveOpencode } from '../lib/opencode.mjs';
-import { run, AbortError, onAbort } from '../lib/cli.mjs';
+import { memo } from '../lib/memo.mjs';
+import { editor } from '../lib/editor.mjs';
+import { opencode } from '../lib/opencode.mjs';
+import { cli, AbortError } from '../lib/cli.mjs';
 
 const meta = {
     name: 'commit',
@@ -174,8 +174,8 @@ function summariseChangelist(model, changelist, firstLine) {
         `$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${promptFirstLine}">" -m ${model} --auto`
     );
 
-    const result = spawnSync(resolveOpencode(), args, {
-        cwd: PROJECT_ROOT,
+    const result = spawnSync(opencode.resolve(), args, {
+        cwd: project.root,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'inherit']
     });
@@ -199,7 +199,7 @@ async function main(args = []) {
     const diffFull = git.git('diff', ['HEAD']);
 
     const memoLines = listAllModules().flatMap((mod) =>
-        loadMemos(mod.path).map((content) => `${mod.path}: ${content}`)
+        memo.loadMemos(mod.path).map((content) => `${mod.path}: ${content}`)
     );
 
     const changelist = [
@@ -304,7 +304,7 @@ async function editSummaryInEditor(summary, interactive) {
     const templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
     fs.writeFileSync(templateFile, summary + '\n');
 
-    const editorChild = editFile(templateFile);
+    const editorChild = editor.editFile(templateFile);
 
     await new Promise((resolve) => {
         editorChild.on('exit', (code) => resolve(code ?? 0));
@@ -327,7 +327,7 @@ async function editSummaryInEditor(summary, interactive) {
 }
 
 function stageAndCommit(commitArgs) {
-    onAbort(() => {
+    cli.onAbort(() => {
         console.error('\nInterrupted; restoring index (non-destructive).');
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
     });
@@ -366,5 +366,5 @@ export { main };
 export default {
     name: 'commit',
     description: 'Stage all, summarise via opencode, then commit with $EDITOR',
-    main: run(meta, main)
+    main: cli.run(meta, main)
 };

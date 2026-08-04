@@ -4,13 +4,13 @@ import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { PROJECT_ROOT } from '../lib/core.mjs';
-import { editFile } from '../lib/editor.mjs';
-import { exitIDE } from '../lib/ide.mjs';
-import { resolveOpencode } from '../lib/opencode.mjs';
-import { readOpendeConfig, listModels, promptModel, resolveModel } from '../lib/models.mjs';
-import { relPath } from '../lib/libs.mjs';
-import { run, AbortError } from '../lib/cli.mjs';
+import { project } from '../lib/core.mjs';
+import { editor } from '../lib/editor.mjs';
+import { ide } from '../lib/ide.mjs';
+import { opencode } from '../lib/opencode.mjs';
+import { models } from '../lib/models.mjs';
+import { libs } from '../lib/libs.mjs';
+import { cli, AbortError } from '../lib/cli.mjs';
 
 const meta = {
     name: 'article',
@@ -30,7 +30,7 @@ const meta = {
 const { Select, Input, Confirm } = Enquirer;
 
 const REPORT_REMOTE = 'https://github.com/akinevz2/report-template.git';
-const REPORT_DIR = path.join(PROJECT_ROOT, 'report');
+const REPORT_DIR = path.join(project.root, 'report');
 const SRC_DIR = path.join(REPORT_DIR, 'src');
 const TOC_FILENAME = 'TOC.md';
 const TOC_PATH = path.join(SRC_DIR, TOC_FILENAME);
@@ -108,7 +108,7 @@ function reportGit(args, options = {}) {
 
 function hostGit(args, options = {}) {
     const result = spawnSync('git', args, {
-        cwd: PROJECT_ROOT,
+        cwd: project.root,
         encoding: 'utf-8',
         stdio: options.stdio ?? 'pipe'
     });
@@ -129,7 +129,7 @@ function isHostClean() {
 async function runHostCommit() {
     console.log('\n--- rarebert repo has uncommitted changes; running `make commit` ---');
     const result = spawnSync('make', ['commit'], {
-        cwd: PROJECT_ROOT,
+        cwd: project.root,
         stdio: 'inherit'
     });
     if (result.error) {
@@ -181,7 +181,7 @@ function ensureCloned() {
             process.exit(1);
         }
     }
-    console.log(`cloning ${REPORT_REMOTE} -> ${relPath(REPORT_DIR)}/`);
+    console.log(`cloning ${REPORT_REMOTE} -> ${libs.relPath(REPORT_DIR)}/`);
     const result = spawnSync('git', ['clone', REPORT_REMOTE, REPORT_DIR], {
         stdio: 'inherit',
         encoding: 'utf-8'
@@ -197,7 +197,7 @@ function ensureCloned() {
 }
 
 function runMake(target) {
-    console.log(`$ make ${target} (cwd: ${relPath(REPORT_DIR)})`);
+    console.log(`$ make ${target} (cwd: ${libs.relPath(REPORT_DIR)})`);
     const result = spawnSync('make', [target], {
         cwd: REPORT_DIR,
         stdio: 'inherit',
@@ -355,7 +355,7 @@ function assertCleanBeforeSwitch() {
 }
 
 function runOpencode(model) {
-    const bin = resolveOpencode();
+    const bin = opencode.resolve();
     const args = [REPORT_DIR, '-m', model, '--mini'];
     console.log(`$ opencode ${args.join(' ')}`);
     const child = spawn(bin, args, {
@@ -371,8 +371,8 @@ function runOpencode(model) {
 
 async function editSection(model, sectionPath, sectionRel) {
     const ideChild = runOpencode(model);
-    console.log(`Opening $EDITOR ${relPath(sectionPath)}`);
-    const editorChild = editFile(sectionPath);
+    console.log(`Opening $EDITOR ${libs.relPath(sectionPath)}`);
+    const editorChild = editor.editFile(sectionPath);
 
     let finalStatus = 0;
 
@@ -390,7 +390,7 @@ async function editSection(model, sectionPath, sectionRel) {
 
     if (first.kind === 'editor') {
         if (first.code !== 0) finalStatus = first.code;
-        await exitIDE(ideChild);
+        await ide.exit(ideChild);
         const ideCode = await ideExit;
         if (ideCode !== 0) finalStatus = ideCode;
     } else {
@@ -403,10 +403,10 @@ async function editSection(model, sectionPath, sectionRel) {
 
 async function editPreamble(model) {
     if (!fs.existsSync(PREAMBLE_PATH)) {
-        console.error(`Preamble file not found: ${relPath(PREAMBLE_PATH)}`);
+        console.error(`Preamble file not found: ${libs.relPath(PREAMBLE_PATH)}`);
         return 1;
     }
-    console.log(`Editing preamble: ${relPath(PREAMBLE_PATH)}`);
+    console.log(`Editing preamble: ${libs.relPath(PREAMBLE_PATH)}`);
     const status = await editSection(
         model,
         PREAMBLE_PATH,
@@ -483,13 +483,13 @@ async function manageSections() {
 
         const full = path.join(SRC_DIR, rel);
         if (fs.existsSync(full)) {
-            console.error(`Already exists: ${relPath(full)}`);
+            console.error(`Already exists: ${libs.relPath(full)}`);
             return;
         }
         fs.mkdirSync(path.dirname(full), { recursive: true });
         const title = path.basename(rel, '.md').replace(/[-_]/g, ' ');
         fs.writeFileSync(full, `# ${title}\n\n`);
-        console.log(`Created: ${relPath(full)}`);
+        console.log(`Created: ${libs.relPath(full)}`);
 
         console.log(`Linking ${rel} in src/${TOC_FILENAME}...`);
         appendToTOC(rel);
@@ -552,7 +552,7 @@ async function makeTodoNote() {
     } else {
         fs.appendFileSync(full, line);
     }
-    console.log(`Appended TODO to ${relPath(full)}`);
+    console.log(`Appended TODO to ${libs.relPath(full)}`);
     if (!isNotes) rebuildAndOpen();
 }
 
@@ -575,11 +575,11 @@ async function runMenu(args) {
         assertCleanBeforeSwitch();
         const sections = listSections();
         if (sections.length === 0) {
-            console.error(`No markdown sections found under ${relPath(SRC_DIR)}/.`);
+            console.error(`No markdown sections found under ${libs.relPath(SRC_DIR)}/.`);
             process.exit(1);
         }
         const section = await promptSection(sections, sectionArg);
-        const model = await resolveModel(modelArg);
+        const model = await models.resolve(modelArg);
         const status = await editSection(model, section.path, section.rel);
         if (status !== 0) console.error(`edit session exited with status ${status}.`);
         await confirmCommit(`update ${section.rel}`);
@@ -626,7 +626,7 @@ async function runMenu(args) {
         }
         if (choice === 'preamble') {
             assertCleanBeforeSwitch();
-            const model = await resolveModel(modelArg);
+            const model = await models.resolve(modelArg);
             await editPreamble(model);
             continue;
         }
@@ -634,11 +634,11 @@ async function runMenu(args) {
             assertCleanBeforeSwitch();
             const sections = listSections();
             if (sections.length === 0) {
-                console.error(`No markdown sections found under ${relPath(SRC_DIR)}/.`);
+                console.error(`No markdown sections found under ${libs.relPath(SRC_DIR)}/.`);
                 continue;
             }
             const section = await promptSection(sections, null);
-            const model = await resolveModel(modelArg);
+            const model = await models.resolve(modelArg);
             const status = await editSection(model, section.path, section.rel);
             if (status !== 0) console.error(`edit session exited with status ${status}.`);
             await confirmCommit(`update ${section.rel}`);
@@ -763,5 +763,5 @@ export {
 export default {
     name: 'article',
     description: 'Manage the academic report: clone, build, edit a section, commit',
-    main: run(meta, main)
+    main: cli.run(meta, main)
 };

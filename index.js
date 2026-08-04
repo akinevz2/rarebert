@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-import { assertProjectRoot, normalizeModuleName, discover, ExitSignal, absPath } from './lib/core.mjs';
-import { listModules } from './lib/list.mjs';
-import { loadForRun } from './lib/memo.mjs';
-import { ensureConfig } from './lib/backend.mjs';
-import { installSignalHandlers } from './lib/cli.mjs';
+import { project, normalizeModuleName, ExitSignal, assertProjectRoot } from './lib/core.mjs';
+import { list } from './lib/list.mjs';
+import { memo } from './lib/memo.mjs';
+import { backend } from './lib/backend.mjs';
+import { cli } from './lib/cli.mjs';
 
 assertProjectRoot();
-installSignalHandlers();
+cli.installSignalHandlers();
 
 const SKIP_ONBOARD = new Set([
     'backend',
@@ -26,21 +26,21 @@ const SKIP_ONBOARD = new Set([
 
 async function maybeOnboard(cmd) {
     if (cmd && SKIP_ONBOARD.has(cmd)) return;
-    await ensureConfig();
+    await backend.ensureConfig();
 }
 
 async function runModule(name, args = []) {
-    const scripts = discover();
+    const scripts = project.discover();
     const script = scripts.find((s) => normalizeModuleName(s.name) === name);
     if (!script) {
         console.error('Module not found:', name);
         process.exit(1);
     }
 
-    loadForRun(script.path, script.name);
+    memo.loadForRun(script.path, script.name);
 
     try {
-        const mod = await import('file://' + absPath(script.path));
+        const mod = await import('file://' + project.absPath(script.path));
         const main = mod.default?.main ?? mod.main;
         if (typeof main === 'function') {
             const result = await main(args);
@@ -53,7 +53,7 @@ async function runModule(name, args = []) {
 }
 
 async function helpVerbose() {
-    const scripts = discover();
+    const scripts = project.discover();
 
     for (const script of scripts) {
         if (script !== scripts[0]) console.log();
@@ -80,7 +80,7 @@ async function main(argv) {
 
     if (cmd === '-v' || cmd === '--verbose') return helpVerbose();
     if (!cmd || HELP_PREFIXES.some((p) => cmd.startsWith(p))) {
-        return listModules([cmd, ...rest].filter(Boolean));
+        return list.listModules([cmd, ...rest].filter(Boolean));
     }
 
     await maybeOnboard(cmd);

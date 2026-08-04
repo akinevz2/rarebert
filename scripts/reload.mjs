@@ -2,9 +2,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import { PROJECT_ROOT, discover } from '../lib/core.mjs';
-import { clearLastModule } from '../lib/editor.mjs';
-import { run } from '../lib/cli.mjs';
+import { project } from '../lib/core.mjs';
+import { editor } from '../lib/editor.mjs';
+import { cli } from '../lib/cli.mjs';
 
 const HEADER = '# Auto-generated Makefile: a pure index of `node index.js <name>` targets';
 const EXTRA_TARGETS = {
@@ -50,16 +50,16 @@ function buildBody(names) {
 
 async function main(args = []) {
     if (args.includes('--forget')) {
-        clearLastModule();
+        editor.clearLastModule();
     }
 
-    const scripts = discover();
+    const scripts = project.discover();
     console.log(
-        `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => path.relative(PROJECT_ROOT, s.path)).join(', ') || '(none)'}`
+        `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => path.relative(project.root, s.path)).join(', ') || '(none)'}`
     );
 
-    const makefilePath = path.join(PROJECT_ROOT, 'Makefile');
-    const rel = path.relative(PROJECT_ROOT, makefilePath);
+    const makefilePath = path.join(project.root, 'Makefile');
+    const rel = path.relative(project.root, makefilePath);
     const names = scripts.map((s) => s.name);
 
     const phony = [...names, ...Object.keys(EXTRA_TARGETS).filter((n) => !names.includes(n))];
@@ -81,5 +81,5 @@ export { main };
 export default {
     name: 'reload',
     description: 'Rebuild Makefile as a pure index of node index.js <name> targets',
-    main: run(meta, main)
+    main: cli.run(meta, main)
 };

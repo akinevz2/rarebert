@@ -3,27 +3,20 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import {
-    PROJECT_ROOT,
-    SCRIPTS_DIR,
-    LIB_DIR,
-    normalizeModuleName,
-    discover,
-    exit
-} from '../lib/core.mjs';
+import { project, normalizeModuleName, exit } from '../lib/core.mjs';
 
-const SRC_DIR = path.join(PROJECT_ROOT, 'src');
+const SRC_DIR = path.join(project.root, 'src');
 const DEFAULT_MODULE = path.join(SRC_DIR, 'main.py');
 
 function rel(p) {
-    return path.relative(PROJECT_ROOT, p);
+    return path.relative(project.root, p);
 }
 
 function runProcess(cmd, args) {
     console.log(`$ ${cmd} ${args.join(' ')}`);
     const child = spawn(cmd, args, {
         stdio: 'inherit',
-        cwd: PROJECT_ROOT
+        cwd: project.root
     });
     child.on('error', (err) => {
         console.error(`Failed to launch ${cmd}: ${err.message}`);
@@ -34,7 +27,7 @@ function runProcess(cmd, args) {
 
 function findJsModule(name) {
     const normalized = normalizeModuleName(name);
-    const all = [...discover(SCRIPTS_DIR), ...discover(LIB_DIR)];
+    const all = [...project.discover(project.scriptsDir), ...project.discover(project.libDir)];
     return all.find((s) => normalizeModuleName(s.name) === normalized);
 }
 

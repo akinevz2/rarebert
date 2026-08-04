@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
-import path from 'path';
 import { spawnSync } from 'child_process';
-import { PROJECT_ROOT, exit } from '../lib/core.mjs';
+import { project, exit } from '../lib/core.mjs';
 import { listAllModules } from '../lib/modules.mjs';
-import * as memo from '../lib/memo.mjs';
+import { memo } from '../lib/memo.mjs';
 
 function runNodeCheck(filePath) {
     const result = spawnSync(process.execPath, ['--check', filePath], {
@@ -40,7 +39,7 @@ async function main(args = []) {
 
     let failures = 0;
     for (const mod of modules) {
-        const rel = path.relative(PROJECT_ROOT, mod.path);
+        const rel = project.relPath(mod.path);
         const { ok, locations } = runNodeCheck(mod.path);
 
         if (ok) {

@@ -1,13 +1,8 @@
 #!/usr/bin/env node
 
 import Enquirer from 'enquirer';
-import {
-    listLanguages,
-    supportedExtensions,
-    installLanguage,
-    isSupported
-} from '../lib/languages.mjs';
-import { run, input, confirm, ok, fail } from '../lib/cli.mjs';
+import { languages } from '../lib/languages.mjs';
+import { cli } from '../lib/cli.mjs';
 
 const meta = {
     name: 'languages',
@@ -17,7 +12,7 @@ const meta = {
 };
 
 function showLanguages() {
-    const langs = listLanguages();
+    const langs = languages.list();
     if (langs.length === 0) {
         console.log('languages: no templates installed (lib/supports/ is empty)');
         return;
@@ -34,27 +29,27 @@ async function install(args = []) {
 
     let lang = nameArg;
     if (!lang) {
-        lang = await input('Language to install (e.g. ts, rb, go):', {
+        lang = await cli.input('Language to install (e.g. ts, rb, go):', {
             validate: (v) => (v.trim() ? true : 'Language is required')
         });
     }
     lang = lang.replace(/^\.+/, '').toLowerCase();
 
-    if (isSupported(lang) && !force) {
-        const overwrite = await confirm(
+    if (languages.isSupported(lang) && !force) {
+        const overwrite = await cli.confirm(
             `Language "${lang}" is already installed. Overwrite?`,
             false
         );
-        if (!overwrite) ok('Not overwritten.');
+        if (!overwrite) cli.ok('Not overwritten.');
     }
 
     console.log(`languages: installing "${lang}"...`);
-    const result = await installLanguage(lang, { force });
+    const result = await languages.install(lang, { force });
     console.log(`\n✓ Installed language: ${result.name}`);
     console.log(`  template: ${result.path}`);
     console.log(`  lines: ${Object.keys(result.template.lines).length}`);
     console.log(`  sections: ${Object.keys(result.template.sections).join(', ')}`);
-    ok(`Done. New modules can now use .${result.name}`);
+    cli.ok(`Done. New modules can now use .${result.name}`);
 }
 
 async function main(args = []) {
@@ -67,7 +62,7 @@ async function main(args = []) {
         await install(args.slice(1));
         return;
     }
-    fail(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
+    cli.fail(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
 }
 
 export { main, showLanguages };
@@ -75,5 +70,5 @@ export { main, showLanguages };
 export default {
     name: 'languages',
     description: meta.description,
-    main: run(meta, main)
+    main: cli.run(meta, main)
 };

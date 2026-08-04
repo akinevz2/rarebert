@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { onboard } from '../lib/backend.mjs';
-import { run } from '../lib/cli.mjs';
+import { backend } from '../lib/backend.mjs';
+import { cli } from '../lib/cli.mjs';
 
 const meta = {
     name: 'backend',
@@ -11,7 +11,7 @@ const meta = {
 };
 
 async function main(args = []) {
-    await onboard(args);
+    await backend.onboard(args);
 }
 
 export { main };
@@ -19,5 +19,5 @@ export { main };
 export default {
     name: 'backend',
     description: meta.description,
-    main: run(meta, main)
+    main: cli.run(meta, main)
 };

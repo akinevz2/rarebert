@@ -3,17 +3,10 @@
 import fs from 'fs';
 import path from 'path';
 import Enquirer from 'enquirer';
-import { PROJECT_ROOT } from '../lib/core.mjs';
+import { project } from '../lib/core.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
-import {
-    remember,
-    forgetAllMemos,
-    forgetMemos,
-    loadAllMemos,
-    loadMemos,
-    clearBuffer
-} from '../lib/memo.mjs';
-import { AbortError, confirm, input, nonInteractive, fail } from '../lib/cli.mjs';
+import { memo } from '../lib/memo.mjs';
+import { cli, AbortError } from '../lib/cli.mjs';
 
 const META = {
     name: 'memo',
@@ -43,14 +36,14 @@ const META = {
 };
 
 async function promptMemoContent(moduleName, initial = '') {
-    return input('Enter memo content:', {
+    return cli.input('Enter memo content:', {
         initial,
         validate: (v) => (v.trim() ? true : 'required')
     });
 }
 
 function printAllMemos() {
-    const all = loadAllMemos();
+    const all = memo.loadAllMemos();
     if (all.length === 0) {
         console.log('No memos found.');
         return false;
@@ -58,7 +51,7 @@ function printAllMemos() {
 
     const flat = [];
     for (const { module, memos, lastModified } of all) {
-        const rel = path.relative(PROJECT_ROOT, module.path);
+        const rel = project.relPath(module.path);
         for (const content of memos) {
             flat.push({ rel, content, lastModified });
         }
@@ -74,12 +67,12 @@ function printAllMemos() {
 async function addMemo(moduleArg, memoContentArg) {
     const modules = listAllModules();
     if (modules.length === 0) {
-        fail('No modules found.');
+        cli.fail('No modules found.');
     }
     const target = await promptModule(modules, moduleArg, 'Select a module to memoize');
     const memoContent = memoContentArg.trim() || (await promptMemoContent(target.name));
-    remember(target.path, memoContent);
-    console.log(`\x1b[33m✓\x1b[0m Memo added to ${path.relative(PROJECT_ROOT, target.path)}`);
+    memo.remember(target.path, memoContent);
+    console.log(`\x1b[33m✓\x1b[0m Memo added to ${project.relPath(target.path)}`);
 }
 
 async function bare(args) {
@@ -94,7 +87,7 @@ async function bare(args) {
 }
 
 async function multiSelectMemos(moduleName) {
-    const memos = loadMemos(moduleName);
+    const memos = memo.loadMemos(moduleName);
     if (!memos.length) return [];
 
     const prompt = new Enquirer.MultiSelect({
@@ -116,10 +109,10 @@ async function multiSelectMemos(moduleName) {
 
 async function dropMemos(moduleArg) {
     if (!moduleArg) {
-        fail("A memo'd module must be specified for --drop.");
+        cli.fail("A memo'd module must be specified for --drop.");
     }
     if (process.stdin.isTTY !== true) {
-        nonInteractive('cannot prompt for memo selection.');
+        cli.nonInteractive('cannot prompt for memo selection.');
     }
 
     const target = await promptModule(
@@ -133,7 +126,7 @@ async function dropMemos(moduleArg) {
         return;
     }
 
-    const remaining = loadMemos(target.path).filter((c) => !selected.includes(c));
+    const remaining = memo.loadMemos(target.path).filter((c) => !selected.includes(c));
     const file = target.path + '.';
     if (!remaining.length) {
         try {
@@ -148,27 +141,25 @@ async function dropMemos(moduleArg) {
                 '\n'
         );
     }
-    console.log(
-        `Dropped ${selected.length} memo(s) from ${path.relative(PROJECT_ROOT, target.path)}`
-    );
+    console.log(`Dropped ${selected.length} memo(s) from ${project.relPath(target.path)}`);
 }
 
 async function forgetMemosForModule(moduleArg, recursive) {
     if (!moduleArg) {
-        fail('A module must be specified for --forget.');
+        cli.fail('A module must be specified for --forget.');
     }
     const target = await promptModule(listAllModules(), moduleArg, 'Select module to forget memos');
-    forgetMemos(target.path, recursive);
+    memo.forgetMemos(target.path, recursive);
     console.log(
-        `Forgot memos for ${path.relative(PROJECT_ROOT, target.path)}${recursive ? ' (recursive)' : ''}`
+        `Forgot memos for ${project.relPath(target.path)}${recursive ? ' (recursive)' : ''}`
     );
 }
 
 async function forgetAll() {
     if (process.stdin.isTTY === true) {
-        if (!(await confirm('Drop ALL memo files in the repo?', false))) return;
+        if (!(await cli.confirm('Drop ALL memo files in the repo?', false))) return;
     }
-    forgetAllMemos();
+    memo.forgetAll();
     console.log('Dropped all memo files.');
 }
 
@@ -185,7 +176,7 @@ async function main(args = []) {
 
     if (isAll) {
         printAllMemos();
-        clearBuffer();
+        memo.clearBuffer();
         return;
     }
 
@@ -196,19 +187,19 @@ async function main(args = []) {
 
     if (isDrop) {
         await dropMemos(nonFlag[0]);
-        clearBuffer();
+        memo.clearBuffer();
         return;
     }
 
     if (isForgetAll) {
         await forgetAll();
-        clearBuffer();
+        memo.clearBuffer();
         return;
     }
 
     if (isForget) {
         await forgetMemosForModule(nonFlag[0], flags.includes('--recursive'));
-        clearBuffer();
+        memo.clearBuffer();
         return;
     }
 

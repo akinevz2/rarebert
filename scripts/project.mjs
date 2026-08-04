@@ -1,22 +1,8 @@
 #!/usr/bin/env node
 
 import Enquirer from 'enquirer';
-import {
-    listLanguages,
-    supportedExtensions,
-    installLanguage,
-    isSupported
-} from '../lib/languages.mjs';
-import {
-    run,
-    select,
-    input,
-    confirm,
-    isInteractive,
-    nonInteractive,
-    ok,
-    fail
-} from '../lib/cli.mjs';
+import { languages } from '../lib/languages.mjs';
+import { cli } from '../lib/cli.mjs';
 
 const meta = {
     name: 'project',
@@ -26,20 +12,20 @@ const meta = {
 };
 
 function describeChoices() {
-    const langs = listLanguages();
+    const langs = languages.list();
     const choices = langs.map((l) => ({ name: l, message: `.${l}` }));
     choices.push({ name: '__install__', message: 'Install a new language via opencode...' });
     return choices;
 }
 
 export async function chooseLanguage() {
-    if (!isInteractive()) nonInteractive('cannot choose a language.');
-    const langs = listLanguages();
+    if (!cli.isInteractive()) cli.nonInteractive('cannot choose a language.');
+    const langs = languages.list();
     if (langs.length === 0) {
         return await installNewLanguage();
     }
 
-    const choice = await select('Select a language for the new module:', describeChoices(), {
+    const choice = await cli.select('Select a language for the new module:', describeChoices(), {
         nonInteractiveBehavior: 'return',
         initial: Math.max(0, langs.indexOf('mjs'))
     });
@@ -51,21 +37,21 @@ export async function chooseLanguage() {
 }
 
 async function installNewLanguage() {
-    const lang = await input('Language to install (e.g. ts, rb, go):', {
+    const lang = await cli.input('Language to install (e.g. ts, rb, go):', {
         validate: (v) => (v.trim() ? true : 'Language is required')
     });
     const name = lang.replace(/^\.+/, '').toLowerCase();
 
-    if (isSupported(name)) {
-        const overwrite = await confirm(
+    if (languages.isSupported(name)) {
+        const overwrite = await cli.confirm(
             `Language "${name}" is already installed. Overwrite?`,
             false
         );
-        if (!overwrite) ok('Not overwritten.');
+        if (!overwrite) cli.ok('Not overwritten.');
     }
 
     console.log(`project: installing "${name}"...`);
-    const result = await installLanguage(name, { force: true });
+    const result = await languages.install(name, { force: true });
     console.log(`\n✓ Installed language: ${result.name} (${result.path})`);
     return result.name;
 }
@@ -73,18 +59,18 @@ async function installNewLanguage() {
 async function install(args = []) {
     const nameArg = args.find((a) => !a.startsWith('-') && a);
     const force = args.includes('--force');
-    if (!nameArg) fail('Usage: node index.js project install <lang> [--force]');
+    if (!nameArg) cli.fail('Usage: node index.js project install <lang> [--force]');
 
     const name = nameArg.replace(/^\.+/, '').toLowerCase();
-    const result = await installLanguage(name, { force });
+    const result = await languages.install(name, { force });
     console.log(`\n✓ Installed language: ${result.name}`);
     console.log(`  template: ${result.path}`);
     console.log(`  lines: ${Object.keys(result.template.lines).length}`);
-    ok(`Done. New modules can now use .${result.name}`);
+    cli.ok(`Done. New modules can now use .${result.name}`);
 }
 
 function showList() {
-    const langs = listLanguages();
+    const langs = languages.list();
     if (langs.length === 0) {
         console.log('project: no languages installed (lib/supports/ is empty)');
         return;
@@ -102,7 +88,7 @@ async function main(args = []) {
         console.log(lang);
         return;
     }
-    fail(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
+    cli.fail(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
 }
 
 export { main };
@@ -110,5 +96,5 @@ export { main };
 export default {
     name: 'project',
     description: meta.description,
-    main: run(meta, main)
+    main: cli.run(meta, main)
 };

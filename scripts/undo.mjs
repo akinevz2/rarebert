@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 
-import { PROJECT_ROOT, normalizeModuleName, exit } from '../lib/core.mjs';
-import { readLastModule, clearLastModule } from '../lib/editor.mjs';
-import { confirm } from '../lib/cli.mjs';
+import { project, normalizeModuleName, exit } from '../lib/core.mjs';
+import { editor } from '../lib/editor.mjs';
+import { cli } from '../lib/cli.mjs';
 import fs from 'fs';
 import path from 'path';
 
 async function main(args = []) {
-    const rel = readLastModule();
+    const rel = editor.readLastModule();
     if (!rel) {
         console.error('Nothing to undo. No .last-module marker found.');
         return exit(1);
     }
 
-    const absPath = path.isAbsolute(rel) ? rel : path.join(PROJECT_ROOT, rel);
+    const absPath = path.isAbsolute(rel) ? rel : path.join(project.root, rel);
 
     if (fs.existsSync(absPath)) {
-        const confirmed = await confirm(
+        const confirmed = await cli.confirm(
             `Remove module '${rel}' and clear .last-module marker?`,
             false
         );
@@ -30,7 +30,7 @@ async function main(args = []) {
         console.error(`Module file not found (already removed?): ${rel}`);
     }
 
-    clearLastModule();
+    editor.clearLastModule();
     console.log('✓ Cleared .last-module marker');
 }
 
