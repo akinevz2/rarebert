@@ -36,3 +36,6 @@ dist-ssr
 
 # Academic report working tree (managed by scripts/article.mjs)
 report/
+
+# opencode scratch space (referenced from AGENTS.md)
+.opencode/system/

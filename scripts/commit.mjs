@@ -8,9 +8,20 @@ import Enquirer from 'enquirer';
 import { PROJECT_ROOT } from '../lib/core.mjs';
 import { listAllModules } from '../lib/modules.mjs';
 import * as git from '../lib/git.mjs';
-import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
+import { readOpendeConfig, listModels, promptModel, resolveModel } from '../lib/models.mjs';
 import { loadMemos } from '../lib/memo.mjs';
 import { editFile } from '../lib/editor.mjs';
+import { resolveOpencode } from '../lib/opencode.mjs';
+import { run } from '../lib/cli.mjs';
+
+const meta = {
+    name: 'commit',
+    description: 'Stage all changes, summarise them via opencode, then commit with $EDITOR',
+    usage: 'node index.js commit [model]',
+    options: [
+        { label: 'model', description: 'opencode model id (otherwise prompted from opencode.json)' }
+    ]
+};
 
 function stripCommitMessage(raw) {
     return raw
@@ -137,7 +148,7 @@ function summariseChangelist(model, changelist, firstLine) {
     const promptFirstLine = prompt.split('\n')[0];
     console.error(`$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${promptFirstLine}">" -m ${model} --auto`);
 
-    const result = spawnSync('opencode', args, {
+    const result = spawnSync(resolveOpencode(), args, {
         cwd: PROJECT_ROOT,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'inherit']
@@ -155,17 +166,6 @@ function summariseChangelist(model, changelist, firstLine) {
 }
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('commit: Stage all changes, summarise them via opencode, then commit with $EDITOR');
-        console.error('  Usage: node index.js commit [model]');
-        console.error('  Offers two options: a) proceed with full opencode summary, b) write a regular');
-        console.error('  git commit message.');
-        console.error('  The index is only mutated right before commit; on interruption or empty');
-        console.error('  commit message, `git restore --staged` reverts the index (non-destructive).');
-        console.error('  Reads available models from opencode.json (or accepts one as an argument).');
-        return;
-    }
-
     const interactive = process.stdin.isTTY === true;
 
     const status = git.git('status', ['--short']);
@@ -218,7 +218,7 @@ async function main(args = []) {
         return;
     }
 
-    const model = await resolveModel(args);
+    const model = await resolveModel(args.find(a => !a.startsWith('-') && a));
 
     if (choice === 'proceed') {
         const modify = await promptModifyPrompt();
@@ -248,13 +248,6 @@ function summariseAndShow(model, changelist, firstLine) {
     }
     console.error('--- end summary ---\n');
     return summary;
-}
-
-async function resolveModel(args) {
-    const modelArg = args.find(a => !a.startsWith('-') && a);
-    if (modelArg) return modelArg;
-    const config = readOpendeConfig();
-    return await promptModel(listModels(config), config.model);
 }
 
 function buildCommitPlan(summary, interactive, yeet = false) {
@@ -325,14 +318,10 @@ function stageAndCommit(commitArgs) {
     }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
-}
-
 export { main };
 
 export default {
     name: 'commit',
     description: 'Stage all, summarise via opencode, then commit with $EDITOR',
-    main
+    main: run(meta, main)
 };

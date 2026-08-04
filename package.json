@@ -12,6 +12,7 @@
     "reload": "make reload"
   },
   "dependencies": {
-    "enquirer": "^2.4.1"
+    "enquirer": "^2.4.1",
+    "opencode-ai": "^1.18.12"
   }
 }

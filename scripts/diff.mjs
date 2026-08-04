@@ -33,16 +33,6 @@ function showDiff(diffArgs, usePager) {
 }
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('diff: Show working-tree changes (or staged) in a pager');
-        console.error('  Usage: node index.js diff [--staged] [--stat] [module]');
-        console.error('  --staged   show only staged (cached) changes');
-        console.error('  --stat     show diffstat only');
-        console.error('  module     restrict to a single module (by name)');
-        console.error('  Falls back to stdout when not a TTY or no pager is available.');
-        return;
-    }
-
     const staged = args.includes('--staged');
     const stat = args.includes('--stat');
     const nonFlag = args.filter(a => !a.startsWith('-') && a);
@@ -63,10 +53,6 @@ async function main(args = []) {
     const usePager = process.stdin.isTTY === true && process.stdout.isTTY === true;
     const status = showDiff(diffArgs, usePager);
     process.exit(status);
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
 }
 
 export { main };

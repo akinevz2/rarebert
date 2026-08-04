@@ -1,26 +1,16 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { spawnSync } from 'child_process';
+import path from 'path';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
 import { editFile, writeLastModule } from '../lib/editor.mjs';
 import { runIDE, exitIDE } from '../lib/ide.mjs';
 import { relPath } from '../lib/libs.mjs';
 import { PROJECT_ROOT } from '../lib/core.mjs';
+import { spawnSync } from 'child_process';
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('edit: Select a module, edit it in $EDITOR, then run opencode on it');
-        console.error('  Usage: node index.js edit [--lib|--scripts] [module] [model]');
-        console.error('  --lib       choose from modules in lib/');
-        console.error('  --scripts   choose from modules in scripts/ (default)');
-        console.error('  Lists modules with arrow-key navigation and search.');
-        console.error('  Reads available models from opencode.json (or accepts one as an argument).');
-        console.error('  After opencode exits, runs `make commit` (stages all + summarises + commits).');
-        return;
-    }
-
     const modules = listAllModules();
     if (modules.length === 0) {
         console.error('No modules found.');
@@ -80,24 +70,20 @@ async function main(args = []) {
     }
 
     if (finalStatus === 0) {
-        console.error('\n--- running `make commit` after opencode exit ---');
-        const result = spawnSync('make', ['commit'], {
+        console.error('\n--- running `node index.js commit` after opencode exit ---');
+        const result = spawnSync('node', ['index.js', 'commit'], {
             cwd: PROJECT_ROOT,
             stdio: 'inherit'
         });
         if (result.error) {
-            console.error(`make commit failed: ${result.error.message}`);
+            console.error(`commit failed: ${result.error.message}`);
         } else if (result.status !== 0) {
-            console.error(`make commit exited with status ${result.status}`);
+            console.error(`commit exited with status ${result.status}`);
             if (finalStatus === 0) finalStatus = result.status;
         }
     }
 
     process.exit(finalStatus);
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
 }
 
 export { main };

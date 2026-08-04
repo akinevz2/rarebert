@@ -3,10 +3,10 @@
 import fs from 'fs';
 import path from 'path';
 import Enquirer from 'enquirer';
-import { PROJECT_ROOT, LIB_DIR } from '../lib/core.mjs';
+import { PROJECT_ROOT } from '../lib/core.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 
-const MEMO_LIB = path.join(LIB_DIR, 'memo.mjs');
+const MEMO_LIB = path.join(PROJECT_ROOT, 'lib', 'memo.mjs');
 const MEMO_LIB_NAME = 'memo';
 
 async function promptMemoContent() {
@@ -132,19 +132,6 @@ function injectMemoLine(filePath, moduleName, memoContent) {
 }
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('memo: Inject a single memo line into a module\'s main() function');
-        console.error('  Usage: node index.js memo [module] [memoContent]');
-        console.error('  Selects a module from scripts/ and lib/, prompts for memo content,');
-        console.error('  then injects a `memo.remember(name, content)` call into its main().');
-        console.error('  Library modules (no main()) are rejected; their memos are instead');
-        console.error('  prepended by scripts that import them via memo.recallImports().');
-        console.error('  When the instrumented module is later called, the memo is printed');
-        console.error('  to stdout as "moduleName: memoContent".');
-        console.error('  If the FORGET env variable is set, the memo array is cleared after printing.');
-        return;
-    }
-
     const nonFlag = args.filter(a => !a.startsWith('-') && a);
     const moduleArg = nonFlag[0];
     const memoContentArg = nonFlag.slice(1).join(' ');
@@ -174,10 +161,6 @@ async function main(args = []) {
     if (process.env.FORGET) {
         console.error('  FORGET is set: memo array will be cleared after printing.');
     }
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
 }
 
 export { injectMemoLine, main };

@@ -40,15 +40,6 @@ function findPyModule(name) {
 }
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('run: Run a module (defaults to src/main.py)');
-        console.error('  Usage: node index.js run [module] [args...]');
-        console.error('  module   a scripts/ or lib/ module (.js/.mjs) or a src/ module (.py)');
-        console.error('           if omitted, runs src/main.py');
-        console.error('  Remaining args are forwarded to the module.');
-        return;
-    }
-
     const nonFlag = args.filter(a => !a.startsWith('-') && a);
     const moduleArg = nonFlag[0];
     const rest = nonFlag.slice(1);
@@ -84,7 +75,6 @@ async function main(args = []) {
         return;
     }
 
-    // No extension given: try JS module first, then Python.
     const jsMod = findJsModule(moduleArg);
     if (jsMod) {
         runProcess(process.execPath, [jsMod.path, ...rest]);
@@ -99,10 +89,6 @@ async function main(args = []) {
 
     console.error(`Module not found: ${moduleArg}`);
     process.exit(1);
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
 }
 
 export { main };

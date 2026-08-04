@@ -1,16 +1,10 @@
-# Auto-generated Makefile
+# Auto-generated Makefile: a pure index of `node index.js <name>` targets
 
-.PHONY: add article check commit create diff edit memo reload run undo jump implement help open
+.PHONY: add article check commit create diff edit implement memo reload run undo install deps opencode
 
 
 add:
-	@node index.js add; \
-	  [ -f .last-module ] || exit 1; \
-	  file=$$(cat .last-module); \
-	  echo "Created: $$file"; \
-	  git add -A; \
-	  $${EDITOR:-nano} $$EDITOR_FLAGS "$$file"; \
-	  opencode run "Implement the module in $$file" --auto -m $(MODEL)
+	node index.js add
 
 article:
 	node index.js article
@@ -30,12 +24,14 @@ diff:
 edit:
 	node index.js edit
 
+implement:
+	node index.js implement
+
 memo:
 	node index.js memo
 
 reload:
 	node index.js reload
-	  @if [ -n "$$FORGET" ]; then rm -f .last-module; fi
 
 run:
 	node index.js run
@@ -43,16 +39,11 @@ run:
 undo:
 	node index.js undo
 
-jump:
-	node index.js jump
+install:
+	npm install
 
-implement:
-	@file=$$(cat .last-module); \
-	  [ -n "$$file" ] || { echo 'Run make add first'; exit 1; }; \
-	  opencode run "Implement the module in $$file" --auto -m $(MODEL)
+deps:
+	npm install
 
-help:
-	node index.js
-
-open:
-	node index.js open
+opencode:
+	./node_modules/opencode-ai/bin/opencode.exe $(ARGS)

@@ -7,8 +7,21 @@ import Enquirer from 'enquirer';
 import { PROJECT_ROOT } from '../lib/core.mjs';
 import { editFile } from '../lib/editor.mjs';
 import { exitIDE } from '../lib/ide.mjs';
-import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
+import { resolveOpencode } from '../lib/opencode.mjs';
+import { readOpendeConfig, listModels, promptModel, resolveModel } from '../lib/models.mjs';
 import { relPath } from '../lib/libs.mjs';
+import { run } from '../lib/cli.mjs';
+
+const meta = {
+    name: 'article',
+    description: 'Manage the academic report: clone, build, edit a section, commit',
+    usage: 'node index.js article [--preview] [section] [model]',
+    options: [
+        { flag: 'preview', label: '', description: 'build the report then open it' },
+        { label: 'section', description: 'path under report/src/ (e.g. introduction/introduction.md); if omitted, opens an interactive menu' },
+        { label: 'model', description: 'opencode model id (otherwise prompted from opencode.json)' }
+    ]
+};
 
 const { Select, Input, Confirm } = Enquirer;
 
@@ -315,17 +328,11 @@ function assertCleanBeforeSwitch() {
     process.exit(1);
 }
 
-async function resolveModel(args) {
-    const modelArg = args.find(a => !a.startsWith('-') && a);
-    if (modelArg) return modelArg;
-    const config = readOpendeConfig();
-    return await promptModel(listModels(config), config.model);
-}
-
 function runOpencode(model) {
+    const bin = resolveOpencode();
     const args = [REPORT_DIR, '-m', model];
     console.error(`$ opencode ${args.join(' ')}`);
-    const child = spawn('opencode', args, {
+    const child = spawn(bin, args, {
         stdio: 'inherit',
         cwd: REPORT_DIR
     });
@@ -519,7 +526,7 @@ async function runMenu(args) {
             process.exit(1);
         }
         const section = await promptSection(sections, sectionArg);
-        const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
+        const model = await resolveModel(modelArg);
         const status = await editSection(model, section.path, section.rel);
         if (status !== 0) console.error(`edit session exited with status ${status}.`);
         await confirmCommit(`update ${section.rel}`);
@@ -558,7 +565,7 @@ async function runMenu(args) {
         if (choice === 'todo') { await makeTodoNote(); continue; }
         if (choice === 'preamble') {
             assertCleanBeforeSwitch();
-            const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
+            const model = await resolveModel(modelArg);
             await editPreamble(model);
             continue;
         }
@@ -570,7 +577,7 @@ async function runMenu(args) {
                 continue;
             }
             const section = await promptSection(sections, null);
-            const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
+            const model = await resolveModel(modelArg);
             const status = await editSection(model, section.path, section.rel);
             if (status !== 0) console.error(`edit session exited with status ${status}.`);
             await confirmCommit(`update ${section.rel}`);
@@ -661,24 +668,7 @@ async function confirmCommit(label) {
 }
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('article: Manage the academic report (clone, build, edit a section, commit)');
-        console.error('  Usage: node index.js article [--preview] [section] [model]');
-        console.error('  --preview   build the report then open it (make report && make open)');
-        console.error('  section     path under report/src/ (e.g. introduction/introduction.md)');
-        console.error('              if omitted, opens an interactive menu (manage/edit/preamble/todo/exit)');
-        console.error('  model       opencode model id (otherwise prompted from opencode.json)');
-        console.error('  Clones akinevz2/report-template.git into ./report/ if absent,');
-        console.error('  builds with `make report`, lets you pick a section, edits it in');
-        console.error('  $EDITOR alongside opencode, then commits the section on exit.');
-        return;
-    }
-
     await runMenu(args);
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
 }
 
 export { ensureCloned, runMake, listSections, promptSection, isReportClean, isHostClean, assertReportClean, assertHostCleanOrCommit, editSection, editPreamble, commitSection, manageSections, makeTodoNote, runMenu, normalizeSectionRel, appendToTOC, removeFromTOC, rebuildAndOpen, main };
@@ -686,5 +676,5 @@ export { ensureCloned, runMake, listSections, promptSection, isReportClean, isHo
 export default {
     name: 'article',
     description: 'Manage the academic report: clone, build, edit a section, commit',
-    main
+    main: run(meta, main)
 };

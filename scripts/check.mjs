@@ -32,15 +32,6 @@ function runNodeCheck(filePath) {
 }
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('check: Run `node --check` on every library and script');
-        console.error('  Usage: node index.js check');
-        console.error('  Discovers all .js/.mjs files in lib/ and scripts/, runs `node --check` on each.');
-        console.error('  Only failing files produce memos (one per error-location: line + message).');
-        console.error('  Lists accumulated memos for each module. Exits non-zero if any file fails.');
-        return;
-    }
-
     const modules = listAllModules();
     if (modules.length === 0) {
         console.error('No modules found in lib/ or scripts/.');
@@ -65,19 +56,13 @@ async function main(args = []) {
         }
 
         const prior = memo.loadMemos(mod.name);
-        if (prior.length > 0) {
-            for (const content of prior) {
-                console.error(`     memo ${mod.name}: ${content}`);
-            }
+        for (const content of prior) {
+            console.error(`     memo ${mod.name}: ${content}`);
         }
     }
 
     console.error(`\nchecked ${modules.length} module${modules.length === 1 ? '' : 's'}, ${failures} failure${failures === 1 ? '' : 's'}`);
     process.exit(failures === 0 ? 0 : 1);
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
 }
 
 export { runNodeCheck, main };

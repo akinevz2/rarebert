@@ -1,44 +1,20 @@
 #!/usr/bin/env node
 
-import path from 'path';
-import {
-    SCRIPTS_DIR,
-    assertProjectRoot,
-    normalizeModuleName,
-    discoverScripts
-} from './lib/core.mjs';
+import { assertProjectRoot, normalizeModuleName, discoverScripts } from './lib/core.mjs';
 import { listModules } from './lib/list.mjs';
-import { recallImports, loadMemos, flush } from './lib/memo.mjs';
+import { loadForRun } from './lib/memo.mjs';
 
 assertProjectRoot();
 
 async function runModule(name, args = []) {
     const scripts = discoverScripts();
     const script = scripts.find(s => normalizeModuleName(s.name) === name);
-
     if (!script) {
         console.error('Module not found:', name);
         process.exit(1);
     }
 
-    recallImports(script.path);
-
-    const { memoCascadingBuffer } = await import('./lib/memo.mjs');
-    for (const content of loadMemos(script.name)) {
-        if (!memoCascadingBuffer.some(m => m.name === script.name && m.content === content)) {
-            memoCascadingBuffer.push({ name: script.name, content });
-        }
-    }
-
-    process.on('exit', flush);
-    process.on('SIGINT', () => {
-        flush();
-        process.exit(130);
-    });
-    process.on('SIGHUP', () => {
-        flush();
-        process.exit(129);
-    });
+    loadForRun(script.path, script.name);
 
     try {
         const mod = await import('file://' + script.path);
@@ -69,19 +45,14 @@ async function helpVerbose() {
     }
 }
 
-function refresh() {
-    import(path.join(SCRIPTS_DIR, 'reload.mjs'))
-        .then(m => (m.default?.main ?? m.main)?.())
-        .catch(e => console.error('Reload failed:', e.message));
-}
+const HELP_PREFIXES = ['help', 'h', '--lib', '--scripts', '--script'];
 
 async function main(argv) {
     const cmd = argv[2];
     const rest = argv.slice(3);
 
-    if (cmd === 'reload') return refresh();
     if (cmd === '-v' || cmd === '--verbose') return helpVerbose();
-    if (!cmd || cmd.startsWith('help') || cmd.startsWith('h') || cmd.startsWith('--lib') || cmd.startsWith('--scripts') || cmd.startsWith('--script')) {
+    if (!cmd || HELP_PREFIXES.some(p => cmd.startsWith(p))) {
         return listModules([cmd, ...rest].filter(Boolean));
     }
 

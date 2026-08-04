@@ -1,19 +1,15 @@
 #!/usr/bin/env node
 
-import path from 'path';
+import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { normalizeModuleName } from '../lib/core.mjs';
 import { getExtension, findLibraries, createModule, relPath } from '../lib/libs.mjs';
-import { writeLastModule } from '../lib/editor.mjs';
+import { writeLastModule, editFile } from '../lib/editor.mjs';
+import * as git from '../lib/git.mjs';
+import { runIDE } from '../lib/ide.mjs';
+import { resolveModel } from '../lib/models.mjs';
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('add: Scaffold a new rarebert module (.js/.mjs)');
-        console.error('  Usage: node index.js add');
-        console.error('  Prints the created module path to stdout (last line)');
-        return;
-    }
-
     console.error('\n=== Rarebert Module Creator ===\n');
 
     const namePrompt = new Enquirer.Input({
@@ -49,39 +45,48 @@ async function main(args = []) {
         process.exit(1);
     }
 
-    try {
-        console.error('\nGenerating module skeleton...');
-        const modulePath = createModule('scripts', normalizedName, ext);
-        const rel = relPath(modulePath);
+    const nonFlag = args.filter(a => !a.startsWith('-') && a);
+    const modelArg = nonFlag[0];
 
-        console.error(`\n✓ Created module: ${rel}`);
-        console.error('\n--- Boilerplate Instructions ---');
-        const libraries = findLibraries();
-        if (libraries.length > 0) {
-            libraries.forEach(lib => console.error(`- Shared library: lib/${lib}.mjs`));
-        } else {
-            console.error('- No shared utilities yet (core.mjs created in lib/)');
-        }
-        console.error('- Import shared utilities from ../lib/core.mjs as needed');
-        console.error('- Implement the main() function with your logic');
-        console.error('-------------------------------');
+    console.error('\nGenerating module skeleton...');
+    const modulePath = createModule('scripts', normalizedName, ext);
+    const rel = relPath(modulePath);
 
-        writeLastModule(rel);
-        console.log(rel);
-    } catch (error) {
-        console.error(`Error: ${error.message}`);
-        process.exit(1);
+    console.error(`\n✓ Created module: ${rel}`);
+    console.error('\n--- Boilerplate Instructions ---');
+    const libraries = findLibraries();
+    if (libraries.length > 0) {
+        libraries.forEach(lib => console.error(`- Shared library: lib/${lib}.mjs`));
+    } else {
+        console.error('- No shared utilities yet (core.mjs created in lib/)');
     }
-}
+    console.error('- Import shared utilities from ../lib/core.mjs as needed');
+    console.error('- Implement the main() function with your logic');
+    console.error('-------------------------------');
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
+    writeLastModule(rel);
+    console.log(rel);
+
+    const stageResult = git.add([], { all: true, stdio: 'inherit' });
+    if (!stageResult.ok) {
+        console.error('add: git add -A failed; continuing');
+    }
+
+    const editor = editFile(modulePath);
+    const editorExit = await new Promise((resolve) => {
+        editor.on('exit', (code) => resolve(code ?? 0));
+    });
+    if (editorExit !== 0) process.exit(editorExit);
+
+    const model = await resolveModel(modelArg);
+    const { status } = runIDE(model, rel, { implement: true });
+    if (status && status !== 0) process.exit(status);
 }
 
 export { main };
 
 export default {
     name: 'add',
-    description: 'Scaffold a new rarebert module (.js/.mjs) and print its path',
+    description: 'Scaffold a new module, git add, edit in $EDITOR, then run opencode to implement it',
     main
 };

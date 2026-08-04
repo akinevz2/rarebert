@@ -1,19 +1,12 @@
 #!/usr/bin/env node
 
+import { PROJECT_ROOT, normalizeModuleName } from '../lib/core.mjs';
+import { readLastModule, clearLastModule } from '../lib/editor.mjs';
+import { confirm } from '../lib/cli.mjs';
 import fs from 'fs';
 import path from 'path';
-import Enquirer from 'enquirer';
-import { PROJECT_ROOT } from '../lib/core.mjs';
-import { readLastModule, clearLastModule } from '../lib/editor.mjs';
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('undo: Remove the last-added module and clear .last-module');
-        console.error('  Usage: node index.js undo');
-        console.error('  Reads the target path from .last-module and deletes the module file.');
-        return;
-    }
-
     const rel = readLastModule();
     if (!rel) {
         console.error('Nothing to undo. No .last-module marker found.');
@@ -23,24 +16,11 @@ async function main(args = []) {
     const absPath = path.isAbsolute(rel) ? rel : path.join(PROJECT_ROOT, rel);
 
     if (fs.existsSync(absPath)) {
-        const confirmPrompt = new Enquirer.Confirm({
-            message: `Remove module '${rel}' and clear .last-module marker?`,
-            initial: false
-        });
-
-        let confirmed;
-        try {
-            confirmed = await confirmPrompt.run();
-        } catch {
-            console.error('\nAborted.');
-            process.exit(130);
-        }
-
+        const confirmed = await confirm(`Remove module '${rel}' and clear .last-module marker?`, false);
         if (!confirmed) {
             console.error('Aborted.');
             process.exit(0);
         }
-
         fs.unlinkSync(absPath);
         console.error(`✓ Removed module: ${rel}`);
     } else {
@@ -49,10 +29,6 @@ async function main(args = []) {
 
     clearLastModule();
     console.error('✓ Cleared .last-module marker');
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
 }
 
 export { main };

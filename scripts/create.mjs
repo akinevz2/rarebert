@@ -56,14 +56,6 @@ function generatePythonBoilerplate(moduleName, selectedLibs) {
 }
 
 async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.error('create: Scaffold a new Python module in src/ and open it in $EDITOR');
-        console.error('  Usage: node index.js create [module_name]');
-        console.error('  Prompts for any lib/*.py libraries to add to the import preamble.');
-        console.error('  Prints the created module path to stdout (last line).');
-        return;
-    }
-
     console.error('\n=== Rarebert Python Module Creator ===\n');
 
     const nameArg = args.find(a => !a.startsWith('-'));
@@ -114,41 +106,33 @@ async function main(args = []) {
 
     const selectedLibs = await promptLibraryImports(libs);
 
-    try {
-        console.error('\nGenerating Python module skeleton...');
-        fs.mkdirSync(SRC_DIR, { recursive: true });
-        const modulePath = path.join(SRC_DIR, `${normalizedName}.py`);
-        if (fs.existsSync(modulePath)) {
-            throw new Error(`${normalizedName}.py already exists`);
-        }
-
-        fs.writeFileSync(modulePath, generatePythonBoilerplate(normalizedName, selectedLibs));
-        const rel = relPath(modulePath);
-
-        console.error(`\n✓ Created module: ${rel}`);
-        if (selectedLibs.length > 0) {
-            console.error('  Preamble imports:');
-            selectedLibs.forEach(lib => console.error(`    - from lib import ${lib}`));
-        } else {
-            console.error('  No library imports added to preamble.');
-        }
-
-        writeLastModule(rel);
-        console.log(rel);
-
-        console.error(`\nOpening ${rel} in $EDITOR...`);
-        const child = editFile(modulePath);
-        child.on('exit', code => {
-            if (code !== 0) console.error(`Editor exited with code ${code}`);
-        });
-    } catch (error) {
-        console.error(`Error: ${error.message}`);
+    console.error('\nGenerating Python module skeleton...');
+    fs.mkdirSync(SRC_DIR, { recursive: true });
+    const modulePath = path.join(SRC_DIR, `${normalizedName}.py`);
+    if (fs.existsSync(modulePath)) {
+        console.error(`Error: ${normalizedName}.py already exists`);
         process.exit(1);
     }
-}
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
+    fs.writeFileSync(modulePath, generatePythonBoilerplate(normalizedName, selectedLibs));
+    const rel = relPath(modulePath);
+
+    console.error(`\n✓ Created module: ${rel}`);
+    if (selectedLibs.length > 0) {
+        console.error('  Preamble imports:');
+        selectedLibs.forEach(lib => console.error(`    - from lib import ${lib}`));
+    } else {
+        console.error('  No library imports added to preamble.');
+    }
+
+    writeLastModule(rel);
+    console.log(rel);
+
+    console.error(`\nOpening ${rel} in $EDITOR...`);
+    const child = editFile(modulePath);
+    child.on('exit', code => {
+        if (code !== 0) console.error(`Editor exited with code ${code}`);
+    });
 }
 
 export { main, listPythonLibs, promptLibraryImports, buildPreamble };

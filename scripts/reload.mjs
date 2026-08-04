@@ -2,98 +2,70 @@
 
 import fs from 'fs';
 import path from 'path';
-import { PROJECT_ROOT, SCRIPTS_DIR, discoverScripts } from '../lib/core.mjs';
+import { PROJECT_ROOT, discoverScripts } from '../lib/core.mjs';
+import { clearLastModule } from '../lib/editor.mjs';
+import { run } from '../lib/cli.mjs';
 
-const HEADER = '# Auto-generated Makefile';
+const HEADER = '# Auto-generated Makefile: a pure index of `node index.js <name>` targets';
+const EXTRA_TARGETS = {
+    install: 'npm install',
+    deps: 'npm install',
+    opencode: './node_modules/opencode-ai/bin/opencode.exe $(ARGS)'
+};
+
+const meta = {
+    name: 'reload',
+    description: 'Rebuild Makefile as a pure index of node index.js <name> targets',
+    usage: 'node index.js reload [--forget]',
+    options: [
+        { flag: 'forget', label: '', description: 'also delete .last-module after refreshing' }
+    ]
+};
 
 function buildPreamble(targetNames) {
     return [HEADER, '', `.PHONY: ${targetNames.join(' ')}`].join('\n') + '\n';
 }
 
-function parseTargets(makefileBody) {
-    const targets = new Map();
-    const lines = makefileBody.split('\n');
-    let i = 0;
-    while (i < lines.length) {
-        const m = lines[i].match(/^([A-Za-z_.-]+):\s*$/);
-        if (m) {
-            const name = m[1];
-            const block = [lines[i]];
-            i++;
-            while (i < lines.length && /^\t/.test(lines[i])) {
-                block.push(lines[i]);
-                i++;
-            }
-            targets.set(name, block.join('\n'));
-        } else {
-            i++;
-        }
+function buildBody(names) {
+    const blocks = [];
+    for (const name of names) {
+        blocks.push(`${name}:\n\tnode index.js ${name}`);
     }
-    return targets;
+    for (const [name, recipe] of Object.entries(EXTRA_TARGETS)) {
+        if (names.includes(name)) continue;
+        blocks.push(`${name}:\n\t${recipe}`);
+    }
+    return blocks.map(b => `\n\n${b}`).join('') + '\n';
 }
 
-export async function main(args = []) {
-    if (args.includes('--help') || args.includes('-h')) {
-        console.log('reload: Refresh the Makefile preamble (.PHONY list) from discovered scripts');
-        console.log('  Usage: node index.js reload');
-        console.log('  Only rewrites the header and .PHONY line; existing recipe targets are');
-        console.log('  left untouched. New scripts get a simple `node index.js <name>` target appended.');
-        return;
+async function main(args = []) {
+    if (args.includes('--forget')) {
+        clearLastModule();
     }
 
     const scripts = discoverScripts();
     console.error(`discover scripts/ -> ${scripts.length} found: ${scripts.map(s => s.name).join(', ') || '(none)'}`);
 
     const makefilePath = path.join(PROJECT_ROOT, 'Makefile');
-    const relPath = path.relative(PROJECT_ROOT, makefilePath);
+    const rel = path.relative(PROJECT_ROOT, makefilePath);
     const names = scripts.map(s => s.name);
-    const preamble = buildPreamble(names);
 
-    if (!fs.existsSync(makefilePath)) {
-        const body = names.map(n => `\n\n${n}:\n\tnode index.js ${n}`).join('');
-        fs.writeFileSync(makefilePath, preamble + body + '\n');
-        console.error(`create ${relPath} (${preamble.length + body.length} bytes)`);
-        console.error(`done: ${scripts.length} module(s), ${makefilePath}`);
-        return;
-    }
+    const phony = [...names, ...Object.keys(EXTRA_TARGETS).filter(n => !names.includes(n))];
+    const content = buildPreamble(phony) + buildBody(names);
 
-    const existing = fs.readFileSync(makefilePath, 'utf-8');
-    const bodyStart = existing.indexOf('.PHONY:');
-    const body = bodyStart === -1 ? existing : existing.slice(existing.indexOf('\n', bodyStart) + 1);
-    const targets = parseTargets(body);
-
-    const known = new Set(names);
-    const extraTargetNames = [...targets.keys()].filter(n => !known.has(n));
-
-    let appended = 0;
-    for (const name of names) {
-        if (!targets.has(name)) {
-            targets.set(name, `${name}:\n\tnode index.js ${name}`);
-            appended++;
-            console.error(`  + ${name}: (new target appended)`);
-        }
-    }
-
-    const orderedNames = [...names, ...extraTargetNames];
-    const targetBlocks = orderedNames.map(n => `\n\n${targets.get(n)}`).join('');
-    const phonyNames = orderedNames;
-    const content = buildPreamble(phonyNames) + targetBlocks + '\n';
-
-    if (content === existing) {
-        console.error(`up-to-date ${relPath} (no changes)`);
+    if (fs.existsSync(makefilePath) && fs.readFileSync(makefilePath, 'utf-8') === content) {
+        console.error(`up-to-date ${rel} (no changes)`);
     } else {
         fs.writeFileSync(makefilePath, content);
-        console.error(`refresh ${relPath} (preamble${appended ? `, +${appended} new target(s)` : ''})`);
+        console.error(`refresh ${rel} (${scripts.length} script targets + ${Object.keys(EXTRA_TARGETS).length} extras)`);
     }
     console.error(`done: ${scripts.length} module(s), ${makefilePath}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-    main(process.argv.slice(2));
-}
+export { main };
 
 export default {
     name: 'reload',
-    description: 'Refresh Makefile preamble from discovered scripts; preserve recipe targets',
-    main
+    description: 'Rebuild Makefile as a pure index of node index.js <name> targets',
+    main: run(meta, main)
 };
