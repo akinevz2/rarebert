@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { assertProjectRoot, normalizeModuleName, discover, ExitSignal } from './lib/core.mjs';
+import { assertProjectRoot, normalizeModuleName, discover, ExitSignal, absPath } from './lib/core.mjs';
 import { listModules } from './lib/list.mjs';
 import { loadForRun } from './lib/memo.mjs';
 import { ensureConfig } from './lib/backend.mjs';
@@ -40,7 +40,7 @@ async function runModule(name, args = []) {
     loadForRun(script.path, script.name);
 
     try {
-        const mod = await import('file://' + script.path);
+        const mod = await import('file://' + absPath(script.path));
         const main = mod.default?.main ?? mod.main;
         if (typeof main === 'function') {
             const result = await main(args);
