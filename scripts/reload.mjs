@@ -9,8 +9,7 @@ import { run } from '../lib/cli.mjs';
 const HEADER = '# Auto-generated Makefile: a pure index of `node index.js <name>` targets';
 const EXTRA_TARGETS = {
     install: 'npm install',
-    deps: 'npm install',
-    opencode: './node_modules/opencode-ai/bin/opencode.exe $(ARGS)'
+    deps: 'npm install'
 };
 
 const meta = {

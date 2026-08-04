@@ -358,7 +358,7 @@ function assertCleanBeforeSwitch() {
 
 function runOpencode(model) {
     const bin = resolveOpencode();
-    const args = [REPORT_DIR, '-m', model];
+    const args = [REPORT_DIR, '-m', model, '--mini'];
     console.error(`$ opencode ${args.join(' ')}`);
     const child = spawn(bin, args, {
         stdio: 'inherit',

@@ -14,7 +14,7 @@ import {
 } from '../lib/libs.mjs';
 import { writeLastModule, editFile } from '../lib/editor.mjs';
 import * as git from '../lib/git.mjs';
-import { runIDE } from '../lib/ide.mjs';
+import * as server from '../lib/server.mjs';
 import { resolveModel } from '../lib/models.mjs';
 import { listLanguages, isSupported, installLanguage } from '../lib/languages.mjs';
 import {
@@ -259,7 +259,24 @@ async function main(args = []) {
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
     const modelArg = nonFlag[0];
     const model = await resolveModel(modelArg);
-    const { status } = runIDE(model, rel, { implement: true });
+
+    const cwd = server.cwdForModule(rel);
+    const running = server.getRunningServer();
+    if (running) {
+        console.error(`add: connecting to running server ${running.url} (mini TUI)`);
+        const status = server.attachMini(running);
+        if (status && status !== 0) process.exit(status);
+        return;
+    }
+
+    const port = server.DEFAULT_PORT;
+    console.error(`add: starting full TUI on port ${port} (password=${port})`);
+    const status = server.startFullTUI({
+        cwd,
+        model,
+        port,
+        prompt: `Implement the module in ${rel}`
+    });
     if (status && status !== 0) process.exit(status);
 }
 

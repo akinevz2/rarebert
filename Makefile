@@ -2,7 +2,7 @@
 
 .DEFAULT_GOAL := list
 
-.PHONY: list add article backend check commit diff edit implement languages memo project reload run undo install deps opencode
+.PHONY: list add article backend check commit diff edit implement languages memo open project reload run undo install deps
 
 list:
 	node index.js
@@ -38,6 +38,9 @@ languages:
 memo:
 	node index.js memo
 
+open:
+	node index.js open
+
 project:
 	node index.js project
 
@@ -55,6 +58,3 @@ install:
 
 deps:
 	npm install
-
-opencode:
-	./node_modules/opencode-ai/bin/opencode.exe $(ARGS)

@@ -41,6 +41,7 @@ report/
 
 # opencode scratch space (referenced from AGENTS.md)
 .opencode/system/
+.opencode/server
 
 # opencode project config (local-only, see ~/.config/opencode/opencode.json for global)
 opencode.json

@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+
+import path from 'path';
+import { PROJECT_ROOT } from '../lib/core.mjs';
+import * as server from '../lib/server.mjs';
+import { resolveModel } from '../lib/models.mjs';
+
+async function main(args = []) {
+    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
+    const modelArg = nonFlag[0];
+    const model = modelArg ? await resolveModel(modelArg) : null;
+
+    const running = server.getRunningServer();
+    if (running) {
+        console.error(`open: connecting to running server ${running.url} (mini TUI)`);
+        const status = server.attachMini(running);
+        process.exit(status);
+    }
+
+    console.error('open: no running server; starting mini TUI at project root');
+    const port = server.DEFAULT_PORT;
+    const status = server.startFullTUI({
+        cwd: PROJECT_ROOT,
+        model: model || (await resolveModel()),
+        port,
+        prompt: null
+    });
+    process.exit(status);
+}
+
+export { main };
+
+export default {
+    name: 'open',
+    description: 'Connect to a running opencode server (mini TUI), or start one at the project root',
+    main
+};
