@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import path from 'path';
-import Enquirer from 'enquirer';
 import { project } from '../lib/core.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
@@ -11,7 +9,7 @@ import { cli, AbortError } from '../lib/cli.mjs';
 const META = {
     name: 'memo',
     description: 'Inspect and mutate memos stored alongside modules',
-    usage: 'node index.js memo [bare|--add|--all|--drop|--forget|--commit|--log|--restore]',
+    usage: 'node index.js memo [bare|--add|--all|--commit|--log|--restore|--fresh|--drop]',
     options: [
         { flag: '', label: 'bare', description: 'Print all memos, then TUI to add one' },
         { flag: 'add', label: '--add', description: 'Add a memo non-interactively (skip TUI)' },
@@ -20,12 +18,6 @@ const META = {
             flag: 'drop',
             label: '--drop',
             description: 'Remove selected memos for a module (interactive)'
-        },
-        { flag: 'forget', label: '--forget', description: 'Forget all memos for a module' },
-        {
-            flag: 'forget-all',
-            label: '--forget --all',
-            description: 'Drop every memo file in the repo'
         },
         {
             flag: 'commit',
@@ -39,9 +31,9 @@ const META = {
             description: 'Restore memos from a git notes snapshot (default: HEAD)'
         },
         {
-            flag: 'recursive',
-            label: '--recursive',
-            description: 'With --forget, also propagate to libs-owned memos'
+            flag: 'fresh',
+            label: '--fresh [label]',
+            description: 'Snapshot current memos, then clear working sidecars (clean slate)'
         }
     ]
 };
@@ -97,27 +89,6 @@ async function bare(args) {
     await addMemo(moduleArg, memoContentArg);
 }
 
-async function multiSelectMemos(moduleName) {
-    const memos = memo.loadMemos(moduleName);
-    if (!memos.length) return [];
-
-    const prompt = new Enquirer.MultiSelect({
-        name: 'memos',
-        message: `Select memos to drop for ${moduleName}:`,
-        choices: memos.map((content, idx) => ({
-            name: idx.toString(),
-            message: content,
-            value: content
-        }))
-    });
-    try {
-        const result = await prompt.run();
-        return result;
-    } catch {
-        throw new AbortError();
-    }
-}
-
 async function dropMemos(moduleArg) {
     if (!moduleArg) {
         cli.fail("A memo'd module must be specified for --drop.");
@@ -158,37 +129,39 @@ async function dropMemos(moduleArg) {
     console.log(`Dropped ${selected.length} memo(s) from ${project.relPath(target.path)}`);
 }
 
-async function forgetMemosForModule(moduleArg, recursive) {
-    if (!moduleArg) {
-        cli.fail('A module must be specified for --forget.');
-    }
-    const target = await promptModule(listAllModules(), moduleArg, 'Select module to forget memos');
-    memo.forgetMemos(target.path, recursive);
-    console.log(
-        `Forgot memos for ${project.relPath(target.path)}${recursive ? ' (recursive)' : ''}`
-    );
-}
+async function multiSelectMemos(modulePath) {
+    const memos = memo.loadMemos(modulePath);
+    if (!memos.length) return [];
 
-async function forgetAll() {
-    if (process.stdin.isTTY === true) {
-        if (!(await cli.confirm('Drop ALL memo files in the repo?', false))) return;
+    const { default: Enquirer } = await import('enquirer');
+    const prompt = new Enquirer.MultiSelect({
+        name: 'memos',
+        message: `Select memos to drop:`,
+        choices: memos.map((content, idx) => ({
+            name: idx.toString(),
+            message: content,
+            value: content
+        }))
+    });
+    try {
+        const result = await prompt.run();
+        return result;
+    } catch {
+        throw new AbortError();
     }
-    memo.forgetAll();
-    console.log('Dropped all memo files.');
 }
 
 async function main(args = []) {
     const flags = args.filter((a) => a.startsWith('-'));
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
 
-    const isForget = flags.includes('--forget');
-    const isForgetAll = flags.includes('--forget') && flags.includes('--all');
-    const isAll = flags.includes('--all') && !isForget;
+    const isAll = flags.includes('--all');
     const isDrop = flags.includes('--drop');
     const isAdd = flags.includes('--add');
     const isCommit = flags.includes('--commit');
     const isLog = flags.includes('--log');
     const isRestore = flags.includes('--restore');
+    const isFresh = flags.includes('--fresh');
     const isBare = !flags.length && !nonFlag.length;
 
     if (isAll) {
@@ -226,14 +199,14 @@ async function main(args = []) {
         return;
     }
 
-    if (isForgetAll) {
-        await forgetAll();
-        memo.clearBuffer();
-        return;
-    }
-
-    if (isForget) {
-        await forgetMemosForModule(nonFlag[0], flags.includes('--recursive'));
+    if (isFresh) {
+        const label = nonFlag.join(' ') || 'memo fresh slate';
+        const hadMemos = memo.loadAllMemos().length > 0;
+        if (hadMemos) {
+            memo.snapshot(label);
+        }
+        memo.forgetAll();
+        console.log(hadMemos ? `Fresh slate (previous memos snapshotted).` : 'Already clean.');
         memo.clearBuffer();
         return;
     }
