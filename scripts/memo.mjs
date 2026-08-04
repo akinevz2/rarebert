@@ -137,8 +137,11 @@ async function dropMemos(moduleArg) {
     } else {
         fs.writeFileSync(
             file,
-            JSON.stringify({ name: target.name, content: remaining, lastModified: Date.now() }) +
-                '\n'
+            JSON.stringify(
+                { name: target.name, content: remaining, lastModified: Date.now() },
+                null,
+                2
+            ) + '\n'
         );
     }
     console.log(`Dropped ${selected.length} memo(s) from ${project.relPath(target.path)}`);
