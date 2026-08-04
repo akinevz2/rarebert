@@ -89,10 +89,9 @@ async function bare(args) {
 
     const hasMemos = memo.loadAllMemos().length > 0;
     if (hasMemos) {
-        const view = await cli.confirm('View all memos?', true);
-        if (view) {
-            printGroupedMemos();
-        }
+        printGroupedMemos();
+    } else {
+        console.log('No memos found.\n');
     }
 
     const choices = [
