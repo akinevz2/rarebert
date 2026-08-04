@@ -95,10 +95,32 @@ async function bare(args) {
         }
     }
 
-    const moduleArg = nonFlag[0] || '';
-    const memoContentArg = nonFlag.slice(1).join(' ');
-
-    await addMemo(moduleArg, memoContentArg);
+    const choices = [
+        { name: 'add', message: 'Add a memo' },
+        { name: 'commit', message: 'Snapshot to git notes' },
+        { name: 'fresh', message: 'Fresh slate (snapshot + clear)' },
+        { name: 'exit', message: 'Exit' }
+    ];
+    const action = await cli.select('What next?', choices);
+    if (action === 'exit') return;
+    if (action === 'add') {
+        await addMemo(nonFlag[0] || '', nonFlag.slice(1).join(' '));
+        return;
+    }
+    if (action === 'commit') {
+        memo.snapshot(nonFlag.join(' ') || 'memo snapshot');
+        memo.clearBuffer();
+        return;
+    }
+    if (action === 'fresh') {
+        const label = nonFlag.join(' ') || 'memo fresh slate';
+        const hadMemos = memo.loadAllMemos().length > 0;
+        if (hadMemos) memo.snapshot(label);
+        memo.forgetAll();
+        console.log(hadMemos ? 'Fresh slate (previous memos snapshotted).' : 'Already clean.');
+        memo.clearBuffer();
+        return;
+    }
 }
 
 async function dropMemos(moduleArg) {
