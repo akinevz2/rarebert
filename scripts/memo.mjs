@@ -45,25 +45,26 @@ async function promptMemoContent(moduleName, initial = '') {
     });
 }
 
-function printAllMemos() {
-    const all = memo.loadAllMemos();
-    if (all.length === 0) {
+function printGroupedMemos() {
+    const groups = memo.walkAll();
+    if (groups.length === 0) {
         console.log('No memos found.');
         return false;
     }
 
-    const flat = [];
-    for (const { module, memos, lastModified } of all) {
-        const rel = project.relPath(module.path);
+    for (const { module, memos, libs } of groups) {
+        console.log(`\n\x1b[1m${module.path}\x1b[0m`);
         for (const content of memos) {
-            flat.push({ rel, content, lastModified });
+            console.log(`  ${content}`);
+        }
+        for (const lib of libs) {
+            console.log(`  \x1b[2m${lib.path}:\x1b[0m`);
+            for (const content of lib.memos) {
+                console.log(`    ${content}`);
+            }
         }
     }
-    flat.sort((a, b) => a.lastModified - b.lastModified);
-
-    for (const { rel, content } of flat) {
-        console.log(`${rel}  ${content}`);
-    }
+    console.log();
     return true;
 }
 
@@ -81,7 +82,18 @@ async function addMemo(moduleArg, memoContentArg) {
 async function bare(args) {
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
 
-    printAllMemos();
+    if (nonFlag.length >= 2) {
+        await addMemo(nonFlag[0], nonFlag.slice(1).join(' '));
+        return;
+    }
+
+    const hasMemos = memo.loadAllMemos().length > 0;
+    if (hasMemos) {
+        const view = await cli.confirm('View all memos?', true);
+        if (view) {
+            printGroupedMemos();
+        }
+    }
 
     const moduleArg = nonFlag[0] || '';
     const memoContentArg = nonFlag.slice(1).join(' ');
@@ -165,7 +177,21 @@ async function main(args = []) {
     const isBare = !flags.length && !nonFlag.length;
 
     if (isAll) {
-        printAllMemos();
+        const all = memo.loadAllMemos();
+        if (all.length === 0) {
+            console.log('No memos found.');
+        } else {
+            const flat = [];
+            for (const { module, memos, lastModified } of all) {
+                for (const content of memos) {
+                    flat.push({ path: module.path, content, lastModified });
+                }
+            }
+            flat.sort((a, b) => a.lastModified - b.lastModified);
+            for (const { path, content } of flat) {
+                console.log(`${path}  ${content}`);
+            }
+        }
         memo.clearBuffer();
         return;
     }
