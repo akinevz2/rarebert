@@ -1,6 +1,6 @@
 # Auto-generated Makefile
 
-.PHONY: add article check commit create diff edit jump memo reload run undo implement help open
+.PHONY: add article check commit create diff edit memo reload run undo jump implement help open
 
 
 add:
@@ -30,9 +30,6 @@ diff:
 edit:
 	node index.js edit
 
-jump:
-	node index.js jump
-
 memo:
 	node index.js memo
 
@@ -45,6 +42,9 @@ run:
 
 undo:
 	node index.js undo
+
+jump:
+	node index.js jump
 
 implement:
 	@file=$$(cat .last-module); \
