@@ -1,21 +1,23 @@
 # Maintain Memoizability Skill
 
 ## Purpose
-Ensures modules can receive memos for tracking context across operations. A module is "memoizable" if:
-1. It exists in the module registry (tracked by lib/modules.mjs)
-2. Has a corresponding `.<module-name>.` file for memo storage
-3. Can accept `remember()` calls to store contextual information
+Documents how files can receive memos for tracking their API and operations. A "memoizable" module:
+1. Exists in the project's module registry (tracked by lib/modules.mjs)  
+2. Has a `.module-name.` side-car file format accepted by memo.walkAll()
+3. Can store arbitrary string content via memo.remember(path, content)
 
-## Operations Exposed by scripts/memo.mjs
-- **addMemo(moduleArg, memoContentArg)** - Adds memo to specified module
-  - Uses `memo.remember(target.path, memoContent)` to persist
-  - Interactive or non-interactive modes
+## Memo Methods Available
 
-## Key Memo Methods Used:
-- `memo.remember(path, content)` - Store memo for a module
-- `memo.loadMemos(moduleRef)` - Load memos from file
-- `memo.loadMemoWithTimestamps()` - Load with timestamps for sorting
-- `memo.clearBuffer()` - Clear the in-memory buffer
+- **memo.remember(moduleRef, content)** - Add memo to module file
+- **memo.loadMemos(moduleRef)** - Load memos from file
+- **memo.loadMemosWithTimestamps()** - Get memos sorted by lastModified
+- **memo.clearBuffer()** - Reset in-memory buffer
+- **memo.forgetAll()** - Clear all local memo files
 
-## Operations to Memoize:
-The `--add` operation allows users to memoize any module with contextual notes.
+## Typical Memo Structure for scripts/memo.mjs
+
+```
+OPERATIONS: bind() -> dispatch to handlers; init() -> set up state machines
+or
+FUNCTIONS: main(args[]) dispatches --flag operations to private functions
+```

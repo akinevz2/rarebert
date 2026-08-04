@@ -1,8 +1,5 @@
 #!/usr/bin/env node
 
-// REQUEST: Operations exposed - bare() TUI, --add memo to module, --drop via multiSelectMemos(), --commit to git notes
-// TODO: main() flow: parse args -> early-return dispatch -> bare() default mode
-
 import fs from 'fs';
 import { project } from '../lib/core.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
