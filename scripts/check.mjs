@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process';
-import { project, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { exit } from '../lib/core.mjs';
 import { listAllModules } from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
 
@@ -39,7 +40,7 @@ async function main(args = []) {
 
     let failures = 0;
     for (const mod of modules) {
-        const rel = project.relPath(mod.path);
+        const rel = rarebert.relPath(mod.path);
         const { ok, locations } = runNodeCheck(mod.path);
 
         if (ok) {

@@ -4,7 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { project, normalizeModuleName, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { normalizeModuleName, exit } from '../lib/core.mjs';
 import { template } from '../lib/template.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
@@ -143,11 +144,11 @@ async function scaffoldSrcModule(lang, moduleName) {
     const selectedLibs = await promptProjectLibs(lang);
     const preamble = buildPreamble(lang, selectedLibs);
 
-    const modulePath = path.join(project.srcDir, `${moduleName}${ext}`);
+    const modulePath = path.join(rarebert.srcDir, `${moduleName}${ext}`);
     if (fs.existsSync(modulePath)) {
         cli.fail(`${moduleName}${ext} already exists in src/`);
     }
-    fs.mkdirSync(project.srcDir, { recursive: true });
+    fs.mkdirSync(rarebert.srcDir, { recursive: true });
 
     const content = template
         .resolve(ext, {
@@ -258,7 +259,7 @@ async function main(args = []) {
         `$ opencode run "<prompt: ${instruction.length} bytes, 1 file>" -m ${model} --auto`
     );
     const result = spawnSync(opencode.resolve(), ocArgs, {
-        cwd: project.root,
+        cwd: rarebert.root,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'inherit']
     });

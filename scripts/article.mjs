@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { project } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
 import { opencode } from '../lib/opencode.mjs';
@@ -30,7 +30,7 @@ const meta = {
 const { Select, Input, Confirm } = Enquirer;
 
 const REPORT_REMOTE = 'https://github.com/akinevz2/report-template.git';
-const REPORT_DIR = path.join(project.root, 'report');
+const REPORT_DIR = path.join(rarebert.root, 'report');
 const SRC_DIR = path.join(REPORT_DIR, 'src');
 const TOC_FILENAME = 'TOC.md';
 const TOC_PATH = path.join(SRC_DIR, TOC_FILENAME);
@@ -108,7 +108,7 @@ function reportGit(args, options = {}) {
 
 function hostGit(args, options = {}) {
     const result = spawnSync('git', args, {
-        cwd: project.root,
+        cwd: rarebert.root,
         encoding: 'utf-8',
         stdio: options.stdio ?? 'pipe'
     });
@@ -129,7 +129,7 @@ function isHostClean() {
 async function runHostCommit() {
     console.log('\n--- rarebert repo has uncommitted changes; running `make commit` ---');
     const result = spawnSync('make', ['commit'], {
-        cwd: project.root,
+        cwd: rarebert.root,
         stdio: 'inherit'
     });
     if (result.error) {

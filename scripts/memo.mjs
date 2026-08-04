@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { project } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
@@ -76,7 +76,7 @@ async function addMemo(moduleArg, memoContentArg) {
     const target = await promptModule(modules, moduleArg, 'Select a module to memoize');
     const memoContent = memoContentArg.trim() || (await promptMemoContent(target.name));
     memo.remember(target.path, memoContent);
-    console.log(`\x1b[33m✓\x1b[0m Memo added to ${project.relPath(target.path)}`);
+    console.log(`\x1b[33m✓\x1b[0m Memo added to ${rarebert.relPath(target.path)}`);
 }
 
 async function bare(args) {
@@ -159,7 +159,7 @@ async function dropMemos(moduleArg) {
             ) + '\n'
         );
     }
-    console.log(`Dropped ${selected.length} memo(s) from ${project.relPath(target.path)}`);
+    console.log(`Dropped ${selected.length} memo(s) from ${rarebert.relPath(target.path)}`);
 }
 
 async function multiSelectMemos(modulePath) {

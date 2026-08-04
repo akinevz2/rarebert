@@ -3,20 +3,21 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import { project, normalizeModuleName, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { normalizeModuleName, exit } from '../lib/core.mjs';
 
-const SRC_DIR = path.join(project.root, 'src');
+const SRC_DIR = path.join(rarebert.root, 'src');
 const DEFAULT_MODULE = path.join(SRC_DIR, 'main.py');
 
 function rel(p) {
-    return path.relative(project.root, p);
+    return path.relative(rarebert.root, p);
 }
 
 function runProcess(cmd, args) {
     console.log(`$ ${cmd} ${args.join(' ')}`);
     const child = spawn(cmd, args, {
         stdio: 'inherit',
-        cwd: project.root
+        cwd: rarebert.root
     });
     child.on('error', (err) => {
         console.error(`Failed to launch ${cmd}: ${err.message}`);
@@ -27,7 +28,7 @@ function runProcess(cmd, args) {
 
 function findJsModule(name) {
     const normalized = normalizeModuleName(name);
-    const all = [...project.discover(project.scriptsDir), ...project.discover(project.libDir)];
+    const all = [...rarebert.discover(rarebert.scriptsDir), ...rarebert.discover(rarebert.libDir)];
     return all.find((s) => normalizeModuleName(s.name) === normalized);
 }
 

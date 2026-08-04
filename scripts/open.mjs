@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import path from 'path';
-import { project, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { exit } from '../lib/core.mjs';
 import { server } from '../lib/server.mjs';
 import { models } from '../lib/models.mjs';
 
@@ -20,7 +21,7 @@ async function main(args = []) {
     console.log('open: no running server; starting mini TUI at project root');
     const port = server.DEFAULT_PORT;
     const status = server.startFullTUI({
-        cwd: project.root,
+        cwd: rarebert.root,
         model: model || (await models.resolve()),
         port,
         prompt: null

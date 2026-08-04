@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import { project, normalizeModuleName, ExitSignal, assertProjectRoot } from './lib/core.mjs';
+import { rarebert } from './lib/projects.mjs';
+import { ExitSignal } from './lib/core.mjs';
 import { list } from './lib/list.mjs';
 import { memo } from './lib/memo.mjs';
 import { backend } from './lib/backend.mjs';
 import { cli } from './lib/cli.mjs';
 
-assertProjectRoot();
 cli.installSignalHandlers();
 
 const SKIP_ONBOARD = new Set([
@@ -30,8 +30,8 @@ async function maybeOnboard(cmd) {
 }
 
 async function runModule(name, args = []) {
-    const scripts = project.discover();
-    const script = scripts.find((s) => normalizeModuleName(s.name) === name);
+    const scripts = rarebert.discover();
+    const script = scripts.find((s) => rarebert.normalizeModuleName(s.name) === name);
     if (!script) {
         console.error('Module not found:', name);
         process.exit(1);
@@ -40,7 +40,7 @@ async function runModule(name, args = []) {
     memo.loadForRun(script.path, script.name);
 
     try {
-        const mod = await import('file://' + project.absPath(script.path));
+        const mod = await import('file://' + rarebert.absPath(script.path));
         const main = mod.default?.main ?? mod.main;
         if (typeof main === 'function') {
             const result = await main(args);
@@ -53,12 +53,12 @@ async function runModule(name, args = []) {
 }
 
 async function helpVerbose() {
-    const scripts = project.discover();
+    const scripts = rarebert.discover();
 
     for (const script of scripts) {
         if (script !== scripts[0]) console.log();
         try {
-            const mod = await import('file://' + project.absPath(script.path));
+            const mod = await import('file://' + rarebert.absPath(script.path));
             const main = mod.default?.main ?? mod.main;
             if (typeof main === 'function') {
                 await main(['--help']);
@@ -84,7 +84,7 @@ async function main(argv) {
 
     await maybeOnboard(cmd);
 
-    await runModule(normalizeModuleName(cmd), rest);
+    await runModule(rarebert.normalizeModuleName(cmd), rest);
 }
 
 main(process.argv);

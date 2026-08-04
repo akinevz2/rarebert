@@ -5,7 +5,8 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { project, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { exit } from '../lib/core.mjs';
 import { listAllModules } from '../lib/modules.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
@@ -175,7 +176,7 @@ function summariseChangelist(model, changelist, firstLine) {
     );
 
     const result = spawnSync(opencode.resolve(), args, {
-        cwd: project.root,
+        cwd: rarebert.root,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'inherit']
     });

@@ -8,7 +8,8 @@ import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
 import { libs } from '../lib/libs.mjs';
-import { project, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
 
@@ -77,7 +78,7 @@ async function main(args = []) {
 
     console.log('\n--- running `node index.js commit` after opencode exit ---');
     const result = spawnSync('node', ['index.js', 'commit'], {
-        cwd: project.root,
+        cwd: rarebert.root,
         stdio: 'inherit'
     });
     if (result.error) {
@@ -151,7 +152,7 @@ function previewDiffFor(rel) {
 }
 
 function targetPathFor(rel) {
-    return path.isAbsolute(rel) ? rel : path.join(project.root, rel);
+    return path.isAbsolute(rel) ? rel : path.join(rarebert.root, rel);
 }
 
 function runEditorOnce(absPath) {

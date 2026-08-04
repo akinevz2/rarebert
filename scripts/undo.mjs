@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { project, normalizeModuleName, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { normalizeModuleName, exit } from '../lib/core.mjs';
 import { editor } from '../lib/editor.mjs';
 import { cli } from '../lib/cli.mjs';
 import fs from 'fs';
@@ -13,7 +14,7 @@ async function main(args = []) {
         return exit(1);
     }
 
-    const absPath = path.isAbsolute(rel) ? rel : path.join(project.root, rel);
+    const absPath = path.isAbsolute(rel) ? rel : path.join(rarebert.root, rel);
 
     if (fs.existsSync(absPath)) {
         const confirmed = await cli.confirm(

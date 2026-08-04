@@ -5,7 +5,8 @@ import { spawn, spawnSync } from 'child_process';
 import { models } from '../lib/models.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 import { server, DEFAULT_PORT } from '../lib/server.mjs';
-import { project, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { exit } from '../lib/core.mjs';
 import { editor } from '../lib/editor.mjs';
 import { opencode } from '../lib/opencode.mjs';
 
@@ -21,9 +22,9 @@ const meta = {
 };
 
 function relCwdFor(absCwd) {
-    if (absCwd === project.root) return './';
-    if (path.isAbsolute(absCwd) && !absCwd.startsWith(project.root)) return `${absCwd}/`;
-    return `${path.relative(project.root, absCwd)}/`;
+    if (absCwd === rarebert.root) return './';
+    if (path.isAbsolute(absCwd) && !absCwd.startsWith(rarebert.root)) return `${absCwd}/`;
+    return `${path.relative(rarebert.root, absCwd)}/`;
 }
 
 function runHeadless({ entries, context, model, instruction }) {
@@ -36,7 +37,7 @@ function runHeadless({ entries, context, model, instruction }) {
         `$ opencode run "<prompt: ${prompt.length} bytes, ${entries.length} file(s)>" -m ${model} --auto`
     );
     const result = spawnSync(opencode.resolve(), args, {
-        cwd: project.root,
+        cwd: rarebert.root,
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'inherit']
     });

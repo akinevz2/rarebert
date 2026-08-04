@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process';
-import { project, exit } from '../lib/core.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { libs } from '../lib/libs.mjs';
