@@ -232,7 +232,7 @@ async function main(args = []) {
             process.exit(1);
         }
 
-        const commitArgs = await buildCommitPlan(summary, interactive);
+        const commitArgs = await buildCommitPlan(summary, interactive, modify);
         stageAndCommit(commitArgs);
         return;
     }
@@ -257,8 +257,8 @@ async function resolveModel(args) {
     return await promptModel(listModels(config), config.model);
 }
 
-function buildCommitPlan(summary, interactive) {
-    if (summary && interactive) {
+function buildCommitPlan(summary, interactive, yeet = false) {
+    if (summary && interactive && !yeet) {
         return editSummaryInEditor(summary);
     }
     if (summary) {
