@@ -55,7 +55,7 @@ async function main(args = []) {
 
     const scripts = discover();
     console.log(
-        `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => s.name).join(', ') || '(none)'}`
+        `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => path.relative(PROJECT_ROOT, s.path)).join(', ') || '(none)'}`
     );
 
     const makefilePath = path.join(PROJECT_ROOT, 'Makefile');

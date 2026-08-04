@@ -5,7 +5,14 @@ import path from 'path';
 import Enquirer from 'enquirer';
 import { PROJECT_ROOT } from '../lib/core.mjs';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
-import { remember, forgetAllMemos, forgetMemos, loadAllMemos, loadMemos } from '../lib/memo.mjs';
+import {
+    remember,
+    forgetAllMemos,
+    forgetMemos,
+    loadAllMemos,
+    loadMemos,
+    clearBuffer
+} from '../lib/memo.mjs';
 import { AbortError, confirm, input, nonInteractive, fail } from '../lib/cli.mjs';
 
 const META = {
@@ -71,7 +78,7 @@ async function addMemo(moduleArg, memoContentArg) {
     }
     const target = await promptModule(modules, moduleArg, 'Select a module to memoize');
     const memoContent = memoContentArg.trim() || (await promptMemoContent(target.name));
-    remember(target.name, memoContent);
+    remember(target.path, memoContent);
     console.log(`\x1b[33m✓\x1b[0m Memo added to ${path.relative(PROJECT_ROOT, target.path)}`);
 }
 
@@ -120,13 +127,13 @@ async function dropMemos(moduleArg) {
         moduleArg,
         'Select module to drop memos from'
     );
-    const selected = await multiSelectMemos(target.name);
+    const selected = await multiSelectMemos(target.path);
     if (!selected.length) {
         console.log('No memos selected; nothing dropped.');
         return;
     }
 
-    const remaining = loadMemos(target.name).filter((c) => !selected.includes(c));
+    const remaining = loadMemos(target.path).filter((c) => !selected.includes(c));
     const file = target.path + '.';
     if (!remaining.length) {
         try {
@@ -141,7 +148,9 @@ async function dropMemos(moduleArg) {
                 '\n'
         );
     }
-    console.log(`Dropped ${selected.length} memo(s) from ${target.name}`);
+    console.log(
+        `Dropped ${selected.length} memo(s) from ${path.relative(PROJECT_ROOT, target.path)}`
+    );
 }
 
 async function forgetMemosForModule(moduleArg, recursive) {
@@ -149,8 +158,10 @@ async function forgetMemosForModule(moduleArg, recursive) {
         fail('A module must be specified for --forget.');
     }
     const target = await promptModule(listAllModules(), moduleArg, 'Select module to forget memos');
-    forgetMemos(target.name, recursive);
-    console.log(`Forgot memos for ${target.name}${recursive ? ' (recursive)' : ''}`);
+    forgetMemos(target.path, recursive);
+    console.log(
+        `Forgot memos for ${path.relative(PROJECT_ROOT, target.path)}${recursive ? ' (recursive)' : ''}`
+    );
 }
 
 async function forgetAll() {
@@ -165,7 +176,7 @@ async function main(args = []) {
     const flags = args.filter((a) => a.startsWith('-'));
     const nonFlag = args.filter((a) => !a.startsWith('-') && a);
 
-    const isForget = flags.includes('--forget') || 'FORGET' in process.env;
+    const isForget = flags.includes('--forget');
     const isForgetAll = flags.includes('--forget') && flags.includes('--all');
     const isAll = flags.includes('--all') && !isForget;
     const isDrop = flags.includes('--drop');
@@ -174,6 +185,8 @@ async function main(args = []) {
 
     if (isAll) {
         printAllMemos();
+        clearBuffer();
+        return;
     }
 
     if (isAdd) {
@@ -183,15 +196,20 @@ async function main(args = []) {
 
     if (isDrop) {
         await dropMemos(nonFlag[0]);
+        clearBuffer();
+        return;
     }
 
     if (isForgetAll) {
         await forgetAll();
+        clearBuffer();
         return;
     }
 
     if (isForget) {
         await forgetMemosForModule(nonFlag[0], flags.includes('--recursive'));
+        clearBuffer();
+        return;
     }
 
     if (isBare) {

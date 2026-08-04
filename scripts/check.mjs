@@ -50,14 +50,14 @@ async function main(args = []) {
             console.log(`FAIL ${rel}`);
             for (const loc of locations) {
                 const content = `line ${loc.line}: ${loc.message}`;
-                memo.remember(mod.name, content);
+                memo.remember(mod.path, content);
                 console.log(`     ${content}`);
             }
         }
 
-        const prior = memo.loadMemos(mod.name);
+        const prior = memo.loadMemos(mod.path);
         for (const content of prior) {
-            console.log(`     memo ${mod.name}: ${content}`);
+            console.log(`     memo ${rel}: ${content}`);
         }
     }
 

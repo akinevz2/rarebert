@@ -199,7 +199,7 @@ async function main(args = []) {
     const diffFull = git.git('diff', ['HEAD']);
 
     const memoLines = listAllModules().flatMap((mod) =>
-        loadMemos(mod.name).map((content) => `${mod.name}: ${content}`)
+        loadMemos(mod.path).map((content) => `${mod.path}: ${content}`)
     );
 
     const changelist = [
@@ -243,7 +243,6 @@ async function main(args = []) {
             process.exit(0);
         }
     }
-
 
     if (choice === 'raw') {
         if (interactive && (await promptBail('Bail before writing a commit message by hand?'))) {
