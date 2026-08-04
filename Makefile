@@ -2,7 +2,7 @@
 
 .DEFAULT_GOAL := list
 
-.PHONY: list add article check commit create diff edit implement languages memo project reload run undo install deps opencode
+.PHONY: list add article backend check commit create diff edit implement languages memo project reload run undo install deps opencode
 
 list:
 	node index.js
@@ -13,6 +13,9 @@ add:
 
 article:
 	node index.js article
+
+backend:
+	node index.js backend
 
 check:
 	node index.js check

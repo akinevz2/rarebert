@@ -3,8 +3,28 @@
 import { assertProjectRoot, normalizeModuleName, discoverScripts } from './lib/core.mjs';
 import { listModules } from './lib/list.mjs';
 import { loadForRun } from './lib/memo.mjs';
+import { ensureConfig } from './lib/backend.mjs';
 
 assertProjectRoot();
+
+const SKIP_ONBOARD = new Set([
+    'backend',
+    'onboard',
+    'help',
+    'h',
+    '--help',
+    '-h',
+    'list',
+    '--lib',
+    '--src',
+    '--scripts',
+    '--script'
+]);
+
+async function maybeOnboard(cmd) {
+    if (cmd && SKIP_ONBOARD.has(cmd)) return;
+    await ensureConfig();
+}
 
 async function runModule(name, args = []) {
     const scripts = discoverScripts();
@@ -55,6 +75,8 @@ async function main(argv) {
     if (!cmd || HELP_PREFIXES.some((p) => cmd.startsWith(p))) {
         return listModules([cmd, ...rest].filter(Boolean));
     }
+
+    await maybeOnboard(cmd);
 
     await runModule(normalizeModuleName(cmd), rest);
 }
