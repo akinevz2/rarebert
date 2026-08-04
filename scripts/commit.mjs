@@ -72,6 +72,33 @@ async function promptPreview() {
     }
 }
 
+async function promptBail(message) {
+    if (process.stdin.isTTY !== true) {
+        return false;
+    }
+
+    const prompt = new Enquirer.Confirm({
+        name: 'bail',
+        message,
+        initial: false
+    });
+
+    try {
+        return await prompt.run();
+    } catch {
+        throw new AbortError();
+    }
+}
+
+function bailCommit(reason) {
+    const staged = git.git('diff', ['--cached', '--name-only']);
+    if (staged.stdout.trim()) {
+        git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
+    }
+    console.error(`Bailed: ${reason}; index restored (non-destructive).`);
+    process.exit(0);
+}
+
 function previewDiff() {
     const pager = process.env.PAGER || 'less';
     const staged = git.git('diff', ['--cached', '--name-only']);
@@ -218,6 +245,9 @@ async function main(args = []) {
     }
 
     if (choice === 'raw') {
+        if (interactive && (await promptBail('Bail before writing a commit message by hand?'))) {
+            bailCommit('declined raw commit');
+        }
         stageAndCommit([]);
         return;
     }
@@ -225,6 +255,10 @@ async function main(args = []) {
     const model = await resolveModel(args.find((a) => !a.startsWith('-') && a));
 
     if (choice === 'proceed') {
+        if (interactive && (await promptBail('Bail before running opencode summary?'))) {
+            bailCommit('declined opencode summary');
+        }
+
         const modify = await promptModifyPrompt();
         const firstLine = modify ? await promptPromptFirstLine() : DEFAULT_PROMPT_FIRST_LINE;
         const summary = summariseAndShow(model, changelist, firstLine);
@@ -232,6 +266,10 @@ async function main(args = []) {
         if (!summary && !interactive) {
             console.error('No summary produced and not interactive; aborting.');
             process.exit(1);
+        }
+
+        if (interactive && (await promptBail('Summary looks bad — bail instead of editing it?'))) {
+            bailCommit('declined opencode summary output');
         }
 
         const commitArgs = await buildCommitPlan(summary, interactive, modify);
