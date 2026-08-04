@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "type": "module",
     "bin": {
-        ".": "./index.js"
+        "rarebert": "./index.js"
     },
     "scripts": {
         "list": "node index.js",
