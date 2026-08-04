@@ -11,7 +11,7 @@ import { cli, AbortError } from '../lib/cli.mjs';
 const META = {
     name: 'memo',
     description: 'Inspect and mutate memos stored alongside modules',
-    usage: 'node index.js memo [bare|--add|--all|--drop|--forget|--help]',
+    usage: 'node index.js memo [bare|--add|--all|--drop|--forget|--commit|--log|--restore]',
     options: [
         { flag: '', label: 'bare', description: 'Print all memos, then TUI to add one' },
         { flag: 'add', label: '--add', description: 'Add a memo non-interactively (skip TUI)' },
@@ -26,6 +26,17 @@ const META = {
             flag: 'forget-all',
             label: '--forget --all',
             description: 'Drop every memo file in the repo'
+        },
+        {
+            flag: 'commit',
+            label: '--commit [label]',
+            description: 'Snapshot current memos to git notes (refs/notes/memos)'
+        },
+        { flag: 'log', label: '--log', description: 'Show memo snapshot history from git notes' },
+        {
+            flag: 'restore',
+            label: '--restore [ref]',
+            description: 'Restore memos from a git notes snapshot (default: HEAD)'
         },
         {
             flag: 'recursive',
@@ -175,6 +186,9 @@ async function main(args = []) {
     const isAll = flags.includes('--all') && !isForget;
     const isDrop = flags.includes('--drop');
     const isAdd = flags.includes('--add');
+    const isCommit = flags.includes('--commit');
+    const isLog = flags.includes('--log');
+    const isRestore = flags.includes('--restore');
     const isBare = !flags.length && !nonFlag.length;
 
     if (isAll) {
@@ -190,6 +204,24 @@ async function main(args = []) {
 
     if (isDrop) {
         await dropMemos(nonFlag[0]);
+        memo.clearBuffer();
+        return;
+    }
+
+    if (isCommit) {
+        memo.snapshot(nonFlag.join(' ') || 'memo snapshot');
+        memo.clearBuffer();
+        return;
+    }
+
+    if (isLog) {
+        memo.log();
+        memo.clearBuffer();
+        return;
+    }
+
+    if (isRestore) {
+        memo.restore(nonFlag[0] || 'HEAD');
         memo.clearBuffer();
         return;
     }
