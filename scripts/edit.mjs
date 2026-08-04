@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
+import { spawnSync } from 'child_process';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { readOpendeConfig, listModels, promptModel } from '../lib/models.mjs';
 import { editFile, writeLastModule } from '../lib/editor.mjs';
 import { runIDE, exitIDE } from '../lib/ide.mjs';
 import { relPath } from '../lib/libs.mjs';
-import * as git from '../lib/git.mjs';
+import { PROJECT_ROOT } from '../lib/core.mjs';
 
 async function main(args = []) {
     if (args.includes('--help') || args.includes('-h')) {
@@ -16,7 +17,7 @@ async function main(args = []) {
         console.error('  --scripts   choose from modules in scripts/ (default)');
         console.error('  Lists modules with arrow-key navigation and search.');
         console.error('  Reads available models from opencode.json (or accepts one as an argument).');
-        console.error('  Before exiting, runs `git add` on the selected module only.');
+        console.error('  After opencode exits, runs `make commit` (stages all + summarises + commits).');
         return;
     }
 
@@ -78,12 +79,18 @@ async function main(args = []) {
         finalStatus = first.code;
     }
 
-    try {
-        const r = git.add([target.path], { stdio: 'inherit' });
-        if (r.stdout) process.stdout.write(r.stdout);
-        if (r.stderr) process.stderr.write(r.stderr);
-    } catch (err) {
-        console.error(`git: ${err.message}`);
+    if (finalStatus === 0) {
+        console.error('\n--- running `make commit` after opencode exit ---');
+        const result = spawnSync('make', ['commit'], {
+            cwd: PROJECT_ROOT,
+            stdio: 'inherit'
+        });
+        if (result.error) {
+            console.error(`make commit failed: ${result.error.message}`);
+        } else if (result.status !== 0) {
+            console.error(`make commit exited with status ${result.status}`);
+            if (finalStatus === 0) finalStatus = result.status;
+        }
     }
 
     process.exit(finalStatus);

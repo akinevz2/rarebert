@@ -17,6 +17,8 @@ const REPORT_DIR = path.join(PROJECT_ROOT, 'report');
 const SRC_DIR = path.join(REPORT_DIR, 'src');
 const TOC_FILENAME = 'TOC.md';
 const TOC_PATH = path.join(SRC_DIR, TOC_FILENAME);
+const PREAMBLE_FILENAMES = ['REPORT.md', 'TEMPLATE.md'];
+const PREAMBLE_PATH = path.join(REPORT_DIR, PREAMBLE_FILENAMES.find(f => fs.existsSync(path.join(REPORT_DIR, f))) || PREAMBLE_FILENAMES[1]);
 
 function normalizeSectionRel(name) {
     let rel = String(name).trim()
@@ -170,7 +172,8 @@ function runMake(target) {
     console.error(`$ make ${target} (cwd: ${relPath(REPORT_DIR)})`);
     const result = spawnSync('make', [target], {
         cwd: REPORT_DIR,
-        stdio: 'inherit'
+        stdio: 'inherit',
+        env: { ...process.env, PWD: REPORT_DIR }
     });
     if (result.error) {
         console.error(`make ${target} failed: ${result.error.message}`);
@@ -365,6 +368,18 @@ async function editSection(model, sectionPath, sectionRel) {
     return finalStatus;
 }
 
+async function editPreamble(model) {
+    if (!fs.existsSync(PREAMBLE_PATH)) {
+        console.error(`Preamble file not found: ${relPath(PREAMBLE_PATH)}`);
+        return 1;
+    }
+    console.error(`Editing preamble: ${relPath(PREAMBLE_PATH)}`);
+    const status = await editSection(model, PREAMBLE_PATH, path.relative(REPORT_DIR, PREAMBLE_PATH));
+    if (status !== 0) console.error(`edit session exited with status ${status}.`);
+    await confirmCommit('update preamble');
+    return status;
+}
+
 function sectionExists(name) {
     try {
         const rel = normalizeSectionRel(name);
@@ -523,6 +538,7 @@ async function runMenu(args) {
             choices: [
                 { name: 'manage', message: 'Manage sections' },
                 { name: 'edit', message: 'Edit a section' },
+                { name: 'preamble', message: 'Edit the preamble' },
                 { name: 'todo', message: 'Make a TODO note' },
                 { name: 'exit', message: 'Exit' }
             ]
@@ -540,6 +556,12 @@ async function runMenu(args) {
             continue;
         }
         if (choice === 'todo') { await makeTodoNote(); continue; }
+        if (choice === 'preamble') {
+            assertCleanBeforeSwitch();
+            const model = await resolveModel([...(modelArg ? [modelArg] : [])]);
+            await editPreamble(model);
+            continue;
+        }
         if (choice === 'edit') {
             assertCleanBeforeSwitch();
             const sections = listSections();
@@ -629,7 +651,7 @@ async function main(args = []) {
         console.error('  Usage: node index.js article [--preview] [section] [model]');
         console.error('  --preview   build the report then open it (make report && make open)');
         console.error('  section     path under report/src/ (e.g. introduction/introduction.md)');
-        console.error('              if omitted, opens an interactive menu (manage/edit/todo/exit)');
+        console.error('              if omitted, opens an interactive menu (manage/edit/preamble/todo/exit)');
         console.error('  model       opencode model id (otherwise prompted from opencode.json)');
         console.error('  Clones akinevz2/report-template.git into ./report/ if absent,');
         console.error('  builds with `make report`, lets you pick a section, edits it in');
@@ -644,7 +666,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     main(process.argv.slice(2));
 }
 
-export { ensureCloned, runMake, listSections, promptSection, isReportClean, isHostClean, assertReportClean, assertHostCleanOrCommit, editSection, commitSection, manageSections, makeTodoNote, runMenu, normalizeSectionRel, appendToTOC, removeFromTOC, rebuildAndOpen, main };
+export { ensureCloned, runMake, listSections, promptSection, isReportClean, isHostClean, assertReportClean, assertHostCleanOrCommit, editSection, editPreamble, commitSection, manageSections, makeTodoNote, runMenu, normalizeSectionRel, appendToTOC, removeFromTOC, rebuildAndOpen, main };
 
 export default {
     name: 'article',
