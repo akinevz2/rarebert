@@ -1,0 +1,35 @@
+{
+    "lines": {
+        "shebang": "#!/usr/bin/env python3",
+        "blank": "",
+        "docstring_open": "\"\"\"",
+        "docstring": "{{MODULE_NAME}} module",
+        "docstring_close": "\"\"\"",
+        "preamble": "{{LIB_IMPORTS}}",
+        "main_open": "def main():",
+        "main_scaffold": "    # {{MODULE_NAME}}: implementation scaffold",
+        "main_todo": "    # TODO: Implement the logic here.",
+        "main_stub": "    print('{{MODULE_NAME}} module - not yet implemented')",
+        "main_guard": "if __name__ == '__main__':",
+        "main_call": "    main()"
+    },
+    "sections": {
+        "module": [
+            "shebang",
+            "blank",
+            "docstring_open",
+            "docstring",
+            "docstring_close",
+            "blank",
+            "preamble",
+            "blank",
+            "main_open",
+            "main_scaffold",
+            "main_todo",
+            "main_stub",
+            "blank",
+            "main_guard",
+            "main_call"
+        ]
+    }
+}
