@@ -2,13 +2,13 @@
 
 import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
-import { ide } from '../lib/ide.mjs';
+import { server, DEFAULT_PORT } from '../lib/server.mjs';
 import { libs } from '../lib/libs.mjs';
-import { rarebert } from '../lib/projects.mjs';
+import { current, rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
@@ -34,68 +34,44 @@ async function main(args = []) {
 
     editor.writeLastModule(rel);
 
+
+
+    const running = server.getRunning();
     let model = modelArg;
-    if (!model) {
-        const config = models.readConfig();
-        model = await models.prompt(models.list(config), config.model);
+
+    if (!running) {
+        if (!model) {
+            const config = models.readConfig();
+            model = await models.prompt(models.list(config), config.model);
+        }
+    } else {
+        console.log(
+            `edit: attaching to existing opencode server at ${running.url} port=${running.port}`
+        );
     }
 
-    const { status, child: ideChild } = ide.run(model, rel);
 
     console.log(`Opening $EDITOR ${rel}`);
     const editorChild = editor.editFile(target.path);
 
-    let finalStatus = 0;
-
-    const editorExit = new Promise((resolve) => {
-        editorChild.on('exit', (code) => resolve(code ?? 0));
-    });
-    const ideExit = new Promise((resolve) => {
-        if (ideChild) {
-            ideChild.on('exit', (code) => resolve(code ?? 0));
-        } else {
-            resolve(status ?? 0);
-        }
+    const result = server.runOnServer({
+        project: current,
+        prompt: `User requested you display ${rel}`,
+        ...(running ? { url: running.url, host: running.host } : { model })
     });
 
-    const first = await Promise.race([
-        editorExit.then((code) => ({ kind: 'editor', code })),
-        ideExit.then((code) => ({ kind: 'ide', code }))
-    ]);
-
-    if (first.kind === 'editor') {
-        if (first.code !== 0) finalStatus = first.code;
-        await ide.exit(ideChild);
-        const ideCode = await ideExit;
-        if (ideCode !== 0) finalStatus = ideCode;
-    } else {
-        finalStatus = first.code;
+    if (editorChild && !editorChild.killed) {
+        editorChild.kill();
     }
 
-    if (finalStatus !== 0) {
-        return exit(finalStatus);
-    }
-
-    console.log('\n--- running `node index.js commit` after opencode exit ---');
-    const result = spawnSync('node', ['index.js', 'commit'], {
-        cwd: rarebert.root,
-        stdio: 'inherit'
-    });
-    if (result.error) {
-        console.error(`commit failed: ${result.error.message}`);
-        return exit(1);
-    }
     if (result.status !== 0) {
-        console.error(`commit exited with status ${result.status}`);
         return exit(result.status);
     }
 
-    if (!cli.isInteractive()) {
-        return exit(0);
-    }
+    console.log('\n--- running `node index.js commit` after opencode exit ---');
+    const status = await postCommitMenu(rel, model);
 
-    finalStatus = await postCommitMenu(rel, model);
-    return exit(finalStatus);
+    return exit(status ?? 0);
 }
 
 async function postCommitMenu(rel, model) {
@@ -107,10 +83,11 @@ async function postCommitMenu(rel, model) {
         const action = await cli.select(
             `opencode transformed ${rel}; how do you want to proceed?`,
             [
-                { name: 'diff', message: 'Show the diff in a pager' },
-                { name: 'implement', message: 'Run another opencode round (implement)' },
+                { name: 'diff', message: 'Show the diff and commit' },
                 { name: 'edit', message: 'Re-edit the file in $EDITOR' },
+                { name: 'implement', message: 'Run another opencode round (runOnServer)' },
                 { name: 'discard', message: 'Discard opencode changes (git restore)' },
+                { name: 'commit', message: 'Commit changes' },
                 { name: 'shell', message: 'Return to the shell' }
             ]
         );
@@ -119,14 +96,25 @@ async function postCommitMenu(rel, model) {
             previewDiffFor(rel);
             continue;
         }
+        if (action === 'commit') {
+            const commit = await git.git('commit');
+            if (commit.status != 0)
+                continue
+            return 0;
+        }
         if (action === 'implement') {
-            const { status } = ide.run(model, rel, { implement: true });
-            if (status !== 0) console.error(`opencode implement exited with status ${status}`);
+            const result = server.runOnServer({
+                prompt: `Display user the file ${rel}, and ask for instructions to follow`,
+                model,
+                auto: true
+            });
+            if (result.status !== 0)
+                console.error(`opencode runOnServer exited with status ${result.status}`);
             continue;
         }
         if (action === 'edit') {
             await runEditorOnce(targetPathFor(rel));
-            continue;
+            return 0;
         }
         if (action === 'discard') {
             const ok = await cli.confirm(`Discard changes to ${rel}? This is destructive.`, false);
