@@ -85,7 +85,12 @@ git clone https://github.com/akinevz2/rarebert
 cd rarebert
 npm install        # pulls opencode-ai + enquirer
 make reload        # rebuild Makefile to match scripts/
+make install       # install rarebert to ~/.local/rarebert (user-controlled prefix)
 ```
+
+`make install` invokes `node index.js install`, which installs the package
+into `~/.local/rarebert` (override with `--prefix <dir>`) and symlinks
+`rarebert` into `<prefix>/bin`. Add that `bin/` to your `PATH` to use the CLI.
 
 Then point `opencode.json` at your model. The default expects an
 Ollama-compatible endpoint:

@@ -1,5 +1,5 @@
 {
-    "name": "rarebert-add-cli",
+    "name": "rarebert-cli",
     "version": "1.0.0",
     "type": "module",
     "bin": {

@@ -8,7 +8,6 @@ import { cli } from '../lib/cli.mjs';
 
 const HEADER = '# Auto-generated Makefile: a pure index of `node index.js <name>` targets';
 const EXTRA_TARGETS = {
-    install: 'npm install',
     deps: 'npm install'
 };
 

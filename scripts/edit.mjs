@@ -1,17 +1,25 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import path from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { listAllModules, promptModule } from '../lib/modules.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
-import { server, DEFAULT_PORT } from '../lib/server.mjs';
+import { server } from '../lib/server.mjs';
+import { ide } from '../lib/ide.mjs';
 import { libs } from '../lib/libs.mjs';
-import { current, rarebert } from '../lib/projects.mjs';
+import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
+
+const meta = {
+    name: 'edit',
+    description:
+        'Edit a module in $EDITOR, attach it to the running opencode server (mini TUI); on editor close the connection terminates but the session persists on the server',
+    usage: 'node index.js edit [module] [model]',
+    options: []
+};
 
 async function main(args = []) {
     const modules = listAllModules();
@@ -35,92 +43,101 @@ async function main(args = []) {
     editor.writeLastModule(rel);
 
     const running = server.getRunning();
-    let model = modelArg;
-
     if (!running) {
-        if (!model) {
-            const config = models.readConfig();
-            model = await models.prompt(models.list(config), config.model);
-        }
-    } else {
-        console.log(
-            `edit: attaching to existing opencode server at ${running.url} port=${running.port}`
-        );
+        console.error('edit: no running opencode server found.');
+        console.error('       start one first with `make open` (or `node index.js open`).');
+        console.error('       the mini TUI keeps the conversation open so edits stay in context.');
+        return exit(1);
     }
 
-    console.log(`Opening $EDITOR ${rel}`);
-    const editorChild = editor.editFile(target.path);
+    let model = modelArg;
+    if (!model) {
+        const config = models.readConfig();
+        model = await models.prompt(models.list(config), config.model);
+    }
 
-    const result = await server.runOnServer({
-        project: current,
-        prompt: `User requested you display ${rel}`,
-        model
+    console.log(`edit: attaching to server ${running.url} port=${running.port}`);
+    console.log(`Opening $EDITOR ${rel} (close editor to terminate the opencode connection)`);
+
+    const { child: opencodeChild } = server.runInteractive({
+        url: running.url,
+        port: running.port,
+        file: rel,
+        prompt: `User edited ${rel}; review the file and ask for follow-up instructions.`,
+        model,
+        continueSession: true
     });
 
-    if (editorChild && !editorChild.killed) {
-        editorChild.kill();
-    }
+    const editorChild = editor.editFile(target.path);
 
-    if (result.status !== 0) {
-        return exit(result.status);
-    }
+    let finalStatus = 0;
 
-    console.log('\n--- running `node index.js commit` after opencode exit ---');
-    const status = await postCommitMenu(rel, model);
-
-    return exit(status ?? 0);
-}
-
-async function postCommitMenu(rel, model) {
-    while (true) {
-        if (git.statusPorcelain([rel]).length === 0) {
-            return 0;
+    const editorExit = new Promise((resolve) => {
+        editorChild.on('exit', (code) => resolve(code ?? 0));
+    });
+    const opencodeExit = new Promise((resolve) => {
+        if (opencodeChild) {
+            opencodeChild.on('exit', (code) => resolve(code ?? 0));
+        } else {
+            resolve(1);
         }
+    });
 
-        const action = await cli.select(
-            `opencode transformed ${rel}; how do you want to proceed?`,
-            [
-                { name: 'diff', message: 'Show the diff and commit' },
-                { name: 'edit', message: 'Re-edit the file in $EDITOR' },
-                { name: 'implement', message: 'Run another opencode round (runOnServer)' },
-                { name: 'discard', message: 'Discard opencode changes (git restore)' },
-                { name: 'commit', message: 'Commit changes' },
-                { name: 'shell', message: 'Return to the shell' }
-            ]
+    const first = await Promise.race([
+        editorExit.then((code) => ({ kind: 'editor', code })),
+        opencodeExit.then((code) => ({ kind: 'opencode', code }))
+    ]);
+
+    if (first.kind === 'editor') {
+        if (first.code !== 0) finalStatus = first.code;
+        await ide.exit(opencodeChild);
+        const opencodeCode = await opencodeExit;
+        if (opencodeCode !== 0) finalStatus = opencodeCode;
+    } else {
+        finalStatus = first.code;
+        console.log(
+            'opencode connection closed; waiting for $EDITOR to exit (close it to continue).'
         );
-
-        if (action === 'diff') {
-            previewDiffFor(rel);
-            continue;
-        }
-        if (action === 'commit') {
-            const commit = await git.git('commit');
-            if (commit.status != 0) continue;
-            return 0;
-        }
-        if (action === 'implement') {
-            const result = await server.runOnServer({
-                prompt: `Display user the file ${rel}, and ask for instructions to follow`,
-                model,
-                auto: true
-            });
-            if (result.status !== 0)
-                console.error(`opencode runOnServer exited with status ${result.status}`);
-            continue;
-        }
-        if (action === 'edit') {
-            await runEditorOnce(targetPathFor(rel));
-            return 0;
-        }
-        if (action === 'discard') {
-            const ok = await cli.confirm(`Discard changes to ${rel}? This is destructive.`, false);
-            if (!ok) continue;
-            git.git('restore', ['--', rel], { stdio: 'inherit' });
-            console.log(`restored ${rel} to HEAD.`);
-            return 0;
-        }
-        return 0;
+        const editorCode = await editorExit;
+        if (editorCode !== 0) finalStatus = editorCode;
     }
+
+    console.log(
+        '\n--- connection closed; session saved on the running server (resume with `make open`) ---'
+    );
+
+    if (finalStatus !== 0) {
+        return exit(finalStatus);
+    }
+
+    if (git.statusPorcelain([rel]).length === 0) {
+        console.log(`no changes to ${rel}.`);
+        return exit(0);
+    }
+
+    const action = await cli.select(`opencode transformed ${rel}; how do you want to proceed?`, [
+        { name: 'diff', message: 'Show the diff and commit' },
+        { name: 'commit', message: 'Commit changes' },
+        { name: 'discard', message: 'Discard opencode changes (git restore)' },
+        { name: 'shell', message: 'Return to the shell' }
+    ]);
+
+    if (action === 'diff') {
+        previewDiffFor(rel);
+        return exit(0);
+    }
+    if (action === 'commit') {
+        const commit = await git.git('commit');
+        return exit(commit.status ?? 0);
+    }
+    if (action === 'discard') {
+        const ok = await cli.confirm(`Discard changes to ${rel}? This is destructive.`, false);
+        if (!ok) return exit(0);
+        git.git('restore', ['--', rel], { stdio: 'inherit' });
+        console.log(`restored ${rel} to HEAD.`);
+        return exit(0);
+    }
+    return exit(0);
 }
 
 function previewDiffFor(rel) {
@@ -135,22 +152,10 @@ function previewDiffFor(rel) {
     }
 }
 
-function targetPathFor(rel) {
-    return path.isAbsolute(rel) ? rel : path.join(rarebert.root, rel);
-}
-
-function runEditorOnce(absPath) {
-    return new Promise((resolve) => {
-        const child = editor.editFile(absPath);
-        child.on('exit', (code) => resolve(code ?? 0));
-        child.on('error', () => resolve(1));
-    });
-}
-
 export { main };
 
 export default {
     name: 'edit',
-    description: 'Select an existing module, edit it in $EDITOR, then run opencode on it',
-    main
+    description: meta.description,
+    main: cli.run(meta, main)
 };

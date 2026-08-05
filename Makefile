@@ -2,7 +2,7 @@
 
 .DEFAULT_GOAL := list
 
-.PHONY: list add article backend check commit diff edit implement languages memo open project reload run status trail undo install deps
+.PHONY: list add article backend check commit diff edit implement install languages memo open project reload run status trail undo deps
 
 list:
 	node index.js
@@ -32,6 +32,9 @@ edit:
 implement:
 	node index.js implement
 
+install:
+	node index.js install
+
 languages:
 	node index.js languages
 
@@ -58,9 +61,6 @@ trail:
 
 undo:
 	node index.js undo
-
-install:
-	npm install
 
 deps:
 	npm install
