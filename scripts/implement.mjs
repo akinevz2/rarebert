@@ -81,7 +81,7 @@ async function runInteractive(args) {
             console.log(
                 `implement: running on existing server ${running.url} (--auto, non-interactive)`
             );
-            const { status } = server.runOnServer({
+            const { status } = await server.runOnServer({
                 url: running.url,
                 port: running.port,
                 prompt: instruction.trim(),
@@ -102,7 +102,7 @@ async function runInteractive(args) {
             );
             console.log(`  cwd: ${relCwd}`);
             console.log(`  subsequent \`make implement\` invocations will attach with --mini`);
-            const status = server.startFullTUI({
+            const status = await server.startFullTUI({
                 cwd,
                 model,
                 port,

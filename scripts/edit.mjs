@@ -34,8 +34,6 @@ async function main(args = []) {
 
     editor.writeLastModule(rel);
 
-
-
     const running = server.getRunning();
     let model = modelArg;
 
@@ -50,14 +48,13 @@ async function main(args = []) {
         );
     }
 
-
     console.log(`Opening $EDITOR ${rel}`);
     const editorChild = editor.editFile(target.path);
 
-    const result = server.runOnServer({
+    const result = await server.runOnServer({
         project: current,
         prompt: `User requested you display ${rel}`,
-        ...(running ? { url: running.url, host: running.host } : { model })
+        model
     });
 
     if (editorChild && !editorChild.killed) {
@@ -98,12 +95,11 @@ async function postCommitMenu(rel, model) {
         }
         if (action === 'commit') {
             const commit = await git.git('commit');
-            if (commit.status != 0)
-                continue
+            if (commit.status != 0) continue;
             return 0;
         }
         if (action === 'implement') {
-            const result = server.runOnServer({
+            const result = await server.runOnServer({
                 prompt: `Display user the file ${rel}, and ask for instructions to follow`,
                 model,
                 auto: true

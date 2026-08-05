@@ -20,7 +20,7 @@ async function main(args = []) {
 
     console.log('open: no running server; starting mini TUI at project root');
     const port = server.DEFAULT_PORT;
-    const status = server.startFullTUI({
+    const status = await server.startFullTUI({
         cwd: rarebert.root,
         model: model || (await models.resolve()),
         port,
