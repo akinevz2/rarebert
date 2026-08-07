@@ -47,8 +47,13 @@ const META = {
         },
         {
             flag: 'drop',
-            label: '--drop <module>',
+            label: '--drop <module> [indexes, 1-based]',
             description: 'Remove selected memos for a module (interactive)'
+        },
+        {
+            flag: 'forget',
+            label: '--forget <module>',
+            description: 'Remove all memos (sidecar) for a module'
         }
     ]
 };
@@ -634,6 +639,26 @@ function cmdRecall(ref, set) {
     memo.clearBuffer();
 }
 
+function cmdForget(moduleArg, modules) {
+    if (!moduleArg) {
+        console.error('memo --forget: missing module argument');
+        return;
+    }
+    const relPath = path.isAbsolute(moduleArg) ? rarebert.relPath(moduleArg) : moduleArg;
+    const match =
+        modules.find((m) => m.path === relPath) ||
+        modules.find((m) => m.path.endsWith(relPath)) ||
+        modules.find(
+            (m) => m.name === moduleArg || m.name === path.basename(relPath, path.extname(relPath))
+        );
+    if (!match) {
+        console.error(`memo --forget: module not found: ${moduleArg}`);
+        return;
+    }
+    memo.forgetByPath(match.path);
+    console.log(`\x1b[33m✓\x1b[0m Forgot all memos for ${rarebert.relPath(match.path)}`);
+}
+
 // ---------------------------------------------------------------------------
 // main()
 // ---------------------------------------------------------------------------
@@ -676,6 +701,12 @@ async function main(args = []) {
     if (has('--drop')) {
         await dropMemos(nonFlag[0], nonFlag[1]);
         memo.clearBuffer();
+        return;
+    }
+
+    // --forget <module> : remove all memos (sidecar) for a module
+    if (has('--forget')) {
+        cmdForget(nonFlag[0], modules);
         return;
     }
 
