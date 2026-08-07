@@ -2,11 +2,13 @@
 
 import fs from 'fs';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { memo } from '../lib/memo.mjs';
 import { server, DEFAULT_PORT } from '../lib/server.mjs';
 import { models } from '../lib/models.mjs';
+import { opencode } from '../lib/opencode.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 
 function detectLanguage(filePath) {
@@ -175,15 +177,29 @@ Provide a concise summary (2-3 sentences) describing what this code block does a
             } else {
                 const model = await models.resolve(null);
 
-                const result = await server.startFullTUI({
-                    cwd: rarebert.root,
-                    model: model || 'opencode',
-                    port: DEFAULT_PORT + 1,
-                    prompt: instruction
-                });
+                if (!model) {
+                    memo.remember(modulePath, `section-${i + 1}: No model available for analysis`);
+                    continue;
+                }
 
-                if (result !== 0) {
-                    memo.remember(modulePath, `section-${i + 1}: Analysis could not be completed`);
+                console.log(`$ opencode run "<prompt: ${instruction.length} bytes>" -m ${model} --auto`);
+
+                const result = spawnSync(
+                    process.execPath === 'node' ? require('child_process').execPath : 'opencode',
+                    ['run', instruction, '-m', model, '--auto'],
+                    {
+                        cwd: rarebert.root,
+                        encoding: 'utf-8',
+                        stdio: ['ignore', 'pipe', 'inherit']
+                    }
+                );
+
+                const stdout = (result.stdout ?? '').trim();
+                if (stdout) {
+                    memo.remember(modulePath, `section-${i + 1}: ${stdout}`);
+                    console.log(`  Summary: ${stdout.substring(0, 80)}${stdout.length > 80 ? '...' : ''}`);
+                } else {
+                    memo.remember(modulePath, `section-${i + 1}: No output from analysis`);
                 }
             }
         } catch (err) {
