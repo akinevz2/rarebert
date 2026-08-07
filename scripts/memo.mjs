@@ -74,15 +74,21 @@ function printGroupedMemos() {
 
     for (const { path, memos, related } of groups) {
         console.log(`\n\x1b[1m${path}\x1b[0m`);
+        // Print dependency tree with ASCII pipes BEFORE the memos
+        if (related.length) {
+            for (let i = 0; i < related.length; i++) {
+                const entry = related[i];
+                const isLast = i === related.length - 1;
+                const branch = isLast ? '└── ' : '├── ';
+                if (entry.cycle) {
+                    console.log(`  ${RED_BOLD}${branch}${entry.path} ↻${RESET}`);
+                } else {
+                    console.log(`  ${DIM}${branch}${entry.path}${RESET}`);
+                }
+            }
+        }
         for (const content of memos) {
             console.log(`  ${content}`);
-        }
-        for (const entry of related) {
-            if (entry.cycle) {
-                console.log(`  ${RED_BOLD}${entry.path}: ↻ cyclic import${RESET}`);
-            } else {
-                console.log(`  ${DIM}${entry.path}${RESET}`);
-            }
         }
     }
 
@@ -447,16 +453,24 @@ function printDagForSet(modules, set) {
         const prefix = indent ? '  ' : '';
         const style = indent ? DIM : '\x1b[1m';
         console.log(`\n${style}${prefix}${g.path}${RESET}`);
+
+        // Print dependency tree with ASCII pipes BEFORE the memos
+        if (g.related.length) {
+            for (let i = 0; i < g.related.length; i++) {
+                const entry = g.related[i];
+                const isLast = i === g.related.length - 1;
+                const branch = isLast ? '└── ' : '├── ';
+                if (entry.cycle) {
+                    console.log(`${prefix}  ${RED_BOLD}${branch}${entry.path} ↻${RESET}`);
+                } else {
+                    console.log(`${prefix}  ${DIM}${branch}${entry.path}${RESET}`);
+                }
+            }
+        }
+
+        // Then print the memos
         for (const content of g.memos) {
             console.log(`${prefix}  ${content}`);
-        }
-        // Show related references (dim, no content — already emitted above)
-        for (const entry of g.related) {
-            if (entry.cycle) {
-                console.log(`${prefix}  ${RED_BOLD}${entry.path}: ↻ cyclic import${RESET}`);
-            } else {
-                console.log(`${prefix}  ${DIM}${entry.path}${RESET}`);
-            }
         }
     };
 
