@@ -22,204 +22,6 @@ const meta = {
     ]
 };
 
-function detectLanguage(filePath) {
-    const ext = path.extname(filePath).toLowerCase().replace(/^\./, '');
-    if (ext === 'py' || ext === 'py3') return 'python';
-    if (ext === 'sh' || ext === 'bash') return 'bash';
-    if (ext === 'mjs') return 'mjs';
-    if (ext === 'js') return 'js';
-    return ext || 'javascript';
-}
-
-function extOf(filePath) {
-    return path.extname(filePath).toLowerCase();
-}
-
-/**
- * Extract the body of the main() function from module content.
- * Returns { startLine, endLine, bodyLines } (1-indexed lines) or null.
- * Looks for `async function main` or `function main` (JS) or `def main` (Python).
- */
-function extractMainFunction(content, lang) {
-    const lines = content.split('\n');
-    let mainStart = -1;
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (lang === 'python') {
-            if (/^def\s+main\s*\(/.test(line)) {
-                mainStart = i;
-                break;
-            }
-        } else {
-            if (/^(?:async\s+)?function\s+main\s*\(/.test(line)) {
-                mainStart = i;
-                break;
-            }
-        }
-    }
-
-    if (mainStart === -1) return null;
-
-    // Find the end by brace matching (JS) or indentation (Python)
-    let mainEnd = -1;
-    if (lang === 'python') {
-        const defIndent = lines[mainStart].match(/^\s*/)[0].length;
-        for (let i = mainStart + 1; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.trim() === '') continue;
-            const indent = line.match(/^\s*/)[0].length;
-            if (indent <= defIndent && line.trim() !== '') {
-                mainEnd = i - 1;
-                break;
-            }
-        }
-        if (mainEnd === -1) mainEnd = lines.length - 1;
-    } else {
-        let braceCount = 0;
-        let foundOpen = false;
-        for (let i = mainStart; i < lines.length; i++) {
-            const line = lines[i];
-            for (const ch of line) {
-                if (ch === '{') {
-                    braceCount++;
-                    foundOpen = true;
-                } else if (ch === '}') {
-                    braceCount--;
-                }
-            }
-            if (foundOpen && braceCount === 0) {
-                mainEnd = i;
-                break;
-            }
-        }
-        if (mainEnd === -1) return null;
-    }
-
-    // Body = lines inside main() excluding the signature line and closing brace line
-    let bodyStart, bodyEnd;
-    if (lang === 'python') {
-        bodyStart = mainStart + 1;
-        bodyEnd = mainEnd;
-    } else {
-        bodyStart = mainStart + 1;
-        bodyEnd = mainEnd - 1; // exclude closing }
-    }
-
-    // Trim leading/trailing blank lines from body, but remember the
-    // absolute start so line numbers stay accurate.
-    let absBodyStart = bodyStart;
-    let absBodyEnd = bodyEnd;
-    while (absBodyStart <= absBodyEnd && lines[absBodyStart].trim() === '') absBodyStart++;
-    while (absBodyEnd >= absBodyStart && lines[absBodyEnd].trim() === '') absBodyEnd--;
-
-    if (absBodyStart > absBodyEnd) return null;
-
-    return {
-        startLine: absBodyStart + 1, // 1-indexed
-        endLine: absBodyEnd + 1,
-        bodyLines: lines.slice(absBodyStart, absBodyEnd + 1)
-    };
-}
-
-/**
- * Extract public (exported) members from a module when no main() exists.
- * Returns a list of { name, kind, startLine, endLine, lines }.
- *
- * JS/mjs: `export function foo`, `export const bar = ...`,
- *         `export class Baz`, `export async function ...`.
- * Python: top-level `def foo` / `class Foo` (names not starting with `_`).
- */
-function extractPublicMembers(content, lang) {
-    const lines = content.split('\n');
-    const members = [];
-
-    const captureRange = (startIdx) => {
-        if (lang === 'python') {
-            const indent = lines[startIdx].match(/^\s*/)[0].length;
-            let end = startIdx;
-            for (let i = startIdx + 1; i < lines.length; i++) {
-                const line = lines[i];
-                if (line.trim() === '') continue;
-                const cur = line.match(/^\s*/)[0].length;
-                if (cur <= indent) {
-                    end = i - 1;
-                    break;
-                }
-                end = i;
-            }
-            if (end < startIdx) end = startIdx;
-            return end;
-        }
-        let braceCount = 0;
-        let foundOpen = false;
-        for (let i = startIdx; i < lines.length; i++) {
-            const line = lines[i];
-            for (const ch of line) {
-                if (ch === '{') {
-                    braceCount++;
-                    foundOpen = true;
-                } else if (ch === '}') {
-                    braceCount--;
-                }
-            }
-            if (foundOpen && braceCount === 0) return i;
-            // const/let without braces: terminate at first non-continuation line
-            if (!foundOpen && i > startIdx) {
-                const prev = lines[i - 1];
-                if (!prev.endsWith(',') && !prev.endsWith('\\') && !prev.endsWith('(')) {
-                    return i - 1;
-                }
-            }
-        }
-        return lines.length - 1;
-    };
-
-    if (lang === 'python') {
-        for (let i = 0; i < lines.length; i++) {
-            const defMatch = lines[i].match(/^def\s+(\w+)\s*\(/);
-            const classMatch = lines[i].match(/^class\s+(\w+)/);
-            const m = defMatch || classMatch;
-            if (!m) continue;
-            const name = m[1];
-            if (name.startsWith('_')) continue;
-            const end = captureRange(i);
-            members.push({
-                name,
-                kind: classMatch ? 'class' : 'function',
-                startLine: i + 1,
-                endLine: end + 1,
-                lines: lines.slice(i, end + 1)
-            });
-        }
-        return members;
-    }
-
-    // JS / mjs exports
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const fnMatch = line.match(/^export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)/);
-        const classMatch = line.match(/^export\s+(?:default\s+)?class\s+(\w+)/);
-        const constMatch = line.match(/^export\s+(?:default\s+)?(?:const|let|var)\s+(\w+)/);
-
-        const m = fnMatch || classMatch || constMatch;
-        if (!m) continue;
-
-        const name = m[1];
-        const kind = classMatch ? 'class' : fnMatch ? 'function' : 'const';
-        const end = captureRange(i);
-        members.push({
-            name,
-            kind,
-            startLine: i + 1,
-            endLine: end + 1,
-            lines: lines.slice(i, end + 1)
-        });
-    }
-
-    return members;
-}
-
 /**
  * Run opencode headlessly (non-interactive) with a given prompt.
  * Returns the trimmed stdout string.
@@ -478,11 +280,10 @@ async function load(moduleRef, options = {}) {
 
     const modulePath = resolveModulePath(moduleRef);
     const relPath = rarebert.relPath(modulePath);
-    const ext = extOf(modulePath);
-    const lang = detectLanguage(modulePath);
+    const ext = path.extname(modulePath).toLowerCase();
     const content = fs.readFileSync(modulePath, 'utf-8');
 
-    console.log(`Semantic analysis of: ${relPath} (${lang})`);
+    console.log(`Semantic analysis of: ${relPath} (${ext.replace(/^\./, '')})`);
 
     // --- Imports (delegated to the language support module) ---
     const imports = await languages.parseImports(content, ext);
@@ -499,7 +300,7 @@ async function load(moduleRef, options = {}) {
     }
 
     // --- Segment main() and document each block ---
-    const mainFunc = extractMainFunction(content, lang);
+    const mainFunc = await languages.extractMainFunction(content, ext);
     let segments = [];
     let docs = [];
     let members = [];
@@ -513,19 +314,19 @@ async function load(moduleRef, options = {}) {
 
         if (segments.length === 0) {
             console.log(`\n✓ Analysis complete for ${relPath}`);
-            return { path: modulePath, relative: relPath, language: lang, segments, docs };
+            return { path: modulePath, relative: relPath, language: ext, segments, docs };
         }
 
         displaySegmentedDocs(segments, docs, relPath);
     } else {
         // --- No main(): forward public members to opencode ---
-        members = extractPublicMembers(content, lang);
+        members = await languages.extractPublicMembers(content, ext);
         if (members.length === 0) {
             console.log(
                 `\n✓ No main() and no public members found in ${relPath}; nothing to analyze.`
             );
             console.log(`✓ Analysis complete for ${relPath}`);
-            return { path: modulePath, relative: relPath, language: lang, segments: [], docs: [] };
+            return { path: modulePath, relative: relPath, language: ext, segments: [], docs: [] };
         }
 
         console.log(`\nNo main() found; analyzing ${members.length} public member(s).`);
@@ -565,16 +366,16 @@ async function load(moduleRef, options = {}) {
     if (!interactive) {
         if (!yes) {
             console.log(`\n✓ Analysis complete for ${relPath} (non-interactive, not memoized)`);
-            return { path: modulePath, relative: relPath, language: lang, segments, docs };
+            return { path: modulePath, relative: relPath, language: ext, segments, docs };
         }
         memoize();
-        return { path: modulePath, relative: relPath, language: lang, segments, docs };
+        return { path: modulePath, relative: relPath, language: ext, segments, docs };
     }
 
     // Interactive
     if (yes) {
         memoize();
-        return { path: modulePath, relative: relPath, language: lang, segments, docs };
+        return { path: modulePath, relative: relPath, language: ext, segments, docs };
     }
 
     const confirmed = await cli.confirm(
@@ -583,11 +384,11 @@ async function load(moduleRef, options = {}) {
     );
     if (!confirmed) {
         console.log(`\n✓ Analysis complete for ${relPath} (not memoized)`);
-        return { path: modulePath, relative: relPath, language: lang, segments, docs };
+        return { path: modulePath, relative: relPath, language: ext, segments, docs };
     }
 
     memoize();
-    return { path: modulePath, relative: relPath, language: lang, segments, docs };
+    return { path: modulePath, relative: relPath, language: ext, segments, docs };
 }
 
 async function main(args = []) {
