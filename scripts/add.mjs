@@ -6,7 +6,6 @@ import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { template } from '../lib/template.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { git } from '../lib/git.mjs';
@@ -150,12 +149,12 @@ async function scaffoldSrcModule(lang, moduleName) {
     }
     fs.mkdirSync(rarebert.srcDir, { recursive: true });
 
-    const content = template
-        .resolve(ext, {
+    const content = (
+        await languages.resolveTemplate(ext, {
             MODULE_NAME: moduleName,
             LIB_IMPORTS: preamble
         })
-        .join('\n');
+    ).join('\n');
     fs.writeFileSync(modulePath, content);
 
     return { modulePath, selectedLibs };
@@ -195,7 +194,7 @@ async function main(args = []) {
         modulePath = result.modulePath;
         selectedLibs = result.selectedLibs;
     } else {
-        modulePath = libs.createModule('scripts', normalizedName, ext);
+        modulePath = await libs.createModule('scripts', normalizedName, ext);
     }
 
     const rel = libs.relPath(modulePath);

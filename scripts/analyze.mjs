@@ -6,244 +6,607 @@ import { spawnSync } from 'child_process';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { memo } from '../lib/memo.mjs';
-import { server, DEFAULT_PORT } from '../lib/server.mjs';
 import { models } from '../lib/models.mjs';
 import { opencode } from '../lib/opencode.mjs';
+import { languages } from '../lib/languages.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 
+const meta = {
+    name: 'analyze',
+    description:
+        'Analyze a module: record imports (foo::mod / foo<-mod / mod notation), segment the main() function into whitespace-delimited blocks via opencode, document each block, and memoize the documentation. Falls back to documenting public members when no main() exists.',
+    usage: 'node index.js analyze <module> [--yes] [-v]',
+    options: [
+        { flag: 'yes', label: '', description: 'memoize documentation without confirmation' },
+        { flag: 'v, verbose', label: '', description: 'show verbose output' }
+    ]
+};
+
 function detectLanguage(filePath) {
-    const ext = path.extname(filePath).toLowerCase();
-    if (ext === '.py' || ext === '.py3') return 'python';
-    if (ext === '.sh' || ext === '.bash') return 'bash';
-    return 'javascript';
+    const ext = path.extname(filePath).toLowerCase().replace(/^\./, '');
+    if (ext === 'py' || ext === 'py3') return 'python';
+    if (ext === 'sh' || ext === 'bash') return 'bash';
+    if (ext === 'mjs') return 'mjs';
+    if (ext === 'js') return 'js';
+    return ext || 'javascript';
 }
 
-async function parseAndAnalyzeFile(filePath, lang) {
-    const content = fs.readFileSync(filePath, 'utf-8');
-
-    const imports = [];
-
-    if (lang === 'python') {
-        const importRegex = /(?:^import\s+([a-zA-Z_\.]+))|^from\s+([a-zA-Z_\.]+)\s+import/gm;
-        let match;
-        while ((match = importRegex.exec(content)) !== null) {
-            const imp = match[1] || match[2];
-            if (imp && !imports.includes(imp)) imports.push(imp);
-        }
-    } else if (lang === 'javascript') {
-        const importRegex = /import\s+(?:{[^}]*}|\w+)\s+from\s+['"]([^'"]+)['"]/g;
-        let match;
-        while ((match = importRegex.exec(content)) !== null) {
-            if (!imports.includes(match[1])) imports.push(match[1]);
-        }
-    }
-
-    const exportLines = content.split('\n').filter((l) => l.match(/export\s+/));
-
-    return { imports };
+function extOf(filePath) {
+    return path.extname(filePath).toLowerCase();
 }
 
-function extractCodeSections(content, lang) {
-    const sections = [];
+/**
+ * Extract the body of the main() function from module content.
+ * Returns { startLine, endLine, bodyLines } (1-indexed lines) or null.
+ * Looks for `async function main` or `function main` (JS) or `def main` (Python).
+ */
+function extractMainFunction(content, lang) {
     const lines = content.split('\n');
-
-    let sectionStart = 0;
-    let braceCount = 0;
-    let inFunction = false;
+    let mainStart = -1;
 
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-
-        if (!inFunction && /^(?:async\s+)?function\s+\w+|^\s*async\s+func|^def\s+\w+/.test(line)) {
-            inFunction = true;
-            sectionStart = i;
-            braceCount = 0;
-        }
-
-        if (inFunction) {
-            braceCount += (line.match(/{/g) || []).length;
-            braceCount -= (line.match(/}/g) || []).length;
-
-            if (braceCount === 0 && line.includes('}')) {
-                sections.push({
-                    startLine: sectionStart + 1,
-                    endLine: i + 1,
-                    content: lines.slice(sectionStart, i + 1).join('\n')
-                });
-                inFunction = false;
+        if (lang === 'python') {
+            if (/^def\s+main\s*\(/.test(line)) {
+                mainStart = i;
+                break;
+            }
+        } else {
+            if (/^(?:async\s+)?function\s+main\s*\(/.test(line)) {
+                mainStart = i;
+                break;
             }
         }
-
-        if (sections.length >= 5) break;
     }
 
-    return sections;
+    if (mainStart === -1) return null;
+
+    // Find the end by brace matching (JS) or indentation (Python)
+    let mainEnd = -1;
+    if (lang === 'python') {
+        const defIndent = lines[mainStart].match(/^\s*/)[0].length;
+        for (let i = mainStart + 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.trim() === '') continue;
+            const indent = line.match(/^\s*/)[0].length;
+            if (indent <= defIndent && line.trim() !== '') {
+                mainEnd = i - 1;
+                break;
+            }
+        }
+        if (mainEnd === -1) mainEnd = lines.length - 1;
+    } else {
+        let braceCount = 0;
+        let foundOpen = false;
+        for (let i = mainStart; i < lines.length; i++) {
+            const line = lines[i];
+            for (const ch of line) {
+                if (ch === '{') {
+                    braceCount++;
+                    foundOpen = true;
+                } else if (ch === '}') {
+                    braceCount--;
+                }
+            }
+            if (foundOpen && braceCount === 0) {
+                mainEnd = i;
+                break;
+            }
+        }
+        if (mainEnd === -1) return null;
+    }
+
+    // Body = lines inside main() excluding the signature line and closing brace line
+    let bodyStart, bodyEnd;
+    if (lang === 'python') {
+        bodyStart = mainStart + 1;
+        bodyEnd = mainEnd;
+    } else {
+        bodyStart = mainStart + 1;
+        bodyEnd = mainEnd - 1; // exclude closing }
+    }
+
+    // Trim leading/trailing blank lines from body, but remember the
+    // absolute start so line numbers stay accurate.
+    let absBodyStart = bodyStart;
+    let absBodyEnd = bodyEnd;
+    while (absBodyStart <= absBodyEnd && lines[absBodyStart].trim() === '') absBodyStart++;
+    while (absBodyEnd >= absBodyStart && lines[absBodyEnd].trim() === '') absBodyEnd--;
+
+    if (absBodyStart > absBodyEnd) return null;
+
+    return {
+        startLine: absBodyStart + 1, // 1-indexed
+        endLine: absBodyEnd + 1,
+        bodyLines: lines.slice(absBodyStart, absBodyEnd + 1)
+    };
+}
+
+/**
+ * Extract public (exported) members from a module when no main() exists.
+ * Returns a list of { name, kind, startLine, endLine, lines }.
+ *
+ * JS/mjs: `export function foo`, `export const bar = ...`,
+ *         `export class Baz`, `export async function ...`.
+ * Python: top-level `def foo` / `class Foo` (names not starting with `_`).
+ */
+function extractPublicMembers(content, lang) {
+    const lines = content.split('\n');
+    const members = [];
+
+    const captureRange = (startIdx) => {
+        if (lang === 'python') {
+            const indent = lines[startIdx].match(/^\s*/)[0].length;
+            let end = startIdx;
+            for (let i = startIdx + 1; i < lines.length; i++) {
+                const line = lines[i];
+                if (line.trim() === '') continue;
+                const cur = line.match(/^\s*/)[0].length;
+                if (cur <= indent) {
+                    end = i - 1;
+                    break;
+                }
+                end = i;
+            }
+            if (end < startIdx) end = startIdx;
+            return end;
+        }
+        let braceCount = 0;
+        let foundOpen = false;
+        for (let i = startIdx; i < lines.length; i++) {
+            const line = lines[i];
+            for (const ch of line) {
+                if (ch === '{') {
+                    braceCount++;
+                    foundOpen = true;
+                } else if (ch === '}') {
+                    braceCount--;
+                }
+            }
+            if (foundOpen && braceCount === 0) return i;
+            // const/let without braces: terminate at first non-continuation line
+            if (!foundOpen && i > startIdx) {
+                const prev = lines[i - 1];
+                if (!prev.endsWith(',') && !prev.endsWith('\\') && !prev.endsWith('(')) {
+                    return i - 1;
+                }
+            }
+        }
+        return lines.length - 1;
+    };
+
+    if (lang === 'python') {
+        for (let i = 0; i < lines.length; i++) {
+            const defMatch = lines[i].match(/^def\s+(\w+)\s*\(/);
+            const classMatch = lines[i].match(/^class\s+(\w+)/);
+            const m = defMatch || classMatch;
+            if (!m) continue;
+            const name = m[1];
+            if (name.startsWith('_')) continue;
+            const end = captureRange(i);
+            members.push({
+                name,
+                kind: classMatch ? 'class' : 'function',
+                startLine: i + 1,
+                endLine: end + 1,
+                lines: lines.slice(i, end + 1)
+            });
+        }
+        return members;
+    }
+
+    // JS / mjs exports
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const fnMatch = line.match(/^export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)/);
+        const classMatch = line.match(/^export\s+(?:default\s+)?class\s+(\w+)/);
+        const constMatch = line.match(/^export\s+(?:default\s+)?(?:const|let|var)\s+(\w+)/);
+
+        const m = fnMatch || classMatch || constMatch;
+        if (!m) continue;
+
+        const name = m[1];
+        const kind = classMatch ? 'class' : fnMatch ? 'function' : 'const';
+        const end = captureRange(i);
+        members.push({
+            name,
+            kind,
+            startLine: i + 1,
+            endLine: end + 1,
+            lines: lines.slice(i, end + 1)
+        });
+    }
+
+    return members;
+}
+
+/**
+ * Run opencode headlessly (non-interactive) with a given prompt.
+ * Returns the trimmed stdout string.
+ */
+function runOpencodeHeadless(prompt, model) {
+    const args = ['run', prompt, '-m', model, '--auto'];
+    console.log(`$ opencode run "<prompt: ${prompt.length} bytes>" -m ${model} --auto`);
+    const result = spawnSync(opencode.resolve(), args, {
+        cwd: rarebert.root,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'inherit']
+    });
+    if (result.status !== 0) {
+        console.error(`analyze: opencode run exited with status ${result.status ?? 0}`);
+    }
+    return (result.stdout ?? '').trim();
+}
+
+/**
+ * Segment the main() body into non-overlapping spans by asking opencode
+ * to split on whitespace-only lines. Returns a JSON list of lists:
+ * each inner list is a group of consecutive code lines (strings).
+ */
+function segmentMainFunction(mainFunc, model, relPath) {
+    const codeBlock = mainFunc.bodyLines.join('\n');
+
+    const instruction = `You are a code analysis assistant.
+
+Below is the body of a main() function from the module ${relPath}.
+Your task is to segment this function into non-overlapping spans by
+splitting on whitespace-only lines (blank lines within the function).
+
+Return ONLY a JSON list of lists. Each inner list corresponds to one
+span (a group of consecutive non-blank lines between blank-line separators).
+Each entry in an inner list is a single line of code from the main() body,
+preserved exactly (with original indentation).
+
+Do not include any explanation, markdown fences, or commentary.
+Output only the JSON array of arrays of strings.
+
+Code:
+\`\`\`
+${codeBlock}
+\`\`\``;
+
+    const raw = runOpencodeHeadless(instruction, model);
+    if (!raw) return [];
+
+    // Extract JSON from the response (strip markdown fences if present)
+    let jsonText = raw;
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) jsonText = fenceMatch[1].trim();
+
+    const startIdx = jsonText.indexOf('[');
+    const endIdx = jsonText.lastIndexOf(']');
+    if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+        console.error('analyze: could not parse JSON spans from opencode output');
+        return [];
+    }
+    jsonText = jsonText.slice(startIdx, endIdx + 1);
+
+    try {
+        const spans = JSON.parse(jsonText);
+        if (!Array.isArray(spans)) return [];
+        return spans.filter((s) => Array.isArray(s));
+    } catch (err) {
+        console.error(`analyze: failed to parse segment JSON: ${err.message}`);
+        return [];
+    }
+}
+
+/**
+ * Given opencode-returned segments (lists of code line strings) and the
+ * main() function body, reconstruct the absolute starting line number
+ * for each segment by sequentially matching lines against the body.
+ *
+ * Returns segments annotated as { startLine, lineCount, lines }.
+ */
+function annotateSegmentsWithLineNumbers(segments, mainFunc) {
+    const bodyLines = mainFunc.bodyLines;
+    const bodyAbsStart = mainFunc.startLine; // 1-indexed absolute
+    const annotated = [];
+    let cursor = 0; // index into bodyLines
+
+    for (const seg of segments) {
+        if (seg.length === 0) {
+            annotated.push({ startLine: null, lineCount: 0, lines: [] });
+            continue;
+        }
+        const firstTrim = seg[0].trim();
+
+        // Advance cursor past blank lines and non-matching lines until we
+        // find the segment's first line. This tolerates opencode dropping
+        // or lightly normalising whitespace-only separator lines.
+        let matchedStart = -1;
+        for (let i = cursor; i < bodyLines.length; i++) {
+            if (bodyLines[i].trim() === firstTrim) {
+                matchedStart = i;
+                break;
+            }
+        }
+        if (matchedStart === -1) {
+            // Fallback: use the current cursor position.
+            matchedStart = cursor;
+        }
+
+        const startLine = bodyAbsStart + matchedStart;
+        annotated.push({
+            startLine,
+            lineCount: seg.length,
+            lines: seg
+        });
+        cursor = matchedStart + seg.length;
+    }
+
+    return annotated;
+}
+
+/**
+ * Ask opencode to document a single code block as a single sentence or
+ * short paragraph. Returns the trimmed documentation string.
+ */
+function documentBlock(codeLines, model, relPath, index, total, contextLabel) {
+    const code = codeLines.join('\n');
+    const instruction = `You are a code documentation assistant.
+
+Below is ${contextLabel} ${index + 1} of ${total} from the module ${relPath}.
+
+Document this code block as a single concise sentence or short paragraph
+describing what it does. Do not include the code itself in your output.
+Do not use markdown fences. Return only the documentation text.
+
+Code:
+\`\`\`
+${code}
+\`\`\``;
+
+    return runOpencodeHeadless(instruction, model);
+}
+
+/**
+ * Display the code lines with an ASCII pipe pointing at the opencode summary.
+ * Each block header is `module_path.ext:startLine (+lineCount)`.
+ */
+function displaySegmentedDocs(segments, docs, relPath) {
+    console.log();
+    for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const lines = seg.lines;
+        const doc = docs[i] || '(no documentation)';
+        const lineLabel =
+            seg.startLine != null
+                ? `${relPath}:${seg.startLine} (+${seg.lineCount})`
+                : `(+${seg.lineCount})`;
+
+        for (let j = 0; j < lines.length; j++) {
+            console.log(`  | ${lines[j]}`);
+        }
+        console.log(`  +---> ${lineLabel}: ${doc}`);
+        console.log();
+    }
+}
+
+/**
+ * Display public-member docs (no-main fallback) with the same layout.
+ */
+function displayMemberDocs(members, docs, relPath) {
+    console.log();
+    for (let i = 0; i < members.length; i++) {
+        const m = members[i];
+        const doc = docs[i] || '(no documentation)';
+        const lineLabel = `${relPath}:${m.startLine} (+${m.endLine - m.startLine + 1})`;
+
+        for (const line of m.lines) {
+            console.log(`  | ${line}`);
+        }
+        console.log(`  +---> ${lineLabel} [${m.kind} ${m.name}]: ${doc}`);
+        console.log();
+    }
+}
+
+/**
+ * Resolve a module reference (path, name, or relative path) to an
+ * absolute path. Throws if not found.
+ */
+function resolveModulePath(moduleRef) {
+    if (!moduleRef) throw new Error('Module reference is required');
+
+    if (fs.existsSync(path.resolve(moduleRef))) {
+        return path.resolve(moduleRef);
+    }
+    if (rarebert.relPath(moduleRef)) {
+        const found = [...rarebert.discover(), ...rarebert.discover()].find(
+            (m) => m.path === moduleRef || m.name === moduleRef
+        );
+        if (found) return rarebert.absPath(found.path);
+    }
+    throw new Error(`Module not found: ${moduleRef}`);
+}
+
+/**
+ * Segment + document a main() function. Returns { segments, docs } where
+ * each segment is annotated with startLine / lineCount.
+ */
+async function analyzeMain(mainFunc, model, relPath) {
+    console.log(
+        `\nSegmenting main() (lines ${mainFunc.startLine}-${mainFunc.endLine}) via opencode...`
+    );
+    const rawSegments = segmentMainFunction(mainFunc, model, relPath);
+
+    if (rawSegments.length === 0) {
+        console.log('analyze: no segments produced; skipping documentation.');
+        return { segments: [], docs: [] };
+    }
+
+    const segments = annotateSegmentsWithLineNumbers(rawSegments, mainFunc);
+
+    console.log(`\nDocumenting ${segments.length} block(s) via opencode...`);
+    const docs = [];
+    for (let i = 0; i < segments.length; i++) {
+        process.stdout.write(`  block ${i + 1}/${segments.length} ... `);
+        const doc = documentBlock(
+            segments[i].lines,
+            model,
+            relPath,
+            i,
+            segments.length,
+            'code block'
+        );
+        docs.push(doc);
+        console.log(doc ? `${doc.substring(0, 70)}${doc.length > 70 ? '...' : ''}` : '(no output)');
+    }
+
+    return { segments, docs };
+}
+
+/**
+ * Document each public member when no main() exists. Returns { members, docs }.
+ */
+async function analyzePublicMembers(members, model, relPath) {
+    console.log(`\nDocumenting ${members.length} public member(s) via opencode...`);
+    const docs = [];
+    for (let i = 0; i < members.length; i++) {
+        const m = members[i];
+        process.stdout.write(`  ${m.kind} ${m.name} (${i + 1}/${members.length}) ... `);
+        const doc = documentBlock(m.lines, model, relPath, i, members.length, `public ${m.kind}`);
+        docs.push(doc);
+        console.log(doc ? `${doc.substring(0, 70)}${doc.length > 70 ? '...' : ''}` : '(no output)');
+    }
+    return { members, docs };
 }
 
 async function load(moduleRef, options = {}) {
     const verbose = options.verbose || false;
+    const yes = options.yes || false;
 
-    let modulePath;
-
-    if (!moduleRef) {
-        throw new Error('Module reference is required');
-    }
-
-    if (fs.existsSync(path.resolve(moduleRef))) {
-        modulePath = path.resolve(moduleRef);
-    } else if (rarebert.relPath(moduleRef)) {
-        const found = [...rarebert.discover(), ...rarebert.discover()].find(
-            (m) => m.path === moduleRef || m.name === moduleRef
-        );
-        if (found) {
-            modulePath = rarebert.absPath(found.path);
-        }
-    }
-
-    if (!modulePath || !fs.existsSync(modulePath)) {
-        throw new Error(`Module not found: ${moduleRef}`);
-    }
-
+    const modulePath = resolveModulePath(moduleRef);
     const relPath = rarebert.relPath(modulePath);
+    const ext = extOf(modulePath);
     const lang = detectLanguage(modulePath);
     const content = fs.readFileSync(modulePath, 'utf-8');
 
     console.log(`Semantic analysis of: ${relPath} (${lang})`);
 
-    memo.remember(
-        modulePath,
-        `purpose: Semantic analysis for ${path.basename(modulePath)} - analyzed via opencode`
-    );
+    // --- Imports (delegated to the language support module) ---
+    const imports = await languages.parseImports(content, ext);
+    if (imports.length > 0) {
+        const importMemoStr = `imports: ${imports.join('; ')}`;
+        memo.remember(modulePath, importMemoStr);
+        if (verbose) console.log(`  ${importMemoStr}`);
+    }
 
-    const { imports } = await parseAndAnalyzeFile(modulePath, lang);
+    const model = await models.resolve(null);
+    if (!model) {
+        console.error('analyze: no model available; cannot run opencode analysis');
+        return exit(1);
+    }
 
-    let importMemoStr = 'imports:';
-    for (const imp of imports.slice(0, 20)) {
-        if (!imp.startsWith(' ')) {
-            importMemoStr += ` '${imp}'`;
+    // --- Segment main() and document each block ---
+    const mainFunc = extractMainFunction(content, lang);
+    let segments = [];
+    let docs = [];
+    let members = [];
+    let memberDocs = [];
+    let usedFallback = false;
+
+    if (mainFunc) {
+        const result = await analyzeMain(mainFunc, model, relPath);
+        segments = result.segments;
+        docs = result.docs;
+
+        if (segments.length === 0) {
+            console.log(`\n✓ Analysis complete for ${relPath}`);
+            return { path: modulePath, relative: relPath, language: lang, segments, docs };
+        }
+
+        displaySegmentedDocs(segments, docs, relPath);
+    } else {
+        // --- No main(): forward public members to opencode ---
+        members = extractPublicMembers(content, lang);
+        if (members.length === 0) {
+            console.log(
+                `\n✓ No main() and no public members found in ${relPath}; nothing to analyze.`
+            );
+            console.log(`✓ Analysis complete for ${relPath}`);
+            return { path: modulePath, relative: relPath, language: lang, segments: [], docs: [] };
+        }
+
+        console.log(`\nNo main() found; analyzing ${members.length} public member(s).`);
+        usedFallback = true;
+        const result = await analyzePublicMembers(members, model, relPath);
+        memberDocs = result.docs;
+
+        displayMemberDocs(members, memberDocs, relPath);
+    }
+
+    // --- Memoization flow ---
+    // Non-interactive without --yes: finish (no memoize)
+    // Non-interactive with --yes: memoize without confirmation
+    // Interactive without --yes: prompt for confirmation
+    // Interactive with --yes: memoize without confirmation
+    const interactive = cli.isInteractive();
+    const blockCount = usedFallback ? members.length : segments.length;
+
+    const memoize = () => {
+        if (usedFallback) {
+            for (let i = 0; i < members.length; i++) {
+                const m = members[i];
+                const doc = memberDocs[i] || '(no documentation)';
+                memo.remember(modulePath, `${m.startLine}: ${doc}`);
+            }
         } else {
-            importMemoStr += `; ${imp}`;
-        }
-    }
-    memo.remember(modulePath, importMemoStr);
-
-    const exportedFuncs = [];
-
-    for (const line of content.split('\n')) {
-        const funcMatch = line.match(/^(?:async\s+)?(?:function|def)\s+(\w+)/m);
-        if (funcMatch && !exportedFuncs.includes(funcMatch[1])) {
-            exportedFuncs.push(funcMatch[1]);
-        }
-    }
-
-    memo.remember(modulePath, `exports: ${exportedFuncs.join(', ')}`);
-
-    const sections = extractCodeSections(content, lang);
-
-    for (let i = 0; i < Math.min(sections.length, 3); i++) {
-        const section = sections[i];
-
-        const instruction = `You are an AI assistant analyzing code for semantic understanding.
-
-Analyze this code block from ${relPath} at lines ${section.startLine}-${section.endLine}.
-
-Code:
-\`\`\`${lang}
-${content
-    .split('\n')
-    .slice(section.startLine - 1, section.endLine)
-    .join('\n')}
-\`\`\`
-
-Provide a concise summary (2-3 sentences) describing what this code block does and its purpose.`;
-
-        console.log(`\nAnalyzing section ${i + 1}/${Math.min(sections.length, 3)}...`);
-
-        try {
-            const serverRunning = server.getRunning();
-
-            if (serverRunning) {
-                const result = server.runOnServer({
-                    url: serverRunning.url,
-                    port: serverRunning.port,
-                    prompt: instruction,
-                    auto: true
-                });
-
-                if (result.stdout && result.stdout.trim()) {
-                    memo.remember(modulePath, `section-${i + 1}: ${result.stdout.trim()}`);
-                    console.log(`  Summary: ${result.stdout.trim().substring(0, 80)}...`);
-                }
-            } else {
-                const model = await models.resolve(null);
-
-                if (!model) {
-                    memo.remember(modulePath, `section-${i + 1}: No model available for analysis`);
-                    continue;
-                }
-
-                console.log(`$ opencode run "<prompt: ${instruction.length} bytes>" -m ${model} --auto`);
-
-                const result = spawnSync(
-                    process.execPath === 'node' ? require('child_process').execPath : 'opencode',
-                    ['run', instruction, '-m', model, '--auto'],
-                    {
-                        cwd: rarebert.root,
-                        encoding: 'utf-8',
-                        stdio: ['ignore', 'pipe', 'inherit']
-                    }
-                );
-
-                const stdout = (result.stdout ?? '').trim();
-                if (stdout) {
-                    memo.remember(modulePath, `section-${i + 1}: ${stdout}`);
-                    console.log(`  Summary: ${stdout.substring(0, 80)}${stdout.length > 80 ? '...' : ''}`);
-                } else {
-                    memo.remember(modulePath, `section-${i + 1}: No output from analysis`);
-                }
+            for (let i = 0; i < segments.length; i++) {
+                const seg = segments[i];
+                const doc = docs[i] || '(no documentation)';
+                const prefix = seg.startLine != null ? `${seg.startLine}` : `block-${i + 1}`;
+                memo.remember(modulePath, `${prefix}: ${doc}`);
             }
-        } catch (err) {
-            console.log(`  Warning: Could not analyze section ${i + 1}: ${err.message}`);
-            memo.remember(modulePath, `section-${i + 1}: analysis skipped due to error`);
         }
+        console.log(`\n✓ Memoized ${blockCount} block(s) for ${relPath}`);
+    };
+
+    if (!interactive) {
+        if (!yes) {
+            console.log(`\n✓ Analysis complete for ${relPath} (non-interactive, not memoized)`);
+            return { path: modulePath, relative: relPath, language: lang, segments, docs };
+        }
+        memoize();
+        return { path: modulePath, relative: relPath, language: lang, segments, docs };
     }
 
-    const resolvedImports = [];
-    for (const imp of imports) {
-        if (!imp.startsWith('.')) continue;
-
-        try {
-            const fullPath = path.resolve(path.dirname(modulePath), imp.replace(/['"]/g, ''));
-            const actualPath = fs.existsSync(fullPath + '.mjs')
-                ? fullPath + '.mjs'
-                : fs.existsSync(fullPath)
-                  ? fullPath
-                  : null;
-
-            if (actualPath && fs.existsSync(actualPath)) {
-                resolvedImports.push(rarebert.relPath(actualPath));
-            }
-        } catch {}
+    // Interactive
+    if (yes) {
+        memoize();
+        return { path: modulePath, relative: relPath, language: lang, segments, docs };
     }
 
-    memo.remember(modulePath, `imported_files: ${resolvedImports.join('; ')}`);
+    const confirmed = await cli.confirm(
+        `Memoize ${blockCount} block(s) of documentation to ${relPath}?`,
+        false
+    );
+    if (!confirmed) {
+        console.log(`\n✓ Analysis complete for ${relPath} (not memoized)`);
+        return { path: modulePath, relative: relPath, language: lang, segments, docs };
+    }
 
-    console.log(`\n✓ Analysis complete for ${relPath}`);
-
-    return { path: modulePath, relative: relPath, language: lang };
+    memoize();
+    return { path: modulePath, relative: relPath, language: lang, segments, docs };
 }
 
 async function main(args = []) {
     if (args.length === 0) {
-        console.error('Usage: node index.js analyze <module> [-v]');
+        console.error('Usage: node index.js analyze <module> [--yes] [-v]');
         return exit(1);
     }
 
-    const moduleArg = args.find((a) => !a.startsWith('-'));
+    const moduleArg = args.find((a) => !a.startsWith('-') && a);
     const verbose = args.includes('-v') || args.includes('--verbose');
+    const yes = args.includes('--yes') || args.includes('-y');
+
+    if (!moduleArg) {
+        console.error('Usage: node index.js analyze <module> [--yes] [-v]');
+        return exit(1);
+    }
 
     try {
-        await load(moduleArg, { verbose });
+        await load(moduleArg, { verbose, yes });
     } catch (err) {
         console.error('Error:', err.message);
         return exit(1);
@@ -257,7 +620,11 @@ export { load, main };
 export default {
     name: 'analyze',
     description:
-        'Analyze a module semantically by reading entry point and documenting code sections with opencode',
-    usage: 'node index.js analyze <module>',
-    options: [{ flag: '-v, --verbose', label: '', description: 'Show verbose output' }]
+        'Analyze a module: record imports (foo::mod / foo<-mod / mod notation), segment the main() function into whitespace-delimited blocks via opencode, document each block, and memoize the documentation. Falls back to documenting public members when no main() exists.',
+    usage: 'node index.js analyze <module> [--yes] [-v]',
+    options: [
+        { flag: 'yes', label: '', description: 'memoize documentation without confirmation' },
+        { flag: 'v, verbose', label: '', description: 'show verbose output' }
+    ],
+    main: cli.run(meta, main)
 };
