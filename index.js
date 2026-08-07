@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import fs from 'fs';
+import path from 'path';
 import { rarebert } from './lib/projects.mjs';
 import { ExitSignal } from './lib/core.mjs';
 import { list } from './lib/list.mjs';
@@ -26,14 +28,40 @@ const SKIP_ONBOARD = new Set([
 
 async function maybeOnboard(cmd) {
     if (cmd && SKIP_ONBOARD.has(cmd)) return;
+    // Also skip onboarding when the command is a path/alias for one of
+    // the skip-listed modules (e.g. "scripts/backend.mjs" -> "backend").
+    try {
+        const normalized = rarebert.normalizeModuleName(path.basename(cmd, path.extname(cmd)));
+        if (SKIP_ONBOARD.has(normalized)) return;
+    } catch {
+        /* not a valid module name; fall through to onboarding */
+    }
     await backend.ensureConfig();
 }
 
-async function runModule(name, args = []) {
+async function runModule(ref, args = []) {
     const scripts = rarebert.discover();
-    const script = scripts.find((s) => rarebert.normalizeModuleName(s.name) === name);
+
+    // Resolve `ref` either by relative path (e.g. "scripts/name.mjs")
+    // or by normalized module name (e.g. "name"). A leading "./" or a
+    // path separator marks a path lookup; otherwise fall back to name.
+    const isPathRef =
+        ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
+
+    let script;
+    if (isPathRef) {
+        const rel = rarebert.relPath(path.resolve(rarebert.root, ref));
+        script = scripts.find((s) => s.path === rel || s.path === ref);
+        if (!script && fs.existsSync(path.resolve(rarebert.root, ref))) {
+            script = { name: path.basename(ref, path.extname(ref)), path: rel };
+        }
+    } else {
+        const name = rarebert.normalizeModuleName(ref);
+        script = scripts.find((s) => rarebert.normalizeModuleName(s.name) === name);
+    }
+
     if (!script) {
-        console.error('Module not found:', name);
+        console.error('Module not found:', ref);
         process.exit(1);
     }
 
@@ -84,7 +112,7 @@ async function main(argv) {
 
     await maybeOnboard(cmd);
 
-    await runModule(rarebert.normalizeModuleName(cmd), rest);
+    await runModule(cmd, rest);
 }
 
 main(process.argv);
