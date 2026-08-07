@@ -249,10 +249,10 @@ function summariseChangelist(model, changelist, firstLine, verbose = false) {
         changelist
     ].join('\n');
 
-    const args = ['run', prompt, '-m', model, '--auto'];
+    const args = ['run', prompt, '-m', model, '--auto', '--format', 'json'];
     const promptFirstLine = prompt.split('\n')[0];
     console.log(
-        `$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${promptFirstLine}">" -m ${model} --auto`
+        `$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${promptFirstLine}">" -m ${model} --auto --format json`
     );
 
     if (verbose) {
@@ -275,7 +275,27 @@ function summariseChangelist(model, changelist, firstLine, verbose = false) {
         console.error(`opencode exited with status ${result.status}; continuing without summary.`);
         return '';
     }
-    return cleanSummary((result.stdout ?? '').trim());
+
+    // Parse JSON event stream and extract text parts. The default format
+    // can duplicate the model's output (the model sometimes emits its
+    // response twice); JSON gives structured events with exactly one
+    // text part per message.
+    const text = (result.stdout ?? '')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+            try {
+                const evt = JSON.parse(line);
+                if (evt.type === 'text' && evt.part?.text) return evt.part.text;
+            } catch {
+                /* non-JSON line — skip */
+            }
+            return '';
+        })
+        .filter(Boolean)
+        .join('');
+
+    return cleanSummary(text.trim());
 }
 
 async function main(args = []) {
