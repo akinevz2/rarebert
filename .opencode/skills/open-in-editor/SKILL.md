@@ -1,9 +1,12 @@
 ---
 name: open-in-editor
-description: Opens a file in VS Code using the 'code' command.
+description: Open a file in VS Code using the 'code' command with remote flag attached to workspace
 ---
 
-# Open In Editor Skill
+# Open In Editor
+
+The user provided a file path after this prompt (e.g., "lib/memo.mjs"). Run:
+`code -r $ARGUMENTS`
 
 ## Purpose
 
