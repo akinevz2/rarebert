@@ -52,17 +52,36 @@ function printGroupedMemos() {
         return false;
     }
 
-    for (const { module, memos, libs } of groups) {
-        console.log(`\n\x1b[1m${module.path}\x1b[0m`);
+    const RED_BOLD = '\x1b[1;31m';
+    const DIM = '\x1b[2m';
+    const RESET = '\x1b[0m';
+    let totalCycles = 0;
+
+    for (const { owner, path, memos, related, cycles } of groups) {
+        console.log(`\n\x1b[1m${path}\x1b[0m`);
         for (const content of memos) {
             console.log(`  ${content}`);
         }
-        for (const lib of libs) {
-            console.log(`  \x1b[2m${lib.path}:\x1b[0m`);
-            for (const content of lib.memos) {
-                console.log(`    ${content}`);
+        for (const entry of related) {
+            if (entry.cycle) {
+                totalCycles++;
+                console.log(`  ${RED_BOLD}${entry.path}: cyclic import${RESET}`);
+            } else {
+                console.log(`  ${DIM}${entry.path}:${RESET}`);
+                const relMemos = memo.loadMemos(entry.path);
+                for (const m of relMemos) {
+                    for (const content of m.content) {
+                        console.log(`    ${content}`);
+                    }
+                }
             }
         }
+    }
+
+    if (totalCycles > 0) {
+        console.log(
+            `\n${RED_BOLD}⚠ ${totalCycles} cyclic import${totalCycles === 1 ? '' : 's'} detected${RESET}`
+        );
     }
     console.log();
     return true;
