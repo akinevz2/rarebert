@@ -48,7 +48,7 @@ async function install(args = []) {
     console.log(`\n✓ Installed language: ${result.name}`);
     console.log(`  template: ${result.path}`);
     console.log(`  lines: ${Object.keys(result.template.lines).length}`);
-    console.log(`  sections: ${Object.keys(result.template.sections).join(', ')}`);
+    console.log(`  sections: ${result.template.sections.length} line keys`);
     cli.ok(`Done. New modules can now use .${result.name}`);
 }
 
