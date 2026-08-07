@@ -52,8 +52,8 @@ const META = {
         },
         {
             flag: 'forget',
-            label: '--forget <module>',
-            description: 'Remove all memos (sidecar) for a module'
+            label: '--forget <module> [module ...]',
+            description: 'Remove all memos (sidecar) for one or more modules'
         }
     ]
 };
@@ -639,24 +639,27 @@ function cmdRecall(ref, set) {
     memo.clearBuffer();
 }
 
-function cmdForget(moduleArg, modules) {
-    if (!moduleArg) {
+function cmdForget(moduleArgs, modules) {
+    if (!moduleArgs || moduleArgs.length === 0) {
         console.error('memo --forget: missing module argument');
         return;
     }
-    const relPath = path.isAbsolute(moduleArg) ? rarebert.relPath(moduleArg) : moduleArg;
-    const match =
-        modules.find((m) => m.path === relPath) ||
-        modules.find((m) => m.path.endsWith(relPath)) ||
-        modules.find(
-            (m) => m.name === moduleArg || m.name === path.basename(relPath, path.extname(relPath))
-        );
-    if (!match) {
-        console.error(`memo --forget: module not found: ${moduleArg}`);
-        return;
+    for (const moduleArg of moduleArgs) {
+        const relPath = path.isAbsolute(moduleArg) ? rarebert.relPath(moduleArg) : moduleArg;
+        const match =
+            modules.find((m) => m.path === relPath) ||
+            modules.find((m) => m.path.endsWith(relPath)) ||
+            modules.find(
+                (m) =>
+                    m.name === moduleArg || m.name === path.basename(relPath, path.extname(relPath))
+            );
+        if (!match) {
+            console.error(`memo --forget: module not found: ${moduleArg}`);
+            continue;
+        }
+        memo.forgetByPath(match.path);
+        console.log(`\x1b[33m✓\x1b[0m Forgot all memos for ${rarebert.relPath(match.path)}`);
     }
-    memo.forgetByPath(match.path);
-    console.log(`\x1b[33m✓\x1b[0m Forgot all memos for ${rarebert.relPath(match.path)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -704,9 +707,9 @@ async function main(args = []) {
         return;
     }
 
-    // --forget <module> : remove all memos (sidecar) for a module
+    // --forget <module> [module ...] : remove all memos (sidecar) for one or more modules
     if (has('--forget')) {
-        cmdForget(nonFlag[0], modules);
+        cmdForget(nonFlag, modules);
         return;
     }
 
