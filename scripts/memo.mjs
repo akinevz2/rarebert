@@ -644,6 +644,10 @@ function cmdForget(moduleArgs, modules) {
         console.error('memo --forget: missing module argument');
         return;
     }
+
+    // Resolve every argument first; if any module is not found, error
+    // out completely without forgetting anything.
+    const resolved = [];
     for (const moduleArg of moduleArgs) {
         const relPath = path.isAbsolute(moduleArg) ? rarebert.relPath(moduleArg) : moduleArg;
         const match =
@@ -655,8 +659,12 @@ function cmdForget(moduleArgs, modules) {
             );
         if (!match) {
             console.error(`memo --forget: module not found: ${moduleArg}`);
-            continue;
+            return;
         }
+        resolved.push(match);
+    }
+
+    for (const match of resolved) {
         memo.forgetByPath(match.path);
         console.log(`\x1b[33m✓\x1b[0m Forgot all memos for ${rarebert.relPath(match.path)}`);
     }
