@@ -1,25 +1,26 @@
+---
+name: maintain-memoizability
+description: Ensures modules can receive memos for tracking context across operations. Use when creating or working with memoizable modules.
+---
+
 # Maintain Memoizability Skill
 
 ## Purpose
-Documents how files can receive memos for tracking their API and operations. A "memoizable" module:
-1. Exists in the project's module registry (tracked by lib/modules.mjs)  
-2. Has a `.module-name.` side-car file format accepted by memo.walkAll()
-3. Can store arbitrary string content via memo.remember(path, content)
+Ensures modules can receive memos for tracking context across operations. A module is "memoizable" if:
+1. It exists in the module registry (tracked by lib/modules.mjs)
+2. Has a corresponding `.<module-name>.` file for memo storage
+3. Can accept `remember()` calls to store contextual information
 
-## Memo Methods Available
+## Operations Exposed by scripts/memo.mjs
+- **addMemo(moduleArg, memoContentArg)** - Adds memo to specified module
+  - Uses `memo.remember(target.path, memoContent)` to persist
+  - Interactive or non-interactive modes
 
-- **memo.remember(moduleRef, content)** - Add memo to module file
-- **memo.loadMemos(moduleRef)** - Load memos from file
-- **memo.loadMemosWithTimestamps()** - Get memos sorted by lastModified
+## Key Memo Methods Used:
+- `memo.remember(path, content)` - Store memo for a module
+- `memo.loadMemos(moduleRef)` - Load memos from file
+- `memo.loadMemoWithTimestamps()` - Load with timestamps for sorting
+- `memo.clearBuffer()` - Clear the in-memory buffer
 
-## Memo Methods NEVER to be called
-- **memo.clearBuffer()** - Reset in-memory buffer
-- **memo.forgetAll()** - Clear all local memo files
-
-## Typical Memo Structure for scripts/memo.mjs
-
-```
-OPERATIONS: bind() -> dispatch to handlers; init() -> set up state machines
-or
-FUNCTIONS: main(args[]) dispatches --flag operations to private functions
-```
+## Operations to Memoize:
+The `--add` operation allows users to memoize any module with contextual notes.

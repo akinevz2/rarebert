@@ -1,7 +1,12 @@
+---
+name: maintain-memorability
+description: Ensures the memo system within rarebert is always operational despite refactors. Use when editing any script file to preserve API documentation in sidebars.
+---
+
 # Maintain Memorability Skill
 
 ## Purpose
-Instructs agents how to preserve file knowledge through memos before making modifications. The rarebert system uses side-car memo files (`.module-name.` suffix) to track context across operations.
+Ensures the memo system within rarebert is always operational despite refactors.
 
 ## Before Overwriting Any Script File
 

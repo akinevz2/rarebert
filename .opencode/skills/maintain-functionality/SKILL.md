@@ -1,6 +1,12 @@
+---
+name: maintain-functionality
+description: Ensures modules in rarebert/scripts/ maintains operational integrity by memoizing API documentation before refactoring functionality. Use when modifying any module file.
+---
+
 # Maintain Functionality Skill
 
 ## Purpose
+
 Ensures scripts/memo.mjs maintains operational integrity by documenting its API so agents can memoize it before making changes.
 
 ## Before Modifying This File
