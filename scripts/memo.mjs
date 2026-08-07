@@ -503,12 +503,33 @@ function printDagForSet(modules, set) {
 // ---------------------------------------------------------------------------
 
 async function cmdBare() {
-    // No args: directly enter "select module to add a memo to" TUI
+    // No args: show a menu — "view" first, then module options to add a memo to.
     const modules = listAllModules();
     if (modules.length === 0) {
         cli.fail('No modules found.');
     }
-    const target = await promptModule(modules, '', 'Select a module to add a memo to');
+
+    // Build choices: view first, then one per module
+    const choices = [{ name: '__view', message: 'view — print all memos' }];
+    for (const m of modules) {
+        const meta = rarebert.getScriptMetadata(m.abs);
+        const desc = meta.description ? meta.description.split('\n')[0].trim() : '';
+        const label = desc ? `add memo to ${m.path} — ${desc}` : `add memo to ${m.path}`;
+        choices.push({ name: m.path, message: cli.truncate(label) });
+    }
+    choices.push({ name: '__exit', message: 'exit' });
+
+    const selection = await cli.select('Memo', choices, { limit: 8 });
+
+    if (selection === '__exit') return;
+    if (selection === '__view') {
+        printDagForSet(modules, null);
+        return;
+    }
+
+    // selection is a module path — add a memo to it
+    const target = modules.find((m) => m.path === selection);
+    if (!target) return;
     const memoContent = await promptMemoContent(target.name);
     memo.remember(target.path, memoContent);
     console.log(`\x1b[33m✓\x1b[0m Memo added to ${rarebert.relPath(target.path)}`);
