@@ -5,7 +5,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { rarebert } from '../lib/projects.mjs';
-import { normalizeModuleName, exit } from '../lib/core.mjs';
+import { exit } from '../lib/core.mjs';
 import { template } from '../lib/template.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
@@ -88,7 +88,7 @@ async function promptModuleName(lang) {
         validate: (val) => {
             if (!val.trim()) return 'Module name is required';
             try {
-                normalizeModuleName(val, [ext]);
+                rarebert.normalizeModuleName(val, [ext]);
                 return true;
             } catch (e) {
                 return e.message;
@@ -185,7 +185,7 @@ async function main(args = []) {
     if (!name || !name.trim()) {
         throw new AbortError();
     }
-    const normalizedName = normalizeModuleName(name, [ext]);
+    const normalizedName = rarebert.normalizeModuleName(name, [ext]);
 
     console.log(`\nGenerating ${lang} module skeleton in ${directory}/...`);
     let modulePath;

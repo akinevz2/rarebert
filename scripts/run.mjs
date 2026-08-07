@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { rarebert } from '../lib/projects.mjs';
-import { normalizeModuleName, exit } from '../lib/core.mjs';
+import { exit } from '../lib/core.mjs';
 
 const SRC_DIR = path.join(rarebert.root, 'src');
 const DEFAULT_MODULE = path.join(SRC_DIR, 'main.py');
@@ -27,9 +27,9 @@ function runProcess(cmd, args) {
 }
 
 function findJsModule(name) {
-    const normalized = normalizeModuleName(name);
+    const normalized = rarebert.normalizeModuleName(name);
     const all = [...rarebert.discover(rarebert.scriptsDir), ...rarebert.discover(rarebert.libDir)];
-    return all.find((s) => normalizeModuleName(s.name) === normalized);
+    return all.find((s) => rarebert.normalizeModuleName(s.name) === normalized);
 }
 
 function findPyModule(name) {

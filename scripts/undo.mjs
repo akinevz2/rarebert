@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { rarebert } from '../lib/projects.mjs';
-import { normalizeModuleName, exit } from '../lib/core.mjs';
+import { exit } from '../lib/core.mjs';
 import { editor } from '../lib/editor.mjs';
 import { cli } from '../lib/cli.mjs';
 import fs from 'fs';
