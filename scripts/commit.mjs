@@ -32,6 +32,73 @@ function stripCommitMessage(raw) {
         .replace(/\n+$/, '');
 }
 
+/**
+ * Clean raw opencode output into a valid git commit message.
+ *
+ * opencode sometimes wraps its output in markdown fences, prepends
+ * labels like "Commit message:" or "Here is...", or attaches trailing
+ * commentary. Without cleaning, git either rejects the message as
+ * empty (after fence stripping) or commits a malformed message that
+ * looks like a chat transcript. This function:
+ *
+ *  1. Strips a leading/trailing markdown code fence (``` or ```text).
+ *  2. Removes any preamble line(s) ending with ":" before the first
+ *     blank line if they contain label-like text (e.g. "Commit message:").
+ *  3. Removes trailing commentary after a closing fence or the last
+ *     blank-line-delimited paragraph.
+ *  4. Trims trailing blank lines.
+ *
+ * Returns the cleaned message, or '' if nothing usable remains.
+ */
+function cleanSummary(raw) {
+    let text = (raw ?? '').trim();
+    if (!text) return '';
+
+    // Strip a wrapping markdown code fence. opencode frequently emits
+    // ```text\n<message>\n``` or ```\n<message>\n```.
+    const fenceOpen = text.match(/^```[^\n]*\n/);
+    if (fenceOpen) {
+        text = text.slice(fenceOpen[0].length);
+        const fenceClose = text.match(/\n```\s*$/);
+        if (fenceClose) text = text.slice(0, fenceClose.index);
+    }
+    text = text.trim();
+    if (!text) return '';
+
+    // Drop leading preamble lines that end with ":" and precede the
+    // actual message (e.g. "Here is the commit message:" or "Sure:").
+    // Stop at the first line that doesn't look like a label.
+    const lines = text.split('\n');
+    while (lines.length > 1) {
+        const first = lines[0].trim();
+        if (!first) {
+            lines.shift();
+            continue;
+        }
+        if (
+            first.endsWith(':') &&
+            first.length < 72 &&
+            !/^(feat|fix|refactor|docs|test|chore|style|perf|build|ci)/i.test(first)
+        ) {
+            lines.shift();
+            continue;
+        }
+        break;
+    }
+    text = lines.join('\n').trim();
+    if (!text) return '';
+
+    // Strip trailing commentary: if a closing fence appears mid-text,
+    // drop everything from that fence onward (opencode often appends
+    // "Let me know if..." after the fenced block).
+    const trailingFence = text.search(/\n```\s*\n/);
+    if (trailingFence >= 0) {
+        text = text.slice(0, trailingFence).trim();
+    }
+
+    return text.replace(/\n+$/, '');
+}
+
 async function promptCommitChoice() {
     if (process.stdin.isTTY !== true) {
         return 'raw';
@@ -92,11 +159,12 @@ async function promptBail(message) {
 }
 
 function bailCommit(reason) {
-    const staged = git.git('diff', ['--cached', '--name-only']);
-    if (staged.stdout.trim()) {
-        git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
-    }
-    console.error(`Bailed: ${reason}; index restored (non-destructive).`);
+    // Do NOT unstage here. The only time we unstage is when the user
+    // erases the entire commit message in the editor (editSummaryInEditor
+    // returns null). Bailing at a prompt means the user chose not to
+    // proceed — their staged files should remain staged so they can
+    // rerun make commit or manually git commit.
+    console.error(`Bailed: ${reason}.`);
     exit(0);
 }
 
@@ -189,7 +257,7 @@ function summariseChangelist(model, changelist, firstLine) {
         console.error(`opencode exited with status ${result.status}; continuing without summary.`);
         return '';
     }
-    return (result.stdout ?? '').trim();
+    return cleanSummary((result.stdout ?? '').trim());
 }
 
 async function main(args = []) {
@@ -222,8 +290,21 @@ async function main(args = []) {
         return exit(0);
     }
 
-    const choice = interactive ? await promptCommitChoice() : 'later';
+    // Non-interactive mode (stdin is not a TTY, e.g. piped or CI): the
+    // commit module is inherently interactive (Enquirer prompts for
+    // commit choice, preview, bail confirmations, and $EDITOR). Rather
+    // than silently hanging or committing with no user input, error out
+    // and ask the caller to run from a TTY. This prevents the previous
+    // bug where piping (| head) would hang waiting for opencode.
+    if (!interactive) {
+        console.error(
+            'commit: interactive mode required (stdin is not a TTY).\n' +
+                'Run `node index.js commit` from a terminal, or use plain git for scripted commits.'
+        );
+        return exit(1);
+    }
 
+    const choice = await promptCommitChoice();
 
     if (choice === 'later') {
         git.git('status');
@@ -238,19 +319,26 @@ async function main(args = []) {
             initial: false
         });
         if (!(await prompt.run())) {
+            // User declined to commit after previewing. Do NOT unstage —
+            // they may want to rerun make commit or manually adjust.
             git.git('status', [], { stdio: 'inherit' });
-            // print the staged files
-            git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
-            console.error('Aborted; restored index (non-destructive).');
+            console.error('Aborted; staged files preserved.');
             return exit(0);
         }
     }
 
-    if (choice === 'raw' || !interactive) {
+    if (choice === 'raw') {
         if (interactive && (await promptBail('Bail before writing a commit message by hand?'))) {
             bailCommit('declined raw commit');
         }
-        stageAndCommit([]);
+        // Raw mode: open $EDITOR with a blank template so the user writes
+        // the commit message by hand. Passing [] to git commit would
+        // invoke git's own editor, but going through editSummaryInEditor
+        // gives us control over the template and the empty-message
+        // bail behaviour (unstage only when the user erases everything).
+        const commitArgs = await editSummaryInEditor('');
+        if (!commitArgs) return exit(0);
+        stageAndCommit(commitArgs);
         return;
     }
 
@@ -275,6 +363,7 @@ async function main(args = []) {
         }
 
         const commitArgs = await buildCommitPlan(summary, interactive, modify);
+        if (!commitArgs) return exit(0);
         stageAndCommit(commitArgs);
         return;
     }
@@ -320,18 +409,28 @@ async function editSummaryInEditor(summary, interactive) {
     }
 
     if (!stripped) {
+        // The user erased the entire commit message in the editor. This is
+        // the ONLY case where we unstage: it signals the user wants to
+        // completely bail on writing a commit message for this changelist.
+        // They can rerun make commit for a bulk commit, or manually git add
+        // and commit specific files.
         console.error('Commit message erased; unstaging all changes so you can cherry-pick files.');
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
-        exit(0);
+        return null;
     }
 
     return ['-m', stripped];
 }
 
 function stageAndCommit(commitArgs) {
-    cli.onAbort(() => {
-        console.error('\nInterrupted; restoring index (non-destructive).');
-        git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
+    // Register an abort handler that fires only on Ctrl-C during the
+    // commit. Capture the unsubscribe so we can deregister it on success
+    // — otherwise process.on('exit') would fire runAbortCallbacks() after
+    // a successful commit. On interrupt we do NOT unstage — the user can
+    // rerun make commit or manually commit. Unstaging only happens when
+    // the user erases the commit message in the editor.
+    const offAbort = cli.onAbort(() => {
+        console.error('\nInterrupted; staged files preserved.');
     });
 
     // Only mutate the index if nothing is staged yet. If the user already
@@ -341,6 +440,7 @@ function stageAndCommit(commitArgs) {
         const addResult = git.add([], { all: true, stdio: 'inherit' });
         if (!addResult.ok) {
             console.error(`git add failed (status ${addResult.status})`);
+            offAbort();
             exit(addResult.status ?? 1);
         }
     }
@@ -350,17 +450,24 @@ function stageAndCommit(commitArgs) {
         if (result.status !== 0) {
             const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
             if (/empty commit message|Aborting commit/i.test(output)) {
-                console.error('Empty commit message; restoring index (non-destructive).');
-                git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
+                // Git rejected the commit (e.g. empty message from a failed
+                // editor invocation). Do NOT unstage — the user can rerun
+                // make commit or manually adjust.
+                console.error('Empty commit message; staged files preserved.');
             } else {
                 console.error(`git commit exited with status ${result.status}`);
             }
+            offAbort();
             exit(result.status ?? 1);
         }
     } catch (err) {
         console.error(`Commit failed: ${err.message}`);
+        offAbort();
         exit(1);
     }
+
+    // Success — deregister the abort handler so it doesn't fire on exit.
+    offAbort();
 }
 
 export { main };
