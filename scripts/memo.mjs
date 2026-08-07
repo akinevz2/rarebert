@@ -58,275 +58,40 @@ const META = {
     ]
 };
 
-async function promptMemoContent(moduleName, initial = '') {
+// ---------------------------------------------------------------------------
+// Shared constants & helpers
+// ---------------------------------------------------------------------------
+
+const YELLOW_TICK = '\x1b[33m✓\x1b[0m';
+const RED_BOLD = '\x1b[1;31m';
+const DIM = '\x1b[2m';
+const RESET = '\x1b[0m';
+
+/**
+ * Resolve a single module argument (path, name, or absolute path) to a
+ * module object plus its derived relative path and sidecar path.
+ *
+ * @returns {{ module, rel, sidecar } | null}
+ */
+function resolveModule(arg, modules) {
+    const rel = path.isAbsolute(arg) ? rarebert.relPath(arg) : arg;
+    const mod =
+        modules.find((m) => m.path === rel) ||
+        modules.find((m) => m.path.endsWith(rel)) ||
+        modules.find((m) => m.name === arg || m.name === path.basename(rel, path.extname(rel)));
+    if (!mod) return null;
+    return { module: mod, rel: mod.path, sidecar: mod.memoFile() };
+}
+
+function printMemoAdded(rel) {
+    console.log(`${YELLOW_TICK} Memo added to ${rel}`);
+}
+
+async function promptMemoContent(initial = '') {
     return cli.input('Enter memo content:', {
         initial,
         validate: (v) => (v.trim() ? true : 'required')
     });
-}
-
-function printGroupedMemos() {
-    const groups = memo.walkAll();
-    if (groups.length === 0) {
-        console.log('No memos found.');
-        return false;
-    }
-
-    const RED_BOLD = '\x1b[1;31m';
-    const DIM = '\x1b[2m';
-    const RESET = '\x1b[0m';
-    const totalCycles = groups.totalCycles ?? 0;
-
-    for (const { path, memos, related } of groups) {
-        console.log(`\n\x1b[1m${path}\x1b[0m`);
-        // Print dependency tree with ASCII pipes BEFORE the memos
-        if (related.length) {
-            for (let i = 0; i < related.length; i++) {
-                const entry = related[i];
-                const isLast = i === related.length - 1;
-                const branch = isLast ? '└── ' : '├── ';
-                if (entry.cycle) {
-                    console.log(`  ${RED_BOLD}${branch}${entry.path} ↻${RESET}`);
-                } else {
-                    console.log(`  ${DIM}${branch}${entry.path}${RESET}`);
-                }
-            }
-        }
-        for (const content of memos) {
-            console.log(`  ${content}`);
-        }
-    }
-
-    if (totalCycles > 0) {
-        console.log(
-            `\n${RED_BOLD}⚠ ${totalCycles} cyclic import${totalCycles === 1 ? '' : 's'} detected${RESET}`
-        );
-    }
-    console.log();
-    return true;
-}
-
-async function addMemo(moduleArg, memoContentArg) {
-    const modules = listAllModules();
-    if (modules.length === 0) {
-        cli.fail('No modules found.');
-    }
-    const target = await promptModule(modules, moduleArg, 'Select a module to memoize');
-    const memoContent = memoContentArg.trim() || (await promptMemoContent(target.name));
-    memo.remember(target.path, memoContent);
-    console.log(`\x1b[33m✓\x1b[0m Memo added to ${rarebert.relPath(target.path)}`);
-}
-
-async function bare(args) {
-    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-
-    if (nonFlag.length >= 2) {
-        await addMemo(nonFlag[0], nonFlag.slice(1).join(' '));
-        return;
-    }
-
-    const hasMemos = memo.loadAllMemos().length > 0;
-    if (hasMemos) {
-        printGroupedMemos();
-    } else {
-        console.log('No memos found.\n');
-    }
-
-    const choices = [
-        { name: 'add', message: 'Add a memo' },
-        { name: 'commit', message: 'Snapshot to git notes' },
-        { name: 'fresh', message: 'Fresh slate (snapshot + clear)' },
-        { name: 'exit', message: 'Exit' }
-    ];
-    const action = await cli.select('What next?', choices);
-    if (action === 'exit') return;
-    if (action === 'add') {
-        await addMemo(nonFlag[0] || '', nonFlag.slice(1).join(' '));
-        return;
-    }
-    if (action === 'commit') {
-        memo.snapshot(nonFlag.join(' ') || 'memo snapshot');
-        memo.clearBuffer();
-        return;
-    }
-    if (action === 'fresh') {
-        const label = nonFlag.join(' ') || 'memo fresh slate';
-        const hadMemos = memo.loadAllMemos().length > 0;
-        if (hadMemos) memo.snapshot(label);
-        memo.forgetAll();
-        console.log(hadMemos ? 'Fresh slate (previous memos snapshotted).' : 'Already clean.');
-        memo.clearBuffer();
-        return;
-    }
-}
-
-async function dropMemos(moduleArg, indicesArg) {
-    if (!moduleArg) {
-        cli.fail("A memo'd module must be specified for --drop.");
-    }
-
-    const target = await promptModule(
-        listAllModules(),
-        moduleArg,
-        'Select module to drop memos from'
-    );
-
-    const allMemos = memo.loadMemos(target.path).flatMap((m) => m.content);
-    if (!allMemos.length) {
-        console.log('No memos found for this module.');
-        return;
-    }
-
-    // Non-interactive: require comma-separated indices, else error
-    if (process.stdin.isTTY !== true) {
-        if (!indicesArg) {
-            console.error(
-                `Error: missing indices argument for non-interactive --drop:\n` +
-                    `Non-interactive mode cannot prompt for memo selection.\n` +
-                    `  Pass comma-separated indices (1 for first, -1 for last): --drop ${moduleArg} 1,3,-1\n` +
-                    `  Or to remove all memos for this module, use: --forget ${moduleArg}`
-            );
-            cli.fail();
-        }
-        const indices = parseIndices(indicesArg, allMemos.length);
-        if (!indices) return; // parseIndices already printed the error
-        const selected = indices.map((i) => allMemos[i]);
-        applyDrop(target, selected);
-        return;
-    }
-
-    // Interactive: if indices given, show a confirmation prompt listing
-    // the memos to be dropped (with a cancel option). Otherwise, TUI
-    // multi-select with no pre-selection.
-    let selected;
-    if (indicesArg) {
-        const indices = parseIndices(indicesArg, allMemos.length);
-        if (!indices) return; // parseIndices already printed the error
-        selected = indices.map((i) => allMemos[i]);
-
-        // Display the memos to be dropped and ask for confirmation
-        console.log(`\n\x1b[1mMemos to drop from ${rarebert.relPath(target.path)}:\x1b[0m`);
-        for (const [i, content] of selected.entries()) {
-            console.log(`  ${indicesArg.split(',')[i]?.trim() || i + 1}. ${content}`);
-        }
-        console.log();
-        const confirmed = await cli.select('Proceed?', [
-            { name: 'drop', message: 'Drop the listed memos' },
-            { name: 'cancel', message: 'Cancel' }
-        ]);
-        if (confirmed === 'cancel') {
-            console.log('Aborted; no memos dropped.');
-            return;
-        }
-    } else {
-        selected = await multiSelectMemos(target.path);
-    }
-
-    if (!selected.length) {
-        console.log('No memos selected; nothing dropped.');
-        return;
-    }
-    applyDrop(target, selected);
-}
-
-/**
- * Parse a comma-separated indices string into 0-based array indices.
- *
- * - 1-based: "1" refers to the first memo (index 0).
- * - 0 is an error (not a valid 1-based index).
- * - Negative numbers count from the end: -1 = last, -2 = second-to-last.
- * - Out-of-bounds values produce an error and return null.
- */
-function parseIndices(arg, count) {
-    if (count === 0) {
-        console.error('No memos to drop.');
-        return null;
-    }
-    const raw = arg
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    if (!raw.length) {
-        console.error(`No indices provided in "${arg}".`);
-        return null;
-    }
-
-    const indices = [];
-    for (const token of raw) {
-        const n = parseInt(token, 10);
-        if (Number.isNaN(n)) {
-            console.error(`Invalid index "${token}"; expected an integer.`);
-            return null;
-        }
-        if (n === 0) {
-            console.error(
-                `Index 0 is invalid; indices are 1-based (use 1 for the first memo, -1 for the last).`
-            );
-            return null;
-        }
-        let idx;
-        if (n > 0) {
-            idx = n - 1; // convert 1-based to 0-based
-        } else {
-            idx = count + n; // negative: -1 = count-1 (last), -2 = count-2, etc.
-        }
-        if (idx < 0 || idx >= count) {
-            const range = `1–${count} (or -1 to -${count} from end)`;
-            console.error(`Index ${n} is out of bounds; valid range: ${range}.`);
-            return null;
-        }
-        indices.push(idx);
-    }
-    return indices;
-}
-
-function applyDrop(target, selected) {
-    const remaining = memo
-        .loadMemos(target.path)
-        .flatMap((m) => m.content)
-        .filter((c) => !selected.includes(c));
-    const file = target.path + '.';
-    if (!remaining.length) {
-        try {
-            fs.unlinkSync(file);
-        } catch {
-            /* already absent */
-        }
-    } else {
-        fs.writeFileSync(
-            file,
-            JSON.stringify(
-                { name: target.name, content: remaining, lastModified: Date.now() },
-                null,
-                2
-            ) + '\n'
-        );
-    }
-    console.log(`Dropped ${selected.length} memo(s) from ${rarebert.relPath(target.path)}`);
-}
-
-async function multiSelectMemos(modulePath) {
-    const memos = memo.loadMemos(modulePath).flatMap((m) => m.content);
-    if (!memos.length) return [];
-
-    const { default: Enquirer } = await import('enquirer');
-    const prompt = new Enquirer.MultiSelect({
-        name: 'memos',
-        message: `Select memos to drop:`,
-        choices: memos.map((content, idx) => ({
-            name: idx.toString(),
-            message: content,
-            value: content
-        }))
-    });
-    try {
-        const result = await prompt.run();
-        // Enquirer returns the `name` field (index strings), not `value`.
-        // Map indices back to the actual memo content strings.
-        return result.map((idx) => memos[parseInt(idx, 10)]);
-    } catch {
-        throw new AbortError();
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -338,11 +103,6 @@ async function multiSelectMemos(modulePath) {
  * where each `--flag` starts a new group that consumes following positionals
  * until the next `--flag`. Non-flag positionals before any flag form a leading
  * group with an empty flags array.
- *
- * Example: ['a.mjs', '--add', 'b.mjs', 'note', '--add', 'c.mjs', 'note2']
- *   -> [ { flags: [], positional: ['a.mjs'] },
- *        { flags: ['--add'], positional: ['b.mjs', 'note'] },
- *        { flags: ['--add'], positional: ['c.mjs', 'note2'] } ]
  */
 function groupArgs(argv) {
     const groups = [];
@@ -364,32 +124,33 @@ function groupArgs(argv) {
 }
 
 /**
- * Resolve a list of file/folder arguments to a set of module paths.
- * - A folder expands to all modules under it (recursively for lib/).
- * - A file is matched against module paths/names.
- * Returns a Set of module path strings.
+ * Resolve a list of file/folder arguments to a set of resolved module
+ * descriptors ({ module, rel, sidecar }). Folders expand to all modules
+ * under them. Unmatched args print a warning.
  */
 function resolveModuleSet(args, modules) {
-    const result = new Set();
+    const result = [];
+    const seen = new Set();
     for (const arg of args) {
         const abs = path.isAbsolute(arg) ? arg : path.resolve(rarebert.root, arg);
-        // folder: expand to all modules under it
         if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
             for (const m of modules) {
-                if (m.abs.startsWith(abs + path.sep) || m.abs === abs) {
-                    result.add(m.path);
+                if ((m.abs.startsWith(abs + path.sep) || m.abs === abs) && !seen.has(m.path)) {
+                    seen.add(m.path);
+                    result.push({ module: m, rel: m.path, sidecar: m.memoFile() });
                 }
             }
             continue;
         }
-        // file: match by path, suffix, or name
-        const rel = path.isAbsolute(arg) ? rarebert.relPath(arg) : arg;
-        const match =
-            modules.find((m) => m.path === rel) ||
-            modules.find((m) => m.path.endsWith(rel)) ||
-            modules.find((m) => m.name === rel || m.name === path.basename(rel, path.extname(rel)));
-        if (match) result.add(match.path);
-        else console.error(`memo: no module matched "${arg}"`);
+        const resolved = resolveModule(arg, modules);
+        if (resolved) {
+            if (!seen.has(resolved.rel)) {
+                seen.add(resolved.rel);
+                result.push(resolved);
+            }
+        } else {
+            console.error(`memo: no module matched "${arg}"`);
+        }
     }
     return result;
 }
@@ -404,8 +165,8 @@ function printFlatMemos(entries) {
         return false;
     }
     const flat = [];
-    for (const { module, memos, lastModified } of entries) {
-        for (const content of memos) {
+    for (const { module, memos: contents, lastModified } of entries) {
+        for (const content of contents) {
             flat.push({ path: module.path, content, lastModified });
         }
     }
@@ -416,24 +177,21 @@ function printFlatMemos(entries) {
     return true;
 }
 
-function printDagForSet(modules, set) {
+/**
+ * Print the memo DAG, optionally filtered to a set of resolved module
+ * descriptors. When a set is given, ancestors are emitted before the
+ * members that reference them (deepest-first).
+ */
+function printDagForSet(resolvedSet) {
     const groups = memo.walkAll();
     if (groups.length === 0) {
         console.log('No memos found.');
         return false;
     }
 
-    const RED_BOLD = '\x1b[1;31m';
-    const DIM = '\x1b[2m';
-    const RESET = '\x1b[0m';
     const totalCycles = groups.totalCycles ?? 0;
     const cyclePaths = groups.cycles ?? [];
-
-    // When a set is given, emit the set members AND their ancestors
-    // (the related entries), each with its own memo content. Ancestors
-    // are printed BEFORE the member that references them (deepest-first),
-    // so dependencies always appear before dependents.
-    const wanted = set ? new Set(set) : null;
+    const wanted = resolvedSet ? new Set(resolvedSet.map((r) => r.rel)) : null;
     const byPath = new Map(groups.map((g) => [g.path, g]));
     const emitted = new Set();
     let shown = 0;
@@ -444,22 +202,15 @@ function printDagForSet(modules, set) {
         const g = byPath.get(groupPath);
         if (!g) return;
 
-        // Recurse into ancestors FIRST so they print before us
         for (const entry of g.related) {
-            if (entry.cycle) {
-                // cycle — will be summarised in the warning, don't recurse
-            } else {
-                emitGroup(entry.path, true);
-            }
+            if (!entry.cycle) emitGroup(entry.path, true);
         }
 
-        // Now emit this node
         shown++;
         const prefix = indent ? '  ' : '';
         const style = indent ? DIM : '\x1b[1m';
         console.log(`\n${style}${prefix}${g.path}${RESET}`);
 
-        // Print dependency tree with ASCII pipes BEFORE the memos
         if (g.related.length) {
             for (let i = 0; i < g.related.length; i++) {
                 const entry = g.related[i];
@@ -473,7 +224,6 @@ function printDagForSet(modules, set) {
             }
         }
 
-        // Then print the memos
         for (const content of g.memos) {
             console.log(`${prefix}  ${content}`);
         }
@@ -504,17 +254,106 @@ function printDagForSet(modules, set) {
 }
 
 // ---------------------------------------------------------------------------
+// --drop helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a comma-separated indices string into 0-based array indices.
+ * 1-based positive; negative counts from end; 0 is invalid.
+ */
+function parseIndices(arg, count) {
+    if (count === 0) {
+        console.error('No memos to drop.');
+        return null;
+    }
+    const raw = arg
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    if (!raw.length) {
+        console.error(`No indices provided in "${arg}".`);
+        return null;
+    }
+
+    const indices = [];
+    for (const token of raw) {
+        const n = parseInt(token, 10);
+        if (Number.isNaN(n)) {
+            console.error(`Invalid index "${token}"; expected an integer.`);
+            return null;
+        }
+        if (n === 0) {
+            console.error(
+                `Index 0 is invalid; indices are 1-based (use 1 for the first memo, -1 for the last).`
+            );
+            return null;
+        }
+        const idx = n > 0 ? n - 1 : count + n;
+        if (idx < 0 || idx >= count) {
+            const range = `1–${count} (or -1 to -${count} from end)`;
+            console.error(`Index ${n} is out of bounds; valid range: ${range}.`);
+            return null;
+        }
+        indices.push(idx);
+    }
+    return indices;
+}
+
+function applyDrop(resolved, selected) {
+    const remaining = memo
+        .loadMemos(resolved.rel)
+        .flatMap((m) => m.content)
+        .filter((c) => !selected.includes(c));
+    if (!remaining.length) {
+        try {
+            fs.unlinkSync(resolved.sidecar);
+        } catch {
+            /* already absent */
+        }
+    } else {
+        fs.writeFileSync(
+            resolved.sidecar,
+            JSON.stringify(
+                { name: resolved.module.name, content: remaining, lastModified: Date.now() },
+                null,
+                2
+            ) + '\n'
+        );
+    }
+    console.log(`Dropped ${selected.length} memo(s) from ${resolved.rel}`);
+}
+
+async function multiSelectMemos(resolved) {
+    const memos = memo.loadMemos(resolved.rel).flatMap((m) => m.content);
+    if (!memos.length) return [];
+
+    const { default: Enquirer } = await import('enquirer');
+    const prompt = new Enquirer.MultiSelect({
+        name: 'memos',
+        message: `Select memos to drop:`,
+        choices: memos.map((content, idx) => ({
+            name: idx.toString(),
+            message: content,
+            value: content
+        }))
+    });
+    try {
+        const result = await prompt.run();
+        return result.map((idx) => memos[parseInt(idx, 10)]);
+    } catch {
+        throw new AbortError();
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Command handlers
 // ---------------------------------------------------------------------------
 
-async function cmdBare() {
-    // No args: show a menu — "view" first, then module options to add a memo to.
-    const modules = listAllModules();
+async function cmdBare(modules) {
     if (modules.length === 0) {
         cli.fail('No modules found.');
     }
 
-    // Build choices: view first, then one per module
     const choices = [{ name: '__view', message: 'view — print all memos' }];
     for (const m of modules) {
         const meta = rarebert.getScriptMetadata(m.abs);
@@ -528,25 +367,23 @@ async function cmdBare() {
 
     if (selection === '__exit') return;
     if (selection === '__view') {
-        printDagForSet(modules, null);
+        printDagForSet(null);
         return;
     }
 
-    // selection is a module path — add a memo to it
     const target = modules.find((m) => m.path === selection);
     if (!target) return;
-    const memoContent = await promptMemoContent(target.name);
-    memo.remember(target.path, memoContent);
-    console.log(`\x1b[33m✓\x1b[0m Memo added to ${rarebert.relPath(target.path)}`);
+    const content = await promptMemoContent();
+    memo.remember(target.path, content);
+    printMemoAdded(target.path);
 }
 
-function cmdPrintSet(modules, set, withAncestors) {
+function cmdPrintSet(resolvedSet, withAncestors) {
     if (withAncestors) {
-        // ancestor-traversal: DAG walk filtered to the set
-        printDagForSet(modules, set);
+        printDagForSet(resolvedSet);
     } else {
-        // plain: flat list of memos for modules in the set
-        const all = memo.loadAllMemos().filter((e) => set.has(e.module.path));
+        const setPaths = new Set(resolvedSet.map((r) => r.rel));
+        const all = memo.loadAllMemos().filter((e) => setPaths.has(e.module.path));
         printFlatMemos(all);
     }
 }
@@ -555,8 +392,7 @@ function cmdPrintAll() {
     printFlatMemos(memo.loadAllMemos());
 }
 
-async function cmdAdd(groups) {
-    // Each --add group: positional[0] = path, positional.slice(1).join(' ') = memo
+async function cmdAdd(groups, modules) {
     for (const g of groups) {
         if (g.flags[0] !== '--add') continue;
         const [modArg, ...rest] = g.positional;
@@ -569,19 +405,13 @@ async function cmdAdd(groups) {
             console.error(`memo --add: missing memo content for "${modArg}"`);
             continue;
         }
-        const modules = listAllModules();
-        const match =
-            modules.find((m) => m.path === modArg) ||
-            modules.find((m) => m.path.endsWith(modArg)) ||
-            modules.find(
-                (m) => m.name === modArg || m.name === path.basename(modArg, path.extname(modArg))
-            );
-        if (!match) {
+        const resolved = resolveModule(modArg, modules);
+        if (!resolved) {
             console.error(`memo --add: module not found: ${modArg}`);
             continue;
         }
-        memo.remember(match.path, content);
-        console.log(`\x1b[33m✓\x1b[0m Memo added to ${rarebert.relPath(match.path)}`);
+        memo.remember(resolved.rel, content);
+        printMemoAdded(resolved.rel);
     }
 }
 
@@ -607,13 +437,13 @@ async function cmdCommit(isYes, isFresh) {
     memo.clearBuffer();
 }
 
-function cmdLog(set) {
+function cmdLog(nonFlag) {
     const entries = memo.logEntries();
     if (entries.length === 0) {
         console.log('memo: no snapshots in refs/notes/memos');
         return;
     }
-    const wanted = set && set.length ? new Set(set) : null;
+    const wanted = nonFlag.length ? new Set(nonFlag) : null;
     let shown = 0;
     for (const e of entries) {
         if (wanted) {
@@ -630,13 +460,76 @@ function cmdLog(set) {
     }
 }
 
-function cmdRecall(ref, set) {
+function cmdRecall(ref, nonFlag) {
     if (!ref) {
         console.error('memo --recall: missing ref argument');
         return;
     }
-    memo.restore(ref, set && set.length ? set : null);
+    memo.restore(ref, nonFlag.length ? nonFlag : null);
     memo.clearBuffer();
+}
+
+async function cmdDrop(moduleArg, indicesArg, modules) {
+    if (!moduleArg) {
+        cli.fail("A memo'd module must be specified for --drop.");
+    }
+
+    const target = await promptModule(modules, moduleArg, 'Select module to drop memos from');
+    const resolved = { module: target, rel: target.path, sidecar: target.memoFile() };
+
+    const allMemos = memo.loadMemos(resolved.rel).flatMap((m) => m.content);
+    if (!allMemos.length) {
+        console.log('No memos found for this module.');
+        return;
+    }
+
+    if (process.stdin.isTTY !== true) {
+        if (!indicesArg) {
+            console.error(
+                `Error: missing indices argument for non-interactive --drop:\n` +
+                    `Non-interactive mode cannot prompt for memo selection.\n` +
+                    `  Pass comma-separated indices (1 for first, -1 for last): --drop ${moduleArg} 1,3,-1\n` +
+                    `  Or to remove all memos for this module, use: --forget ${moduleArg}`
+            );
+            cli.fail();
+        }
+        const indices = parseIndices(indicesArg, allMemos.length);
+        if (!indices) return;
+        applyDrop(
+            resolved,
+            indices.map((i) => allMemos[i])
+        );
+        return;
+    }
+
+    let selected;
+    if (indicesArg) {
+        const indices = parseIndices(indicesArg, allMemos.length);
+        if (!indices) return;
+        selected = indices.map((i) => allMemos[i]);
+
+        console.log(`\n\x1b[1mMemos to drop from ${resolved.rel}:\x1b[0m`);
+        for (const [i, content] of selected.entries()) {
+            console.log(`  ${indicesArg.split(',')[i]?.trim() || i + 1}. ${content}`);
+        }
+        console.log();
+        const confirmed = await cli.select('Proceed?', [
+            { name: 'drop', message: 'Drop the listed memos' },
+            { name: 'cancel', message: 'Cancel' }
+        ]);
+        if (confirmed === 'cancel') {
+            console.log('Aborted; no memos dropped.');
+            return;
+        }
+    } else {
+        selected = await multiSelectMemos(resolved);
+    }
+
+    if (!selected.length) {
+        console.log('No memos selected; nothing dropped.');
+        return;
+    }
+    applyDrop(resolved, selected);
 }
 
 function cmdForget(moduleArgs, modules) {
@@ -649,24 +542,21 @@ function cmdForget(moduleArgs, modules) {
     // out completely without forgetting anything.
     const resolved = [];
     for (const moduleArg of moduleArgs) {
-        const relPath = path.isAbsolute(moduleArg) ? rarebert.relPath(moduleArg) : moduleArg;
-        const match =
-            modules.find((m) => m.path === relPath) ||
-            modules.find((m) => m.path.endsWith(relPath)) ||
-            modules.find(
-                (m) =>
-                    m.name === moduleArg || m.name === path.basename(relPath, path.extname(relPath))
-            );
-        if (!match) {
+        const r = resolveModule(moduleArg, modules);
+        if (!r) {
             console.error(`memo --forget: module not found: ${moduleArg}`);
             return;
         }
-        resolved.push(match);
+        resolved.push(r);
     }
 
-    for (const match of resolved) {
-        memo.forgetByPath(match.path);
-        console.log(`\x1b[33m✓\x1b[0m Forgot all memos for ${rarebert.relPath(match.path)}`);
+    for (const r of resolved) {
+        if (!fs.existsSync(r.sidecar)) {
+            console.log(`${YELLOW_TICK} No memos were found on ${r.rel}`);
+            continue;
+        }
+        memo.forgetByPath(r.rel);
+        console.log(`${YELLOW_TICK} Forgot all memos for ${r.rel}`);
     }
 }
 
@@ -677,71 +567,59 @@ function cmdForget(moduleArgs, modules) {
 async function main(args = []) {
     const groups = groupArgs(args);
     const allFlags = args.filter((a) => a.startsWith('--'));
-    // A token is a flag if it starts with '--'; bare '-' or negative numbers
-    // like '-1' are positionals (used as indices for --drop).
     const nonFlag = args.filter((a) => (!a.startsWith('-') || /^-?\d+$/.test(a)) && a);
     const modules = listAllModules();
 
     const has = (f) => allFlags.includes(f);
 
-    // --add: one or more groups, each with a path + memo content
     if (has('--add')) {
-        await cmdAdd(groups);
+        await cmdAdd(groups, modules);
         return;
     }
 
-    // --commit [--yes] [--fresh]
     if (has('--commit')) {
         await cmdCommit(has('--yes'), has('--fresh'));
         return;
     }
 
-    // --log [files...]
     if (has('--log')) {
         cmdLog(nonFlag);
         return;
     }
 
-    // --recall <ref> [files...]
     if (has('--recall')) {
         cmdRecall(nonFlag[0], nonFlag.slice(1));
         return;
     }
 
-    // --drop <module> [indices] (interactive TUI, or non-interactive with indices)
     if (has('--drop')) {
-        await dropMemos(nonFlag[0], nonFlag[1]);
+        await cmdDrop(nonFlag[0], nonFlag[1], modules);
         memo.clearBuffer();
         return;
     }
 
-    // --forget <module> [module ...] : remove all memos (sidecar) for one or more modules
     if (has('--forget')) {
         cmdForget(nonFlag, modules);
         return;
     }
 
-    // --all [files...] : print DAG view for all, or ancestor-traversal for a set
     if (has('--all')) {
         if (nonFlag.length) {
-            const set = resolveModuleSet(nonFlag, modules);
-            cmdPrintSet(modules, set, true);
+            const resolvedSet = resolveModuleSet(nonFlag, modules);
+            cmdPrintSet(resolvedSet, true);
         } else {
-            // No files: full DAG view (topological, deepest-first)
-            printDagForSet(modules, null);
+            printDagForSet(null);
         }
         return;
     }
 
-    // files/folders only (no --all): print memos for the set
     if (nonFlag.length) {
-        const set = resolveModuleSet(nonFlag, modules);
-        cmdPrintSet(modules, set, false);
+        const resolvedSet = resolveModuleSet(nonFlag, modules);
+        cmdPrintSet(resolvedSet, false);
         return;
     }
 
-    // no args: TUI to select a module and add a memo
-    await cmdBare();
+    await cmdBare(modules);
 }
 
 export { main };
