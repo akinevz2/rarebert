@@ -141,7 +141,10 @@ async function dropMemos(moduleArg) {
         return;
     }
 
-    const remaining = memo.loadMemos(target.path).filter((c) => !selected.includes(c));
+    const remaining = memo
+        .loadMemos(target.path)
+        .flatMap((m) => m.content)
+        .filter((c) => !selected.includes(c));
     const file = target.path + '.';
     if (!remaining.length) {
         try {
@@ -163,7 +166,7 @@ async function dropMemos(moduleArg) {
 }
 
 async function multiSelectMemos(modulePath) {
-    const memos = memo.loadMemos(modulePath);
+    const memos = memo.loadMemos(modulePath).flatMap((m) => m.content);
     if (!memos.length) return [];
 
     const { default: Enquirer } = await import('enquirer');

@@ -56,8 +56,10 @@ async function main(args = []) {
         }
 
         const prior = memo.loadMemos(mod.path);
-        for (const content of prior) {
-            console.log(`     memo ${rel}: ${content}`);
+        for (const m of prior) {
+            for (const content of m.content) {
+                console.log(`     memo ${rel}: ${content}`);
+            }
         }
     }
 

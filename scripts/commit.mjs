@@ -200,7 +200,7 @@ async function main(args = []) {
     const diffFull = git.git('diff', ['HEAD']);
 
     const memoLines = listAllModules().flatMap((mod) =>
-        memo.loadMemos(mod.path).map((content) => `${mod.path}: ${content}`)
+        memo.loadMemos(mod.path).flatMap((m) => m.content.map((c) => `${mod.path}: ${c}`))
     );
 
     const changelist = [
