@@ -149,12 +149,9 @@ async function bare(args) {
     }
 }
 
-async function dropMemos(moduleArg) {
+async function dropMemos(moduleArg, indicesArg) {
     if (!moduleArg) {
         cli.fail("A memo'd module must be specified for --drop.");
-    }
-    if (process.stdin.isTTY !== true) {
-        cli.nonInteractive('cannot prompt for memo selection.');
     }
 
     const target = await promptModule(
@@ -162,12 +159,93 @@ async function dropMemos(moduleArg) {
         moduleArg,
         'Select module to drop memos from'
     );
-    const selected = await multiSelectMemos(target.path);
+
+    const allMemos = memo.loadMemos(target.path).flatMap((m) => m.content);
+    if (!allMemos.length) {
+        console.log('No memos found for this module.');
+        return;
+    }
+
+    // Non-interactive: require comma-separated indices, else error
+    if (process.stdin.isTTY !== true) {
+        if (!indicesArg) {
+            console.error(
+                `Error: missing indices argument for non-interactive --drop:\n` +
+                    `Non-interactive mode cannot prompt for memo selection.\n` +
+                    `  Pass comma-separated indices (1 for first, -1 for last): --drop ${moduleArg} 1,3,-1\n` +
+                    `  Or to remove all memos for this module, use: --forget ${moduleArg}`
+            );
+            cli.fail();
+        }
+        const indices = parseIndices(indicesArg, allMemos.length);
+        if (!indices) return; // parseIndices already printed the error
+        const selected = indices.map((i) => allMemos[i]);
+        applyDrop(target, selected);
+        return;
+    }
+
+    // Interactive: TUI multi-select, with pre-selection if indices given
+    const preSelected = indicesArg ? parseIndices(indicesArg, allMemos.length) : null;
+    const selected = await multiSelectMemos(target.path, preSelected);
     if (!selected.length) {
         console.log('No memos selected; nothing dropped.');
         return;
     }
+    applyDrop(target, selected);
+}
 
+/**
+ * Parse a comma-separated indices string into 0-based array indices.
+ *
+ * - 1-based: "1" refers to the first memo (index 0).
+ * - 0 is an error (not a valid 1-based index).
+ * - Negative numbers count from the end: -1 = last, -2 = second-to-last.
+ * - Out-of-bounds values produce an error and return null.
+ */
+function parseIndices(arg, count) {
+    if (count === 0) {
+        console.error('No memos to drop.');
+        return null;
+    }
+    const raw = arg
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    if (!raw.length) {
+        console.error(`No indices provided in "${arg}".`);
+        return null;
+    }
+
+    const indices = [];
+    for (const token of raw) {
+        const n = parseInt(token, 10);
+        if (Number.isNaN(n)) {
+            console.error(`Invalid index "${token}"; expected an integer.`);
+            return null;
+        }
+        if (n === 0) {
+            console.error(
+                `Index 0 is invalid; indices are 1-based (use 1 for the first memo, -1 for the last).`
+            );
+            return null;
+        }
+        let idx;
+        if (n > 0) {
+            idx = n - 1; // convert 1-based to 0-based
+        } else {
+            idx = count + n; // negative: -1 = count-1 (last), -2 = count-2, etc.
+        }
+        if (idx < 0 || idx >= count) {
+            const range = `1–${count} (or -1 to -${count} from end)`;
+            console.error(`Index ${n} is out of bounds; valid range: ${range}.`);
+            return null;
+        }
+        indices.push(idx);
+    }
+    return indices;
+}
+
+function applyDrop(target, selected) {
     const remaining = memo
         .loadMemos(target.path)
         .flatMap((m) => m.content)
@@ -192,23 +270,31 @@ async function dropMemos(moduleArg) {
     console.log(`Dropped ${selected.length} memo(s) from ${rarebert.relPath(target.path)}`);
 }
 
-async function multiSelectMemos(modulePath) {
+async function multiSelectMemos(modulePath, preSelectedIndices = null) {
     const memos = memo.loadMemos(modulePath).flatMap((m) => m.content);
     if (!memos.length) return [];
+
+    // Enquirer uses 0-based `name` fields for selection. Pre-select
+    // by setting `enabled` on the matching choices.
+    const preSet = preSelectedIndices ? new Set(preSelectedIndices) : null;
+    const choices = memos.map((content, idx) => ({
+        name: idx.toString(),
+        message: content,
+        value: content,
+        enabled: preSet ? preSet.has(idx) : false
+    }));
 
     const { default: Enquirer } = await import('enquirer');
     const prompt = new Enquirer.MultiSelect({
         name: 'memos',
         message: `Select memos to drop:`,
-        choices: memos.map((content, idx) => ({
-            name: idx.toString(),
-            message: content,
-            value: content
-        }))
+        choices
     });
     try {
         const result = await prompt.run();
-        return result;
+        // Enquirer returns the `name` field (index strings), not `value`.
+        // Map indices back to the actual memo content strings.
+        return result.map((idx) => memos[parseInt(idx, 10)]);
     } catch {
         throw new AbortError();
     }
@@ -502,7 +588,9 @@ function cmdRecall(ref, set) {
 async function main(args = []) {
     const groups = groupArgs(args);
     const allFlags = args.filter((a) => a.startsWith('--'));
-    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
+    // A token is a flag if it starts with '--'; bare '-' or negative numbers
+    // like '-1' are positionals (used as indices for --drop).
+    const nonFlag = args.filter((a) => (!a.startsWith('-') || /^-?\d+$/.test(a)) && a);
     const modules = listAllModules();
 
     const has = (f) => allFlags.includes(f);
@@ -531,9 +619,9 @@ async function main(args = []) {
         return;
     }
 
-    // --drop <module> (preserved from before)
+    // --drop <module> [indices] (interactive TUI, or non-interactive with indices)
     if (has('--drop')) {
-        await dropMemos(nonFlag[0]);
+        await dropMemos(nonFlag[0], nonFlag[1]);
         memo.clearBuffer();
         return;
     }
