@@ -18,9 +18,13 @@ import { cli, AbortError } from '../lib/cli.mjs';
 const meta = {
     name: 'commit',
     description: 'Stage all changes, summarise them via opencode, then commit with $EDITOR',
-    usage: 'node index.js commit [model]',
+    usage: 'node index.js commit [model] [--verbose]',
     options: [
-        { label: 'model', description: 'opencode model id (otherwise prompted from opencode.json)' }
+        {
+            label: 'model',
+            description: 'opencode model id (otherwise prompted from opencode.json)'
+        },
+        { label: '--verbose', description: 'Print the full opencode prompt before the summary' }
     ]
 };
 
@@ -169,11 +173,19 @@ function bailCommit(reason) {
 }
 
 function previewDiff() {
-    const pager = process.env.PAGER || 'less';
+    // Use less -R so ANSI color codes are rendered as colors, not printed
+    // literally. Fall back to the user's $PAGER if set (assume it already
+    // handles raw control chars).
+    const pager = process.env.PAGER || 'less -R';
+    const pagerParts = pager.split(/\s+/);
+    const pagerCmd = pagerParts[0];
+    const pagerArgs = pagerParts.slice(1);
     const staged = git.git('diff', ['--cached', '--name-only']);
     const diffArgs = staged.stdout.trim() ? ['--cached'] : ['HEAD'];
-    const diff = git.git('diff', diffArgs);
-    const child = spawnSync(pager, [], {
+    // Force color even though stdout is piped — git disables color when
+    // output is not a TTY, but less -R renders ANSI codes correctly.
+    const diff = git.git('diff', ['--color=always', ...diffArgs]);
+    const child = spawnSync(pagerCmd, pagerArgs, {
         input: diff.stdout,
         stdio: ['pipe', 'inherit', 'inherit']
     });
@@ -191,7 +203,7 @@ async function promptModifyPrompt() {
 
     const prompt = new Enquirer.Confirm({
         name: 'modify',
-        message: 'Modify the instruction line sent to opencode? (No = yeet the default)',
+        message: 'Modify the instruction line sent to opencode? (Yes = yeet the default)',
         initial: false
     });
 
@@ -223,7 +235,7 @@ async function promptPromptFirstLine() {
     }
 }
 
-function summariseChangelist(model, changelist, firstLine) {
+function summariseChangelist(model, changelist, firstLine, verbose = false) {
     const prompt = [
         firstLine,
         'Strict rules (do not violate any):',
@@ -242,6 +254,12 @@ function summariseChangelist(model, changelist, firstLine) {
     console.log(
         `$ opencode run "<prompt: ${prompt.length} bytes, ${prompt.split('\n').length} lines, first: "${promptFirstLine}">" -m ${model} --auto`
     );
+
+    if (verbose) {
+        console.log('\n--- opencode prompt ---');
+        console.log(prompt);
+        console.log('--- end prompt ---\n');
+    }
 
     const result = spawnSync(opencode.resolve(), args, {
         cwd: rarebert.root,
@@ -262,6 +280,23 @@ function summariseChangelist(model, changelist, firstLine) {
 
 async function main(args = []) {
     const interactive = process.stdin.isTTY === true;
+    const verbose = args.includes('--verbose') || args.includes('-v');
+
+    // Validate a user-supplied model id against opencode.json early so
+    // typos and unfamiliar usage produce a clear error before any
+    // interactive prompts or git operations run.
+    const modelArg = args.find((a) => !a.startsWith('-'));
+    if (modelArg) {
+        const known = models.list(models.readConfig());
+        if (known.length > 0 && !known.some((m) => m.id === modelArg)) {
+            console.error(
+                `commit: unknown model "${modelArg}".\n` +
+                    `Available models:\n` +
+                    known.map((m) => `  ${m.id}${m.isDefault ? ' (default)' : ''}`).join('\n')
+            );
+            return exit(1);
+        }
+    }
 
     const status = git.git('status', ['--short']);
     const diffStat = git.git('diff', ['HEAD', '--stat']);
@@ -342,7 +377,7 @@ async function main(args = []) {
         return;
     }
 
-    const model = await models.resolve(args.find((a) => !a.startsWith('-') && a));
+    const model = await models.resolve(modelArg);
 
     if (choice === 'proceed') {
         if (interactive && (await promptBail('Bail before running opencode summary?'))) {
@@ -351,27 +386,33 @@ async function main(args = []) {
 
         const modify = await promptModifyPrompt();
         const firstLine = modify ? await promptPromptFirstLine() : DEFAULT_PROMPT_FIRST_LINE;
-        const summary = summariseAndShow(model, changelist, firstLine);
+        const summary = summariseAndShow(model, changelist, firstLine, verbose);
 
-        if (!summary && !interactive) {
-            console.error('No summary produced and not interactive; aborting.');
+        if (!summary) {
+            console.error('No summary produced; aborting.');
             return exit(1);
         }
 
-        if (interactive && (await promptBail('Summary looks bad — bail instead of editing it?'))) {
-            bailCommit('declined opencode summary output');
+        // Ask the user if the summary looks good. Default is yes —
+        // if accepted, commit directly with the summary text. If
+        // rejected, open the editor so the user can refine it.
+        const looksGood = await cli.confirm('Looks good?', true);
+        if (looksGood) {
+            stageAndCommit(['-m', summary]);
+            return;
         }
 
-        const commitArgs = await buildCommitPlan(summary, interactive, modify);
+        // User rejected — open editor with the summary as a starting point.
+        const commitArgs = await editSummaryInEditor(summary);
         if (!commitArgs) return exit(0);
         stageAndCommit(commitArgs);
         return;
     }
 }
 
-function summariseAndShow(model, changelist, firstLine) {
+function summariseAndShow(model, changelist, firstLine, verbose = false) {
     console.log('\n--- opencode summary ---');
-    const summary = summariseChangelist(model, changelist, firstLine);
+    const summary = summariseChangelist(model, changelist, firstLine, verbose);
     if (summary) {
         console.log(summary);
     } else {
@@ -381,25 +422,28 @@ function summariseAndShow(model, changelist, firstLine) {
     return summary;
 }
 
-function buildCommitPlan(summary, interactive, yeet = false) {
-    if (summary && interactive && !yeet) {
-        return editSummaryInEditor(summary);
-    }
-    if (summary) {
-        return Promise.resolve(['-m', summary]);
-    }
-    return Promise.resolve([]);
-}
-
-async function editSummaryInEditor(summary, interactive) {
+async function editSummaryInEditor(summary) {
     const templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
     fs.writeFileSync(templateFile, summary + '\n');
 
     const editorChild = editor.editFile(templateFile);
 
-    await new Promise((resolve) => {
+    const exitCode = await new Promise((resolve) => {
         editorChild.on('exit', (code) => resolve(code ?? 0));
     });
+
+    // Editor exited with a nonzero status — treat as abort. Unstage
+    // all changes so the user can cherry-pick files or rerun.
+    if (exitCode !== 0) {
+        console.error(`Editor exited with status ${exitCode}; unstaging all changes.`);
+        try {
+            fs.unlinkSync(templateFile);
+        } catch {
+            /* gone */
+        }
+        git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
+        return null;
+    }
 
     const stripped = stripCommitMessage(fs.readFileSync(templateFile, 'utf-8'));
     try {
@@ -410,10 +454,10 @@ async function editSummaryInEditor(summary, interactive) {
 
     if (!stripped) {
         // The user erased the entire commit message in the editor. This is
-        // the ONLY case where we unstage: it signals the user wants to
-        // completely bail on writing a commit message for this changelist.
-        // They can rerun make commit for a bulk commit, or manually git add
-        // and commit specific files.
+        // the ONLY case where we unstage (alongside nonzero editor exit):
+        // it signals the user wants to completely bail on writing a commit
+        // message for this changelist. They can rerun make commit for a
+        // bulk commit, or manually git add and commit specific files.
         console.error('Commit message erased; unstaging all changes so you can cherry-pick files.');
         git.git('restore', ['--staged', '.'], { stdio: 'inherit' });
         return null;

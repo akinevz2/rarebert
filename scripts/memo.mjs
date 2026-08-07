@@ -384,16 +384,19 @@ async function selectModuleWithSearch(message, choices, options = {}) {
 
     const { limit = 10 } = options;
 
-    // Pre-compute the module name and preamble for each choice so the
-    // suggest function doesn't re-parse on every keystroke.
+    // Pre-compute the module name, basename, and preamble for each choice
+    // so the suggest function doesn't re-parse on every keystroke.
     const indexed = choices.map((c) => {
         const msg = (c.message || '').toLowerCase();
         const name = (c.name || '').toLowerCase();
+        // Basename without extension (e.g. "core" from "lib/core.mjs") —
+        // a basename match is more specific than a path substring match.
+        const basename = name.replace(/^.*\//, '').replace(/\.\w+$/, '');
         // Preamble is "add memo to <module> ..."; extract the module path
         // portion for tier-1 matching against the `name` field instead.
         const preambleMatch = msg.match(/^add memo to (\S+)/);
         const preambleMod = preambleMatch ? preambleMatch[1].toLowerCase() : '';
-        return { choice: c, name, msg, preambleMod };
+        return { choice: c, name, basename, msg, preambleMod };
     });
 
     // Special entries that should stay pinned unless explicitly searched.
@@ -501,6 +504,20 @@ async function selectModuleWithSearch(message, choices, options = {}) {
             // Fall through to default single-char delete
             return this.delete.call(this, input, key);
         },
+        // Filter out unsupported ctrl/alt keycodes that would otherwise
+        // be appended as the literal string "undefined" into the search
+        // input. Alert (beep) and re-render so the user gets feedback
+        // that the key was ignored, without the input being corrupted.
+        dispatch(ch, key) {
+            if (ch === undefined || ch === null || typeof ch !== 'string' || !ch.trim()) {
+                return this.alert();
+            }
+            // Skip control characters (ctrl+letter produces \x01-\x1a)
+            if (ch.charCodeAt(0) < 32) {
+                return this.alert();
+            }
+            return this.append(ch);
+        },
         suggest(input) {
             const q = (input || '').toLowerCase().trim();
             if (!q) return choices;
@@ -508,17 +525,27 @@ async function selectModuleWithSearch(message, choices, options = {}) {
             const tokens = q.split(/\s+/).filter(Boolean);
             const pinned = []; // __view/__exit if they match
 
-            // Score each non-special choice. A token that matches in the
-            // module name (tier 1) scores 100, in the preamble "add memo to
-            // <module>" (tier 2) scores 10, in the full message (tier 3)
-            // scores 1. Total score determines rank so a module whose name
-            // contains a query token outranks one that only matches in its
-            // description — even when other tokens only match the full
-            // string. This fixes "add memo to commit" ranking
-            // scripts/commit.mjs above scripts/article.mjs.
-            const scored = [];
+            // Fuzzy filter: every token must appear somewhere in the
+            // full displayed message (unordered). If any token is
+            // missing, the choice is excluded entirely.
+            const allTokensInMsg = (msg) => tokens.every((t) => msg.includes(t));
+            const lastToken = tokens[tokens.length - 1];
+
+            // Priority-ordered buckets. Each choice goes into the
+            // highest-priority bucket it qualifies for (first match
+            // wins). Buckets are concatenated in order, skipping empty
+            // ones, so the first non-empty bucket's results appear
+            // first. Within a bucket, original display order is kept.
+            //
+            // Priority (most intentional → least):
+            //   1. last token matches basename  — "add to memo" → lib/memo.mjs
+            //   2. any token matches basename    — "add memo to add" → scripts/add.mjs
+            //   3. last token matches full path  — "add to scripts/check" → scripts/check.mjs
+            //   4. any token matches full path    — "lib/co" → lib/core.mjs
+            //   5. all tokens in message (fuzzy) — fallback
+            const buckets = [[], [], [], [], []];
             for (const item of indexed) {
-                const { choice, name, msg, preambleMod } = item;
+                const { choice, name, basename, msg, preambleMod } = item;
                 if (specials.has(choice.name)) {
                     if (fuzzyMatch(name, q) || fuzzyMatch(msg, q)) {
                         pinned.push(choice);
@@ -526,28 +553,22 @@ async function selectModuleWithSearch(message, choices, options = {}) {
                     continue;
                 }
 
-                let score = 0;
-                let matchedAll = true;
-                for (const token of tokens) {
-                    if (name.includes(token) || preambleMod.includes(token)) {
-                        score += 100;
-                    } else if (msg.includes(token)) {
-                        score += 1;
-                    } else {
-                        matchedAll = false;
-                        break;
-                    }
-                }
-                if (matchedAll && score > 0) {
-                    scored.push({ choice, score });
+                if (!allTokensInMsg(msg)) continue;
+
+                if (basename.includes(lastToken)) {
+                    buckets[0].push(choice);
+                } else if (tokens.some((t) => basename.includes(t))) {
+                    buckets[1].push(choice);
+                } else if (name.includes(lastToken) || preambleMod.includes(lastToken)) {
+                    buckets[2].push(choice);
+                } else if (tokens.some((t) => name.includes(t) || preambleMod.includes(t))) {
+                    buckets[3].push(choice);
+                } else {
+                    buckets[4].push(choice);
                 }
             }
 
-            // Stable sort by score descending; original order is the
-            // tiebreaker (Array.sort is stable in modern V8).
-            scored.sort((a, b) => b.score - a.score);
-
-            return [...pinned, ...scored.map((s) => s.choice)];
+            return [...pinned, ...buckets.flat()];
         }
     });
 
