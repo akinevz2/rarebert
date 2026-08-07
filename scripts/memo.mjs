@@ -184,9 +184,33 @@ async function dropMemos(moduleArg, indicesArg) {
         return;
     }
 
-    // Interactive: TUI multi-select, with pre-selection if indices given
-    const preSelected = indicesArg ? parseIndices(indicesArg, allMemos.length) : null;
-    const selected = await multiSelectMemos(target.path, preSelected);
+    // Interactive: if indices given, show a confirmation prompt listing
+    // the memos to be dropped (with a cancel option). Otherwise, TUI
+    // multi-select with no pre-selection.
+    let selected;
+    if (indicesArg) {
+        const indices = parseIndices(indicesArg, allMemos.length);
+        if (!indices) return; // parseIndices already printed the error
+        selected = indices.map((i) => allMemos[i]);
+
+        // Display the memos to be dropped and ask for confirmation
+        console.log(`\n\x1b[1mMemos to drop from ${rarebert.relPath(target.path)}:\x1b[0m`);
+        for (const [i, content] of selected.entries()) {
+            console.log(`  ${indicesArg.split(',')[i]?.trim() || i + 1}. ${content}`);
+        }
+        console.log();
+        const confirmed = await cli.select('Proceed?', [
+            { name: 'drop', message: 'Drop the listed memos' },
+            { name: 'cancel', message: 'Cancel' }
+        ]);
+        if (confirmed === 'cancel') {
+            console.log('Aborted; no memos dropped.');
+            return;
+        }
+    } else {
+        selected = await multiSelectMemos(target.path);
+    }
+
     if (!selected.length) {
         console.log('No memos selected; nothing dropped.');
         return;
@@ -270,25 +294,19 @@ function applyDrop(target, selected) {
     console.log(`Dropped ${selected.length} memo(s) from ${rarebert.relPath(target.path)}`);
 }
 
-async function multiSelectMemos(modulePath, preSelectedIndices = null) {
+async function multiSelectMemos(modulePath) {
     const memos = memo.loadMemos(modulePath).flatMap((m) => m.content);
     if (!memos.length) return [];
-
-    // Enquirer uses 0-based `name` fields for selection. Pre-select
-    // by setting `enabled` on the matching choices.
-    const preSet = preSelectedIndices ? new Set(preSelectedIndices) : null;
-    const choices = memos.map((content, idx) => ({
-        name: idx.toString(),
-        message: content,
-        value: content,
-        enabled: preSet ? preSet.has(idx) : false
-    }));
 
     const { default: Enquirer } = await import('enquirer');
     const prompt = new Enquirer.MultiSelect({
         name: 'memos',
         message: `Select memos to drop:`,
-        choices
+        choices: memos.map((content, idx) => ({
+            name: idx.toString(),
+            message: content,
+            value: content
+        }))
     });
     try {
         const result = await prompt.run();
