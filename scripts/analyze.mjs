@@ -36,15 +36,15 @@ async function parseAndAnalyzeFile(filePath, lang) {
         }
     }
 
-    const exportLines = content.split('\n').filter(l => l.match(/export\s+/));
-    
+    const exportLines = content.split('\n').filter((l) => l.match(/export\s+/));
+
     return { imports };
 }
 
 function extractCodeSections(content, lang) {
     const sections = [];
     const lines = content.split('\n');
-    
+
     let sectionStart = 0;
     let braceCount = 0;
     let inFunction = false;
@@ -90,8 +90,8 @@ async function load(moduleRef, options = {}) {
     if (fs.existsSync(path.resolve(moduleRef))) {
         modulePath = path.resolve(moduleRef);
     } else if (rarebert.relPath(moduleRef)) {
-        const found = [...rarebert.discover(), ...rarebert.discover()].find(m => 
-            m.path === moduleRef || m.name === moduleRef
+        const found = [...rarebert.discover(), ...rarebert.discover()].find(
+            (m) => m.path === moduleRef || m.name === moduleRef
         );
         if (found) {
             modulePath = rarebert.absPath(found.path);
@@ -147,7 +147,10 @@ Analyze this code block from ${relPath} at lines ${section.startLine}-${section.
 
 Code:
 \`\`\`${lang}
-${content.split('\n').slice(section.startLine - 1, section.endLine).join('\n')}
+${content
+    .split('\n')
+    .slice(section.startLine - 1, section.endLine)
+    .join('\n')}
 \`\`\`
 
 Provide a concise summary (2-3 sentences) describing what this code block does and its purpose.`;
@@ -195,8 +198,11 @@ Provide a concise summary (2-3 sentences) describing what this code block does a
 
         try {
             const fullPath = path.resolve(path.dirname(modulePath), imp.replace(/['"]/g, ''));
-            const actualPath = fs.existsSync(fullPath + '.mjs') ? fullPath + '.mjs' : 
-                              (fs.existsSync(fullPath) ? fullPath : null);
+            const actualPath = fs.existsSync(fullPath + '.mjs')
+                ? fullPath + '.mjs'
+                : fs.existsSync(fullPath)
+                  ? fullPath
+                  : null;
 
             if (actualPath && fs.existsSync(actualPath)) {
                 resolvedImports.push(rarebert.relPath(actualPath));
@@ -217,7 +223,7 @@ async function main(args = []) {
         return exit(1);
     }
 
-    const moduleArg = args.find(a => !a.startsWith('-'));
+    const moduleArg = args.find((a) => !a.startsWith('-'));
     const verbose = args.includes('-v') || args.includes('--verbose');
 
     try {
@@ -234,7 +240,8 @@ export { load, main };
 
 export default {
     name: 'analyze',
-    description: 'Analyze a module semantically by reading entry point and documenting code sections with opencode',
+    description:
+        'Analyze a module semantically by reading entry point and documenting code sections with opencode',
     usage: 'node index.js analyze <module>',
     options: [{ flag: '-v, --verbose', label: '', description: 'Show verbose output' }]
 };
