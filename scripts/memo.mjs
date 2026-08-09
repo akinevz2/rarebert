@@ -3,7 +3,13 @@
 import fs from 'fs';
 import path from 'path';
 import { rarebert } from '../lib/projects.mjs';
-import { listAllModules, promptModule } from '../lib/modules.mjs';
+import {
+    listAllModules,
+    promptModule,
+    resolveModule,
+    resolveModuleSet,
+    promptModuleChoices
+} from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 
@@ -67,22 +73,6 @@ const RED_BOLD = '\x1b[1;31m';
 const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
 
-/**
- * Resolve a single module argument (path, name, or absolute path) to a
- * module object plus its derived relative path and sidecar path.
- *
- * @returns {{ module, rel, sidecar } | null}
- */
-function resolveModule(arg, modules) {
-    const rel = path.isAbsolute(arg) ? rarebert.relPath(arg) : arg;
-    const mod =
-        modules.find((m) => m.path === rel) ||
-        modules.find((m) => m.path.endsWith(rel)) ||
-        modules.find((m) => m.name === arg || m.name === path.basename(rel, path.extname(rel)));
-    if (!mod) return null;
-    return { module: mod, rel: mod.path, sidecar: mod.memoFile() };
-}
-
 function printMemoAdded(rel) {
     console.log(`${YELLOW_TICK} Memo added to ${rel}`);
 }
@@ -121,38 +111,6 @@ function groupArgs(argv) {
         }
     }
     return groups.filter((g) => g.flags.length || g.positional.length);
-}
-
-/**
- * Resolve a list of file/folder arguments to a set of resolved module
- * descriptors ({ module, rel, sidecar }). Folders expand to all modules
- * under them. Unmatched args print a warning.
- */
-function resolveModuleSet(args, modules) {
-    const result = [];
-    const seen = new Set();
-    for (const arg of args) {
-        const abs = path.isAbsolute(arg) ? arg : path.resolve(rarebert.root, arg);
-        if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
-            for (const m of modules) {
-                if ((m.abs.startsWith(abs + path.sep) || m.abs === abs) && !seen.has(m.path)) {
-                    seen.add(m.path);
-                    result.push({ module: m, rel: m.path, sidecar: m.memoFile() });
-                }
-            }
-            continue;
-        }
-        const resolved = resolveModule(arg, modules);
-        if (resolved) {
-            if (!seen.has(resolved.rel)) {
-                seen.add(resolved.rel);
-                result.push(resolved);
-            }
-        } else {
-            console.error(`memo: no module matched "${arg}"`);
-        }
-    }
-    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -349,236 +307,6 @@ async function multiSelectMemos(resolved) {
 // Command handlers
 // ---------------------------------------------------------------------------
 
-/**
- * Interactive module selection with priority-ordered fuzzy search.
- *
- * Matching tiers (highest priority first):
- *   1. Module name — the `name` field (e.g. "scripts/edit.mjs") fuzzy-
- *      matches the query.
- *   2. Preamble — the literal "add memo to <module>" prefix fuzzy-matches
- *      the query (matches the action phrase).
- *   3. Entire string — the full `message` (label + description) fuzzy-
- *      matches the query anywhere (proximity fallback).
- *
- * Fuzzy matching: each whitespace-separated query token must appear as
- * a substring (in order) somewhere in the target text, but the tokens
- * need not be contiguous. E.g. "add memo to check" matches
- * "add memo to scripts/check.mjs" because every token is a substring.
- *
- * Within each tier, results keep their original display order. The
- * special "__view" and "__exit" choices always stay at the top/bottom
- * respectively and are only matched by a direct hit so they don't
- * drown out module results on a partial query.
- *
- * Keybindings: ctrl-w and ctrl-backspace delete the previous word
- * (not just one char) since Enquirer's Select/AutoComplete prompts
- * don't inherit cutLeft from the String input type.
- *
- * Falls back to cli.select (plain Select, no search) when not
- * interactive so non-interactive callers still get deterministic output.
- */
-async function selectModuleWithSearch(message, choices, options = {}) {
-    if (!cli.isInteractive()) {
-        return cli.select(message, choices, options);
-    }
-
-    const { limit = 10 } = options;
-
-    // Pre-compute the module name, basename, and preamble for each choice
-    // so the suggest function doesn't re-parse on every keystroke.
-    const indexed = choices.map((c) => {
-        const msg = (c.message || '').toLowerCase();
-        const name = (c.name || '').toLowerCase();
-        // Basename without extension (e.g. "core" from "lib/core.mjs") —
-        // a basename match is more specific than a path substring match.
-        const basename = name.replace(/^.*\//, '').replace(/\.\w+$/, '');
-        // Preamble is "add memo to <module> ..."; extract the module path
-        // portion for tier-1 matching against the `name` field instead.
-        const preambleMatch = msg.match(/^add memo to (\S+)/);
-        const preambleMod = preambleMatch ? preambleMatch[1].toLowerCase() : '';
-        return { choice: c, name, basename, msg, preambleMod };
-    });
-
-    // Special entries that should stay pinned unless explicitly searched.
-    const specials = new Set(['__view', '__exit']);
-
-    /**
-     * Fuzzy match: every whitespace-separated token in the query must
-     * appear as a substring of the text (case-insensitive). Tokens are
-     * matched in order but need not be contiguous.
-     */
-    const fuzzyMatch = (text, query) => {
-        const tokens = query.split(/\s+/).filter(Boolean);
-        if (tokens.length === 0) return true;
-        let pos = 0;
-        for (const token of tokens) {
-            const idx = text.indexOf(token, pos);
-            if (idx === -1) return false;
-            pos = idx + token.length;
-        }
-        return true;
-    };
-
-    const { default: Enquirer } = await import('enquirer');
-
-    // Enquirer's default keybinding maps (combos.ctrl, combos.keys, etc.)
-    // are shallow-merged via { ...combos, ...customActions } in
-    // keypress.action(), so providing a custom `ctrl` object would wipe
-    // out ctrl-c (cancel), ctrl-a (first), enter/return, arrows, etc.
-    // Inline the defaults from enquirer/lib/combos.js and spread them
-    // into each sub-map so only the keys we override are replaced.
-    const DEFAULT_CTRL = {
-        a: 'first',
-        b: 'backward',
-        c: 'cancel',
-        d: 'deleteForward',
-        e: 'last',
-        f: 'forward',
-        g: 'reset',
-        i: 'tab',
-        k: 'cutForward',
-        l: 'reset',
-        n: 'newItem',
-        m: 'cancel',
-        j: 'submit',
-        p: 'search',
-        r: 'remove',
-        s: 'save',
-        u: 'undo',
-        w: 'cutLeft',
-        x: 'toggleCursor',
-        v: 'paste'
-    };
-    const DEFAULT_KEYS = {
-        pageup: 'pageUp',
-        pagedown: 'pageDown',
-        home: 'home',
-        end: 'end',
-        cancel: 'cancel',
-        delete: 'deleteForward',
-        backspace: 'delete',
-        down: 'down',
-        enter: 'submit',
-        escape: 'cancel',
-        left: 'left',
-        space: 'space',
-        number: 'number',
-        return: 'submit',
-        right: 'right',
-        tab: 'next',
-        up: 'up'
-    };
-
-    const prompt = new Enquirer.AutoComplete({
-        name: 'memo',
-        message,
-        choices,
-        limit,
-        // Custom keybindings: wire ctrl-w and ctrl-backspace to a
-        // word-deletion action since AutoComplete (which extends Select,
-        // not String) lacks the cutLeft method that the String input
-        // type defines.
-        actions: {
-            ctrl: { ...DEFAULT_CTRL, w: 'deleteWordLeft', h: 'deleteWordLeft' },
-            keys: { ...DEFAULT_KEYS, backspace: 'deleteWordLeftIfCtrl' }
-        },
-        // Enquirer looks up this.options[action] before this[action], so
-        // we provide deleteWordLeft as an option-level method bound to
-        // the prompt instance.
-        deleteWordLeft(input, key) {
-            const inputVal = this.input || '';
-            if (!inputVal) return this.alert();
-            // Delete back to the previous word boundary
-            const trimmed = inputVal.replace(/\s+$/, '');
-            const lastSpace = trimmed.lastIndexOf(' ');
-            this.input = lastSpace >= 0 ? trimmed.slice(0, lastSpace) : '';
-            this.cursor = this.input.length;
-            this.render();
-        },
-        deleteWordLeftIfCtrl(input, key) {
-            // ctrl-backspace arrives as backspace with ctrl flag in some
-            // terminals; plain backspace should still delete one char.
-            if (key && key.ctrl) {
-                return this.options.deleteWordLeft.call(this, input, key);
-            }
-            // Fall through to default single-char delete
-            return this.delete.call(this, input, key);
-        },
-        // Filter out unsupported ctrl/alt keycodes that would otherwise
-        // be appended as the literal string "undefined" into the search
-        // input. Alert (beep) and re-render so the user gets feedback
-        // that the key was ignored, without the input being corrupted.
-        dispatch(ch, key) {
-            if (ch === undefined || ch === null || typeof ch !== 'string' || !ch.trim()) {
-                return this.alert();
-            }
-            // Skip control characters (ctrl+letter produces \x01-\x1a)
-            if (ch.charCodeAt(0) < 32) {
-                return this.alert();
-            }
-            return this.append(ch);
-        },
-        suggest(input) {
-            const q = (input || '').toLowerCase().trim();
-            if (!q) return choices;
-
-            const tokens = q.split(/\s+/).filter(Boolean);
-            const pinned = []; // __view/__exit if they match
-
-            // Fuzzy filter: every token must appear somewhere in the
-            // full displayed message (unordered). If any token is
-            // missing, the choice is excluded entirely.
-            const allTokensInMsg = (msg) => tokens.every((t) => msg.includes(t));
-            const lastToken = tokens[tokens.length - 1];
-
-            // Priority-ordered buckets. Each choice goes into the
-            // highest-priority bucket it qualifies for (first match
-            // wins). Buckets are concatenated in order, skipping empty
-            // ones, so the first non-empty bucket's results appear
-            // first. Within a bucket, original display order is kept.
-            //
-            // Priority (most intentional → least):
-            //   1. last token matches basename  — "add to memo" → lib/memo.mjs
-            //   2. any token matches basename    — "add memo to add" → scripts/add.mjs
-            //   3. last token matches full path  — "add to scripts/check" → scripts/check.mjs
-            //   4. any token matches full path    — "lib/co" → lib/core.mjs
-            //   5. all tokens in message (fuzzy) — fallback
-            const buckets = [[], [], [], [], []];
-            for (const item of indexed) {
-                const { choice, name, basename, msg, preambleMod } = item;
-                if (specials.has(choice.name)) {
-                    if (fuzzyMatch(name, q) || fuzzyMatch(msg, q)) {
-                        pinned.push(choice);
-                    }
-                    continue;
-                }
-
-                if (!allTokensInMsg(msg)) continue;
-
-                if (basename.includes(lastToken)) {
-                    buckets[0].push(choice);
-                } else if (tokens.some((t) => basename.includes(t))) {
-                    buckets[1].push(choice);
-                } else if (name.includes(lastToken) || preambleMod.includes(lastToken)) {
-                    buckets[2].push(choice);
-                } else if (tokens.some((t) => name.includes(t) || preambleMod.includes(t))) {
-                    buckets[3].push(choice);
-                } else {
-                    buckets[4].push(choice);
-                }
-            }
-
-            return [...pinned, ...buckets.flat()];
-        }
-    });
-
-    try {
-        return await prompt.run();
-    } catch {
-        throw new AbortError();
-    }
-}
-
 async function cmdBare(modules) {
     if (modules.length === 0) {
         cli.fail('No modules found.');
@@ -593,7 +321,10 @@ async function cmdBare(modules) {
     }
     choices.push({ name: '__exit', message: 'exit' });
 
-    const selection = await selectModuleWithSearch('Memo', choices, { limit: 8 });
+    const selection = await promptModuleChoices('Memo', choices, {
+        limit: 8,
+        specials: ['__view', '__exit']
+    });
 
     if (selection === '__exit') return;
     if (selection === '__view') {

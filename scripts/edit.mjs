@@ -2,13 +2,11 @@
 
 import fs from 'fs';
 import { spawnSync } from 'child_process';
-import { listAllModules, promptModule } from '../lib/modules.mjs';
+import { listAllModules, promptModule, resolveModule } from '../lib/modules.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { server } from '../lib/server.mjs';
 import { ide } from '../lib/ide.mjs';
-import { libs } from '../lib/libs.mjs';
-import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
@@ -32,10 +30,20 @@ async function main(args = []) {
     const moduleArg = nonFlag[0];
     const modelArg = nonFlag[1];
 
-    const target = await promptModule(modules, moduleArg, 'Select a module to edit');
-    const rel = libs.relPath(target.path);
+    let target;
+    if (moduleArg) {
+        const resolved = resolveModule(moduleArg, modules);
+        if (!resolved) {
+            console.error(`Module not found: ${moduleArg}`);
+            return exit(1);
+        }
+        target = resolved.module;
+    } else {
+        target = await promptModule(modules, moduleArg, 'Select a module to edit');
+    }
+    const rel = target.path;
 
-    if (!fs.existsSync(target.path)) {
+    if (!fs.existsSync(target.abs)) {
         console.error(`Module file not found: ${rel}`);
         return exit(1);
     }
@@ -68,7 +76,7 @@ async function main(args = []) {
         continueSession: true
     });
 
-    const editorChild = editor.editFile(target.path);
+    const editorChild = editor.editFile(target.abs);
 
     let finalStatus = 0;
 
