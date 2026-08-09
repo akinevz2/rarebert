@@ -2,13 +2,11 @@
 
 import fs from 'fs';
 import { spawnSync } from 'child_process';
-import { listAllModules, promptModule } from '../lib/modules.mjs';
+import { listAllModules, promptModule, resolveModule } from '../lib/modules.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { server } from '../lib/server.mjs';
 import { ide } from '../lib/ide.mjs';
-import { libs } from '../lib/libs.mjs';
-import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
@@ -32,22 +30,40 @@ async function main(args = []) {
     const moduleArg = nonFlag[0];
     const modelArg = nonFlag[1];
 
-    const target = await promptModule(modules, moduleArg, 'Select a module to edit');
-    const rel = libs.relPath(target.path);
+    let target;
+    if (moduleArg) {
+        const resolved = resolveModule(moduleArg, modules);
+        if (!resolved) {
+            console.error(`Module not found: ${moduleArg}`);
+            return exit(1);
+        }
+        target = resolved.module;
+    } else {
+        target = await promptModule(modules, moduleArg, 'Select a module to edit');
+    }
+    const rel = target.path;
 
-    if (!fs.existsSync(target.path)) {
+    if (!fs.existsSync(target.abs)) {
         console.error(`Module file not found: ${rel}`);
         return exit(1);
     }
 
     editor.writeLastModule(rel);
 
-    const running = server.getRunning();
+    let running = server.getRunning();
+    let startedHeadless = false;
     if (!running) {
-        console.error('edit: no running opencode server found.');
-        console.error('       start one first with `make open` (or `node index.js open`).');
-        console.error('       the mini TUI keeps the conversation open so edits stay in context.');
-        return exit(1);
+        console.log('edit: no running opencode server; starting one in the background ...');
+        const info = await server.startHeadless({ port: server.port });
+        if (!info) {
+            console.error('edit: could not start a headless opencode server.');
+            console.error(
+                '       run `make open` (or `node index.js open`) to start one manually.'
+            );
+            return exit(1);
+        }
+        running = info;
+        startedHeadless = true;
     }
 
     let model = modelArg;
@@ -68,7 +84,7 @@ async function main(args = []) {
         continueSession: true
     });
 
-    const editorChild = editor.editFile(target.path);
+    const editorChild = editor.editFile(target.abs);
 
     let finalStatus = 0;
 
@@ -105,6 +121,11 @@ async function main(args = []) {
     console.log(
         '\n--- connection closed; session saved on the running server (resume with `make open`) ---'
     );
+    if (startedHeadless) {
+        console.log(
+            'edit: started a background opencode server for this session; run `make open` to reattach, or stop it with `pkill -f "opencode serve"`.'
+        );
+    }
 
     if (finalStatus !== 0) {
         return exit(finalStatus);
