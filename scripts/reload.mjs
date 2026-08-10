@@ -52,7 +52,7 @@ async function main(args = []) {
         editor.clearLastModule();
     }
 
-    const scripts = rarebert.discover();
+    const scripts = rarebert.discoverModules();
     console.log(
         `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => path.relative(rarebert.root, s.path)).join(', ') || '(none)'}`
     );

@@ -5,6 +5,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
+import { listAllModules } from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
 import { models } from '../lib/models.mjs';
 import { opencode } from '../lib/opencode.mjs';
@@ -214,10 +215,8 @@ function resolveModulePath(moduleRef) {
         return path.resolve(moduleRef);
     }
     if (rarebert.relPath(moduleRef)) {
-        const found = [...rarebert.discover(), ...rarebert.discover()].find(
-            (m) => m.path === moduleRef || m.name === moduleRef
-        );
-        if (found) return rarebert.absPath(found.path);
+        const found = listAllModules().find((m) => m.path === moduleRef || m.name === moduleRef);
+        if (found) return found.abs;
     }
     throw new Error(`Module not found: ${moduleRef}`);
 }

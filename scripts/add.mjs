@@ -17,17 +17,13 @@ import { cli, AbortError } from '../lib/cli.mjs';
 const meta = {
     name: 'add',
     description:
-        'Scaffold a new module: pick project (core/non-core), pick language, then git add, edit, and run opencode headlessly to implement',
+        'Scaffold a new module: pick project, pick language, then git add, edit, and run opencode headlessly to implement',
     usage: 'node index.js add [model]',
     options: [{ flag: 'force', label: '', description: 'overwrite an installed language template' }]
 };
 
 function projectChoices() {
-    // this should be refactored out to lib/projects.mjs
-    return [
-        { name: 'core', message: 'core      (rarebert framework module, lib/ + scripts/, .mjs)' },
-        { name: 'src', message: 'src       (project module, src/, any installed language)' }
-    ];
+    return rarebert.discover().map((p) => ({ name: p.key, message: p.label }));
 }
 
 function languageChoices() {
@@ -169,15 +165,17 @@ async function main(args = []) {
         initial: 0
     });
 
+    const project = rarebert.projectByKey(proj);
+
     let lang;
     let directory;
-    if (proj === 'core') {
-        lang = 'mjs';
-        directory = 'scripts';
-        await ensureLanguage(lang);
-    } else {
+    if (project.key === 'src') {
         lang = await pickLanguage();
-        directory = 'src';
+        directory = project.rel;
+    } else {
+        lang = 'mjs';
+        directory = project.rel;
+        await ensureLanguage(lang);
     }
 
     const ext = `.${lang}`;
@@ -190,12 +188,12 @@ async function main(args = []) {
     console.log(`\nGenerating ${lang} module skeleton in ${directory}/...`);
     let modulePath;
     let selectedLibs = [];
-    if (directory === 'src') {
+    if (project.key === 'src') {
         const result = await scaffoldSrcModule(lang, normalizedName);
         modulePath = result.modulePath;
         selectedLibs = result.selectedLibs;
     } else {
-        modulePath = await libs.createModule('scripts', normalizedName, ext);
+        modulePath = await libs.createModule(project.rel, normalizedName, ext);
     }
 
     const rel = libs.relPath(modulePath);
@@ -280,6 +278,6 @@ export { main, pickLanguage, ensureLanguage, buildPreamble };
 export default {
     name: 'add',
     description:
-        'Scaffold a new module: pick project (core/non-core), pick language, then git add, edit, and run opencode headlessly to implement',
+        'Scaffold a new module: pick project, pick language, then git add, edit, and run opencode headlessly to implement',
     main: cli.run(meta, main)
 };
