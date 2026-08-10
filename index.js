@@ -40,13 +40,12 @@ async function maybeOnboard(cmd) {
 }
 
 async function runModule(ref, args = []) {
-    const scripts = rarebert.discover();
+    const scripts = rarebert.discoverModules();
 
     // Resolve `ref` either by relative path (e.g. "scripts/name.mjs")
     // or by normalized module name (e.g. "name"). A leading "./" or a
     // path separator marks a path lookup; otherwise fall back to name.
-    const isPathRef =
-        ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
+    const isPathRef = ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
 
     let script;
     if (isPathRef) {
@@ -81,7 +80,7 @@ async function runModule(ref, args = []) {
 }
 
 async function helpVerbose() {
-    const scripts = rarebert.discover();
+    const scripts = rarebert.discoverModules();
 
     for (const script of scripts) {
         if (script !== scripts[0]) console.log();

@@ -23,6 +23,7 @@ const meta = {
 };
 
 function projectChoices() {
+    // this should be refactored out to lib/projects.mjs
     return [
         { name: 'core', message: 'core      (rarebert framework module, lib/ + scripts/, .mjs)' },
         { name: 'src', message: 'src       (project module, src/, any installed language)' }

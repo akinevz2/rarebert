@@ -23,27 +23,9 @@ async function main(args = []) {
 
     const running = server.getRunning();
     if (running) {
-        console.log(`open: attaching full TUI to running server ${running.url}`);
-
-        const lastInfo = editor.readLastModuleInfo();
-        if (lastInfo && lastInfo.rel) {
-            const abs = path.isAbsolute(lastInfo.rel)
-                ? lastInfo.rel
-                : path.join(rarebert.root, lastInfo.rel);
-            console.log(`open: spawning $EDITOR on ${lastInfo.rel} (detach) ...`);
-            try {
-                editor.editFile(abs);
-            } catch (err) {
-                console.error(`open: failed to spawn $EDITOR on ${lastInfo.rel}: ${err.message}`);
-            }
-        }
-
-        const { child } = server.spawnFull({ url: running.url, port: running.port });
-        if (!child) return exit(1);
-        const code = await new Promise((resolve) => {
-            child.on('exit', (c) => resolve(c ?? 0));
-        });
-        return exit(code);
+        console.log(`open: connecting to running server ${running.url} (full TUI)`);
+        const status = server.attachFull(running);
+        return exit(status);
     }
 
     console.log('open: no running server; launching full TUI at project root (no headless server)');

@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { listAllModules, promptModule, resolveModule } from '../lib/modules.mjs';
+import path from 'path';
+import { listAllModules, promptModule } from '../lib/modules.mjs';
+import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { server } from '../lib/server.mjs';
+import { libs } from '../lib/libs.mjs';
+import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
@@ -11,8 +15,8 @@ import { cli } from '../lib/cli.mjs';
 const meta = {
     name: 'edit',
     description:
-        'Edit a module in $EDITOR: start an attachable running opencode server (mini TUI); waits for the editor to close, then submits a review prompt to the server, and cleans up the server when the TUI closes',
-    usage: 'node index.js edit [module]',
+        'Edit a module in $EDITOR with opencode full TUI attached; on editor close a background review runs, then commit/diff/discard prompt',
+    usage: 'node index.js edit [module] [model]',
     options: []
 };
 
@@ -49,99 +53,75 @@ async function main(args = []) {
     let running = server.getRunning();
     let startedByEdit = false;
     if (!running) {
-        console.log('edit: no running opencode server; starting one in the background ...');
-        const info = await server.startHeadless({ port: server.port });
-        if (!info) {
-            console.error('edit: could not start a headless opencode server.');
-            console.error(
-                '       run `make open` (or `node index.js open`) to start one manually.'
-            );
-            return exit(1);
-        }
-        running = info;
-        startedByEdit = true;
+        console.error('edit: no running opencode server found.');
+        console.error('       start one first with `make open` (or `node index.js open`).');
+        console.error('       the mini TUI keeps the conversation open so edits stay in context.');
+        return exit(1);
     }
 
-    const { child: opencodeChild } = server.spawnMini({
+    let model = modelArg;
+    if (!model) {
+        const config = models.readConfig();
+        model = await models.prompt(models.list(config), config.model);
+    }
+
+    console.log(`edit: attaching to server ${running.url} port=${running.port}`);
+
+    // 1. Open the user's editor on the file (runs independently).
+    const editorChild = editor.editFile(target.path);
+
+    // 2. Start the full interactive TUI attached to the running server.
+    const { child: tuiChild } = server.startAttachableTUI({
         url: running.url,
         port: running.port
     });
 
-    let cleanedUp = false;
-    const cleanupServer = () => {
-        if (cleanedUp) return;
-        if (!startedByEdit) return;
-        cleanedUp = true;
-        try {
-            if (opencodeChild && !opencodeChild.killed) {
-                try {
-                    opencodeChild.kill('SIGTERM');
-                } catch {
-                    /* already gone */
-                }
-            }
-            server.stop(running.pid);
-            server.clearInfo();
-        } catch (err) {
-            console.error(`edit: cleanup error: ${err.message}`);
-        }
-    };
-    cli.onAbort(cleanupServer);
+    let finalStatus = 0;
 
-    console.log(`edit: attached to server ${running.url} port=${running.port}`);
-    console.log(
-        `Opening $EDITOR ${rel} (close editor to submit review prompt; close TUI to terminate the server)`
-    );
-
-    const editorChild = editor.editFile(target.abs);
-
-    const editorExited = new Promise((resolve) => {
-        editorChild.on('exit', () => resolve());
+    // 3. Monitor editor exit — when the user closes their editor, submit a
+    //    review prompt to the same session the TUI is displaying.
+    const editorExit = new Promise((resolve) => {
+        editorChild.on('exit', (code) => resolve(code ?? 0));
     });
-    const opencodeExited = new Promise((resolve) => {
-        if (opencodeChild) {
-            opencodeChild.on('exit', () => resolve());
+    const tuiExit = new Promise((resolve) => {
+        if (tuiChild) {
+            tuiChild.on('exit', (code) => resolve(code ?? 0));
         } else {
             resolve();
         }
     });
 
-    console.log('edit: waiting for $EDITOR to close ...');
-    await editorExited;
+    const first = await Promise.race([
+        editorExit.then((code) => ({ kind: 'editor', code })),
+        tuiExit.then((code) => ({ kind: 'tui', code }))
+    ]);
 
-    console.log(`edit: $EDITOR closed; submitting review prompt for ${rel} to the server ...`);
-    try {
-        server.submitInstruction({
+    if (first.kind === 'editor') {
+        if (first.code !== 0) finalStatus = first.code;
+
+        // 4. Editor closed: submit a review prompt to the foreground TUI session.
+        console.log(`edit: editor closed; submitting review prompt to opencode session ...`);
+        const review = server.submitPromptToForegroundTUI({
             url: running.url,
             port: running.port,
-            prompt: `Reopen the file ${rel} and review the changes.`,
-            file: rel
+            prompt: `User finished editing ${rel}; review the changes and notes, implement any follow-up fixes.`,
+            file: rel,
+            model
         });
-    } catch (err) {
-        console.error(`edit: failed to submit review prompt: ${err.message}`);
-    }
+        if (review.status !== 0) finalStatus = review.status;
+        console.log(`edit: review prompt delivered.`);
 
-    console.log('edit: waiting for opencode TUI to close ...');
-    await opencodeExited;
-
-    if (startedByEdit) {
-        console.log('edit: TUI closed; cleaning up server ...');
-        cleanupServer();
-        console.log('--- connection closed; server terminated ---');
+        // 5. Wait for the full TUI to exit (user closes it).
+        console.log('edit: waiting for opencode TUI to exit (close it to continue).');
+        const tuiCode = await tuiExit;
+        if (tuiCode !== 0) finalStatus = tuiCode;
     } else {
-        console.log('edit: TUI closed; pre-existing server left running.');
+        // TUI closed before editor — no review to submit.
+        finalStatus = first.code;
+        console.log('opencode TUI closed before editor; skipping review.');
     }
 
-    if (git.statusPorcelain([rel]).length === 0) {
-        console.log(`no changes to ${rel}.`);
-        return exit(0);
-    }
-
-    const diff = git.diffForPath(rel);
-    console.log(diff);
-    console.log('\n--- edited file ---');
-
-    return exit(0);
+    return exit(await git.commitFlow(rel));
 }
 
 export { main };

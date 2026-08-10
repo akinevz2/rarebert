@@ -7,7 +7,6 @@
     },
     "scripts": {
         "list": "node index.js",
-        "opencode": "node index.js opencode",
         "reload": "node index.js reload",
         "memo": "node index.js memo",
         "forgetMemo": "FORGET=true node index.js memo",
