@@ -48,14 +48,20 @@ rarebert/
     ide.mjs             #   opencode launch / graceful exit
     libs.mjs            #   module creation, peer-import discovery
     models.mjs          #   opencode.json model resolution
-    modules.mjs         #   module listing + autocomplete prompt
+    modules.mjs         #   module registry: Module(project, file) + autocomplete prompt
     languages.mjs       #   lib/supports/ template install/resolve
     template.mjs        #   per-language boilerplate rendering
     opencode.mjs        #   bundled binary resolution
     list.mjs            #   `node index.js` (default) listing
-    supports/           # per-language boilerplate templates (mjs/js/py .json)
+    supports/           # per-language template modules (mjs/js/py)
     {lang}/             # project-specific libs (per language, see below)
 ```
+
+A **module** is a file inside one of a project's constituent folders — `./`,
+`scripts/`, `lib/`, `lib/supports/`, or `src/`. `rarebert.discover()` returns
+these folders, and every module is constructed from `(project, file)` via
+`lib/modules.mjs`. See [docs/modules.md](docs/modules.md) for the full
+description and loading rules.
 
 ### Project-specific libraries: `lib/{lang}/`
 
