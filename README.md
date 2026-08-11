@@ -1,161 +1,235 @@
-# rarebert <3 opencode
+# Rumshell
 
-<img src="docs/assets/hero.svg" alt="rarebert &lt;3 opencode" width="100%" />
+Rust-based shell with Python-like syntax for declarative shell scripting and memo system integration.
 
-A self-modifying scripting environment for interactive, AI-driven
-development. Rarebert scaffolds modules, opens them in your editor side-by-side
-with [opencode], lets the model implement them, summarises the diff, and
-commits — then runs the result and remembers what happened.
+## Features
 
-> Built around two pieces: a small **Node.js runtime** (`index.js` + `lib/`)
-> that orchestrates `$EDITOR`, `git`, and `opencode`, and a **memo subsystem**
-> that threads observations between the model and your shell.
+- Python-like boolean operators: `and`, `or`, `not` for command chaining
+- `.rum` file format for declarative shell scripts
+- Memo system integration for command history and tracking
+- Cross-platform (Windows/Linux/macOS) - built with Rust
+- Bash syntax translation layer for easy migration
 
-## The loop
+## Quick Start
 
-<img src="docs/assets/flow.svg" alt="the rarebert loop" width="100%" />
+```bash
+# Build from source
+cargo build --release
 
-```sh
-make add       # scaffold a module, git add, $EDITOR + opencode implement
-make edit      # pick a module, $EDITOR + opencode side-by-side, then commit
-make commit    # opencode summarises the diff, edit the message, git commit
-make run       # run a module from scripts/ or src/ (python3)
-make check     # node --check every module, memo on syntax error
+# Run a .rum file
+./target/release/rumshell run test.rum
+
+# Use with launcher from npm
+rumshell run test.rum
 ```
 
-Each turn ends in a commit, so the working tree is always clean before the next
-cycle. Memos from `check` (and any other script) surface on stderr the next
-time the model is invoked, so failures teach the next attempt.
+## Installation
 
-## Repository layout
+### From Source
 
-<img src="docs/assets/layout.svg" alt="repository layout" width="100%" />
-
-```
-rarebert/
-  index.js              # dispatch by name: node index.js <script>
-  Makefile              # auto-generated index of `node index.js <name>` targets
-  opencode.json         # provider/model config (ollama, openai-compatible)
-  AGENTS.md             # instructions loaded by opencode sessions
-  scripts/              # CLI commands (add, edit, commit, run, check, memo, ...)
-  src/                  # python entrypoints (run via `make run`)
-  lib/                  # framework runtime (.mjs) — DO NOT put project code here
-    core.mjs            #   paths, discovery, metadata
-    memo.mjs            #   cascading memo buffer
-    cli.mjs             #   enquirer wrappers, help, run(meta, main)
-    editor.mjs          #   $EDITOR spawning, .last-module marker
-    git.mjs             #   allow-listed git wrapper
-    ide.mjs             #   opencode launch / graceful exit
-    libs.mjs            #   module creation, peer-import discovery
-    models.mjs          #   opencode.json model resolution
-    modules.mjs         #   module registry: Module(project, file) + autocomplete prompt
-    languages.mjs       #   lib/supports/ template install/resolve
-    template.mjs        #   per-language boilerplate rendering
-    opencode.mjs        #   bundled binary resolution
-    list.mjs            #   `node index.js` (default) listing
-    supports/           # per-language template modules (mjs/js/py)
-    {lang}/             # project-specific libs (per language, see below)
+```bash
+cargo build --release
 ```
 
-A **module** is a file inside one of a project's constituent folders — `./`,
-`scripts/`, `lib/`, `lib/supports/`, or `src/`. `rarebert.discover()` returns
-these folders, and every module is constructed from `(project, file)` via
-`lib/modules.mjs`. See [docs/modules.md](docs/modules.md) for the full
-description and loading rules.
+### Via npm (as part of rarebert)
 
-### Project-specific libraries: `lib/{lang}/`
-
-The `lib/` root holds the framework runtime (`.mjs` files imported by
-`scripts/`). Project-specific libraries — the actual code your modules call —
-live in language subdirectories:
-
-```
-lib/py/                 # python libraries, import via `from lib.py import X`
-  __init__.py
-  datasetloader.py
-  postagger.py
-lib/mjs/                # JS libraries, import via '../lib/mjs/X.mjs'
-  ...
-lib/{lang}/             # any installed language gets its own subdir
+```bash
+npm link
+rumshell run test.rum
 ```
 
-`make create` (python scaffolding) scans `lib/py/` for libraries and offers
-them as preamble imports; `make add` (JS scaffolding) wires peer imports from
-`lib/{lang}/` into the boilerplate. Install a new language with
-`make languages install <lang>`.
+## Basic Usage
 
-## Setup
+### Run a .rum script
 
-```sh
-git clone https://github.com/akinevz2/rarebert
-cd rarebert
-npm install        # pulls opencode-ai + enquirer
-make reload        # rebuild Makefile to match scripts/
-make install       # install rarebert to ~/.local/rarebert (user-controlled prefix)
+```bash
+rumshell run your-script.rum
 ```
 
-`make install` invokes `node index.js install`, which installs the package
-into `~/.local/rarebert` (override with `--prefix <dir>`) and symlinks
-`rarebert` into `<prefix>/bin`. Add that `bin/` to your `PATH` to use the CLI.
+### Execute inline commands
 
-Then point `opencode.json` at your model. The default expects an
-Ollama-compatible endpoint:
-
-```jsonc
-{
-    "model": "ollama/glm-5.2:cloud",
-    "provider": {
-        "ollama": {
-            "npm": "@ai-sdk/openai-compatible",
-            "options": { "baseURL": "http://localhost:11434/v1" },
-            "models": { "glm-5.2:cloud": { "name": "GLM 5.2 Cloud" } }
-        }
-    }
-}
+```bash
+rumshell --command "echo 'Hello World'"
 ```
 
-## Day-to-day
+### Boolean Logic
 
-```sh
-make add           # choose language + name → scaffold → $EDITOR → opencode implements
-make implement     # rerun opencode on the module named in .last-module
-make edit          # pick any module → $EDITOR + opencode → commit
-make diff          # working-tree or staged diff in $PAGER
-make commit        # opencode summary → edit message → git commit
-make memo          # inject a remember() line into a module's main()
-make undo          # remove the last-added module + clear .last-module
-make reload        # regenerate Makefile after adding/removing scripts
+```rum
+# Sequential execution - continues if previous succeeds
+command "echo Step 1" and \
+command "Step 1 passed" or \
+command "Step 1 failed"
+
+# Conditional execution - stops if previous succeeds
+command "echo Important" or \
+echo "This won't run"  # because 'Important' succeeded
+
+# Negation
+command "Check status" and not command "Should not run"
+
+# Variable assignment
+name="World" and \
+echo "Hello $name"
+
+# Line continuation
+echo "Line 1" and \
+echo "Line 2" \
+echo "Line 3"
 ```
 
-### Memos
+## .rum File Examples
 
-`lib/memo.mjs` persists one-line observations as JSON sidecars
-(`<modulepath>.`) and prepends them to a cascading buffer on the next run:
+### Simple script
 
-- `remember(name, content)` — append a memo
-- `recallImports(import.meta.url)` — pull memos from a caller's imports
-- `flush()` — on exit/SIGINT, print the buffer to stderr (the model sees it)
-
-`make check` writes memos on syntax failures; `make memo` injects
-`remember()` lines into a module's `main()` so they fire on every run.
-
-## Article mode
-
-`make article` manages a separate academic report repo under `report/`
-(cloned from the `report-template` remote on first use). It builds the PDF,
-opens a section in `$EDITOR` + opencode, commits the section, and rebuilds —
-keeping the host rarebert repo clean between edits.
-
-## Code style
-
-Formatting is enforced by [Prettier] with the project config in
-`.prettierrc.json` (4-space indent, single quotes, 100-col width, LF endings;
-SVGs are parsed as HTML so they're left untouched).
-
-```sh
-npm run format         # prettier --write lib/ scripts/ index.js *.json *.md
-npm run format:check   # CI gate
+```rum
+command "echo 'Hello from rumshell!'"
 ```
 
-[opencode]: https://opencode.ai
-[prettier]: https://prettier.io
+### Complex script with logic
+
+```rum
+command "echo 'Starting complex script'" and \
+command "Step 1: Checking environment" or \
+command "Environment check failed" and \
+command "Step 2: Running setup" and \
+not command "Setup interrupted"
+
+command "Final step: Summary"
+```
+
+### Environment check
+
+```rum
+echo "Current directory: $(pwd)"
+
+name="My Project" and \
+echo "Project name: $name"
+
+count=5 and \
+echo "Count: $count" and \
+echo "Count + 1: $((count + 1))"
+```
+
+## Memo System
+
+Rumshell integrates with the rarebert memo system for command tracking:
+
+```bash
+# View memo list
+rumshell memo-list
+
+# Recall memo for module
+rumshell recall <module-name>
+
+# Add memo manually
+rumshell add <module-name> <content>
+
+# Delete memo
+rumshell delete <module-name>
+```
+
+## Translation Layer
+
+Rumshell includes a translation layer that normalizes bash syntax:
+
+- Converts `&&`, `||` to `and`, `or`
+- Handles backslash line continuations
+- Supports bash-style variable assignment
+- Provides on-the-fly bash to rum conversion
+
+## Why .rum Files?
+
+File execution (`run file.rum`) avoids PowerShell's string escaping issues:
+
+- Clean string handling
+- Proper line continuation
+- Consistent variable expansion
+- Complex chain execution
+- Better error handling
+
+### Comparison: Inline vs File
+
+```bash
+# Inline (PowerShell escapes complex strings differently)
+rumshell --command "echo 'Line 1' and echo 'Line 2' or echo 'Line 3'"
+
+# File (clean, no escaping issues)
+# save as test.rum:
+echo "Line 1" and \
+echo "Line 2" or \
+echo "Line 3"
+
+# then run:
+rumshell run test.rum
+```
+
+## Testing
+
+Create a test script to verify installation:
+
+```bash
+cat > test.rum <<EOF
+# Test script
+echo "Hello from rumshell! This is a basic command."
+echo "Current directory: $(pwd)"
+
+echo "Step 1: Checking environment" and \
+echo "Environment check passed" or \
+echo "Environment check failed"
+
+name="World" and \
+echo "Hello $name"
+EOF
+
+rumshell run test.rum
+```
+
+## Project Structure
+
+```
+rumshell/
+├── Cargo.toml
+├── src/
+│   ├── main.rs          # CLI entry point
+│   ├── executor.rs      # Command execution
+│   ├── parser.rs        # Syntax parsing
+│   ├── memo.rs          # Memo system integration
+│   └── static_translate.rs  # Bash translation
+├── examples/
+│   ├── simple.rum       # Basic example
+│   └── complex.rum      # Complex logic example
+├── test.rum             # Comprehensive test script
+└── INSTALLATION.md      # Detailed installation guide
+```
+
+## Development
+
+```bash
+# Build
+cargo build --release
+
+# Run tests
+cargo test
+
+# Check formatting
+cargo fmt
+```
+
+## CLI Commands
+
+- `run <file>` - Execute .rum file
+- `--command <string>` - Execute inline command
+- `memo-list` - Show memo system list
+- `recall <module>` - Recall memo for module
+- `add <module> <content>` - Add memo manually
+- `delete <module>` - Delete memo
+
+## Environment Variables
+
+- `RUMSHELL_BIN` - Path to rumshell binary (for launcher)
+- `CARGO_HOME` - Rust package registry directory
+- `CARGO_TARGET_DIR` - Build artifacts directory
+
+## License
+
+MIT
