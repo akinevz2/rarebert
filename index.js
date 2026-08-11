@@ -9,7 +9,6 @@ import { cli } from './lib/cli.mjs';
 import { Module } from './lib/modules.mjs';
 
 const SKIP_ONBOARD = new Set([
-    'backend',
     'onboard',
     'reload',
     'help',

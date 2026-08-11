@@ -1,10 +1,8 @@
 #!/usr/bin/env node
-import { cli } from '../lib/cli.mjs';
-import * as backend from '../lib/backend.mjs';
+import { Module } from '../lib/modules.mjs';
 import * as languages from '../lib/languages.mjs';
 import * as memo from '../lib/memo.mjs';
-import * as modules from '../lib/modules.mjs';
-import * as projects from '../lib/projects.mjs';
+import { home as projects } from '../lib/projects.mjs';
 
 const meta = {
     name: 'refactor',
@@ -351,23 +349,23 @@ function formatReport(damageReport, format) {
 
 // ─── Main ─────────────────────────────────────────────────────
 
-async function main(args = []) {
-    const sub = args[0] || '';
-    const opts = cli.parse(args.slice(1), meta.options); // TODO: verify cli.parse API
+async function main(opts, positional) {
+    const sub = positional[0] || '';
 
-    const entryFile = opts.entry || (await projects.getRootModule()); // TODO: verify API
+    const entryFile = opts.entry || projects.scriptsDir;
     const snapshotPath = opts.snapshot || '.refactor-snapshot.json';
     const format = opts.format || 'json';
 
     switch (sub) {
-        case 'snapshot':
+        case 'snapshot': {
             const snap = await saveSnapshot(entryFile, snapshotPath);
             console.log(
                 `Snapshot saved: ${snapshotPath} (${Object.keys(snap.registry).length} files resolved)`
             );
             break;
+        }
 
-        case 'damage':
+        case 'damage': {
             const report = await detectDamage(entryFile, snapshotPath);
             if (report.damage.length === 0) {
                 console.log('No damage detected — all bindings still resolve.');
@@ -375,6 +373,7 @@ async function main(args = []) {
                 console.log(formatReport(report, format));
             }
             break;
+        }
 
         case 'select': {
             if (!opts.select || !opts.from) {
@@ -394,7 +393,7 @@ async function main(args = []) {
             break;
         }
 
-        case 'resolve':
+        case 'resolve': {
             const registry = await resolveBindings(entryFile);
             if (opts.verbose) {
                 console.log(JSON.stringify(registry, null, 2));
@@ -413,6 +412,7 @@ async function main(args = []) {
                 );
             }
             break;
+        }
 
         default:
             console.log(`Usage: ${meta.usage}\n`);
@@ -428,10 +428,8 @@ async function main(args = []) {
 }
 
 export { main };
-export default {
-    name: 'refactor',
-    description: meta.description,
-    usage: meta.usage,
-    options: meta.options,
-    main: cli.run(meta, main)
-};
+
+const module = new Module('refactor.mjs', main, meta);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);

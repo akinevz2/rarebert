@@ -7,6 +7,7 @@ import { spawnSync } from 'child_process';
 import { home } from '../lib/projects.mjs';
 import { Module } from '../lib/modules.mjs';
 import { cli } from '../lib/cli.mjs';
+import { backend } from '../lib/backend.mjs';
 
 const DEFAULT_PREFIX = path.join(os.homedir(), '.local', 'rarebert');
 const DEFAULT_BIN_DIR = path.join(os.homedir(), '.local', 'bin');
@@ -18,7 +19,10 @@ const meta = {
     usage: 'node index.js install [--prefix <dir>] [--bin-dir <dir>] [--force]',
     options: [
         { flag: '--prefix <dir>', description: 'npm prefix to install into' },
-        { flag: '--bin-dir <dir>', description: 'directory for the rarebert symlink (default: ~/.local/bin)' },
+        {
+            flag: '--bin-dir <dir>',
+            description: 'directory for the rarebert symlink (default: ~/.local/bin)'
+        },
         { flag: '--force', description: 'overwrite an existing prefix directory' }
     ]
 };
@@ -72,6 +76,13 @@ async function main(opts, positional) {
     } else {
         console.log(`\nAdd "${binDir}" to your PATH to use 'rarebert'.`);
     }
+
+    console.log('\n=== onboarding ===');
+    const onboardOk = await backend.ensureConfig();
+    if (!onboardOk) {
+        console.log('Run `make onboard` to complete configuration later.');
+    }
+
     cli.ok(`Done. Installed to ${prefix}`);
 }
 
