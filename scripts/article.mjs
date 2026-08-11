@@ -22,7 +22,7 @@ const meta = {
 
 const { Select, Input, Confirm } = Enquirer;
 
-const REPORT_REMOTE = 'https://github.com/akinevz2/report-template.git';
+const REPORT_REMOTE = 'https://github.com/akinevz2/academic-report.git';
 const REPORT_DIR = path.join(rarebert.root, 'report');
 const SRC_DIR = path.join(REPORT_DIR, 'src');
 const TOC_FILENAME = 'TOC.md';
