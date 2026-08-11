@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 
-import fs from 'fs';
 import path from 'path';
-import { rarebert } from './lib/projects.mjs';
+import { rarebert, home } from './lib/projects.mjs';
 import { list } from './lib/list.mjs';
 import { memo } from './lib/memo.mjs';
 import { backend } from './lib/backend.mjs';
 import { cli } from './lib/cli.mjs';
-
-cli.installSignalHandlers();
+import { Module } from './lib/modules.mjs';
 
 const SKIP_ONBOARD = new Set([
     'backend',
@@ -27,8 +25,6 @@ const SKIP_ONBOARD = new Set([
 
 async function maybeOnboard(cmd) {
     if (cmd && SKIP_ONBOARD.has(cmd)) return;
-    // Also skip onboarding when the command is a path/alias for one of
-    // the skip-listed modules (e.g. "scripts/backend.mjs" -> "backend").
     try {
         const normalized = rarebert.normalizeModuleName(path.basename(cmd, path.extname(cmd)));
         if (SKIP_ONBOARD.has(normalized)) return;
@@ -41,28 +37,26 @@ async function maybeOnboard(cmd) {
 /**
  * Resolve a scripts/ module by name or path, import it, and run it.
  *
- * This is the sole purpose of index.js — it's an optional dispatcher.
- * Each scripts/*.mjs module is directly runnable via `node scripts/<name>.mjs`
- * because it exports a Module instance with a .run(args) method.
- *
- * Both the new Module-based exports and legacy `main(args)` exports are
- * supported.
+ * This is the sole purpose of this dispatcher — it's an optional entry
+ * point.  Each scripts/*.mjs module is directly runnable via
+ * `node scripts/<name>.mjs` because it exports a Module instance with
+ * a .run(args) method.
  */
 async function runModule(ref, args = []) {
-    const scripts = rarebert.discoverModules();
+    const scripts = home.discoverModules();
 
     const isPathRef = ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
 
     let script;
     if (isPathRef) {
-        const rel = rarebert.relPath(path.resolve(rarebert.root, ref));
+        const rel = home.relPath(path.resolve(home.root, ref));
         script = scripts.find((s) => s.path === rel || s.path === ref);
-        if (!script && fs.existsSync(path.resolve(rarebert.root, ref))) {
+        if (!script && path.resolve(home.root, ref)) {
             script = { name: path.basename(ref, path.extname(ref)), path: rel };
         }
     } else {
-        const name = rarebert.normalizeModuleName(ref);
-        script = scripts.find((s) => rarebert.normalizeModuleName(s.name) === name);
+        const name = home.normalizeModuleName(ref);
+        script = scripts.find((s) => home.normalizeModuleName(s.name) === name);
     }
 
     if (!script) {
@@ -73,15 +67,13 @@ async function runModule(ref, args = []) {
     memo.loadForRun(script.path, script.name);
 
     try {
-        const mod = await import('file://' + rarebert.absPath(script.path));
+        const mod = await import('file://' + home.absPath(script.path));
 
-        // New system: default export is a Module instance with .run(args)
         if (mod.default && typeof mod.default.run === 'function') {
             await mod.default.run(args);
             return;
         }
 
-        // Legacy: default.main or main is a function
         const main = mod.default?.main ?? mod.main;
         if (typeof main === 'function') {
             await main(args);
@@ -92,36 +84,11 @@ async function runModule(ref, args = []) {
     }
 }
 
-async function helpVerbose() {
-    const scripts = rarebert.discoverModules();
-
-    for (const script of scripts) {
-        if (script !== scripts[0]) console.log();
-        try {
-            const mod = await import('file://' + rarebert.absPath(script.path));
-            // New system
-            if (mod.default && typeof mod.default.run === 'function') {
-                await mod.default.run(['--help']);
-            } else {
-                const main = mod.default?.main ?? mod.main;
-                if (typeof main === 'function') {
-                    await main(['--help']);
-                } else {
-                    const meta = mod.default || {};
-                    console.log('  ' + (meta.description || '(no description)'));
-                }
-            }
-        } catch (err) {
-            console.error('  (failed:', err.message, ')');
-        }
-    }
-}
-
 const HELP_COMMANDS = new Set(['--help', '-h', 'help']);
 
-async function main(argv) {
-    const cmd = argv[2];
-    const rest = argv.slice(3);
+async function main(opts, positional) {
+    const cmd = positional[0];
+    const rest = positional.slice(1);
 
     if (!cmd || HELP_COMMANDS.has(cmd)) {
         return list.listModules([cmd, ...rest].filter(Boolean));
@@ -132,4 +99,20 @@ async function main(argv) {
     await runModule(cmd, rest);
 }
 
-main(process.argv);
+const meta = {
+    name: 'rarebert',
+    description: 'Rarebert dispatcher: resolve a module by name/path and run it',
+    usage: 'node index.js [module] [args...]',
+    skipHelpIntercept: true,
+    allowUnknownOption: true,
+    options: []
+};
+
+const module = new Module('index.js', main, meta);
+
+cli.installSignalHandlers();
+
+module.supportsDirectRunning(import.meta.url);
+
+export { main };
+export default module;

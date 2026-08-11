@@ -2,7 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { rarebert } from '../lib/projects.mjs';
+import { home } from '../lib/projects.mjs';
 import { editor } from '../lib/editor.mjs';
 import { Module } from '../lib/modules.mjs';
 
@@ -50,13 +50,13 @@ async function main(opts, positional) {
         editor.clearLastModule();
     }
 
-    const scripts = rarebert.discoverModules();
+    const scripts = home.discoverModules();
     console.log(
-        `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => path.relative(rarebert.root, s.path)).join(', ') || '(none)'}`
+        `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => path.relative(home.root, s.path)).join(', ') || '(none)'}`
     );
 
-    const makefilePath = path.join(rarebert.root, 'Makefile');
-    const rel = path.relative(rarebert.root, makefilePath);
+    const makefilePath = path.join(home.root, 'Makefile');
+    const rel = path.relative(home.root, makefilePath);
     const names = scripts.map((s) => s.name);
 
     const phony = [...names, ...Object.keys(EXTRA_TARGETS).filter((n) => !names.includes(n))];

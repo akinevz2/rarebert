@@ -71,9 +71,7 @@ async function main(opts, positional) {
 
     // Snapshot git status before the opencode TUI so we can detect any
     // files it modifies while the developer is in the review session.
-    const before = new Set(
-        git.statusPorcelain().map((row) => row.path)
-    );
+    const before = new Set(git.statusPorcelain().map((row) => row.path));
 
     // Start a full opencode TUI for the review session.
     const model = modelArg ? await models.resolve(modelArg) : await models.resolve();
@@ -89,9 +87,7 @@ async function main(opts, positional) {
     // After opencode exits, compute which files changed during the TUI
     // session and offer to re-launch the editor on them for review.
     const after = git.statusPorcelain();
-    const touched = after
-        .filter((row) => !before.has(row.path))
-        .map((row) => row.path);
+    const touched = after.filter((row) => !before.has(row.path)).map((row) => row.path);
 
     let reviewFiles = [];
     if (touched.length === 1) {

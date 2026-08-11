@@ -2,10 +2,8 @@
 
 import { spawnSync } from 'child_process';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { rarebert } from '../lib/projects.mjs';
-import { listAllModules, Module } from '../lib/modules.mjs';
-import { libs } from '../lib/libs.mjs';
+import { rarebert, home } from '../lib/projects.mjs';
+import { Module } from '../lib/modules.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
 import { exit } from '../lib/core.mjs';
@@ -13,7 +11,7 @@ import { exit } from '../lib/core.mjs';
 const meta = {
     name: 'status',
     description:
-        'Walk through git status, diff, branch/remote info, project discovery, and launch edit — interactive staged review',
+        'Show project folders and modules, then git status/diff/branch/remote, and optionally launch edit — interactive staged review',
     usage: 'node index.js status [--debug]',
     options: [
         {
@@ -58,32 +56,16 @@ async function stageBranchRemote() {
 }
 
 async function stageProjectDiscovery() {
-    console.log('\n=== project discovery ===\n');
+    console.log('\n=== project folders ===\n');
 
     const folders = rarebert.discover();
+    console.log(`${'key'.padEnd(12)} ${'path'.padEnd(16)} modules`);
     for (const f of folders) {
-        console.log(f.key.padEnd(10), f.rel.padEnd(14), f.exts.join(','));
-    }
-
-    console.log('\n--- getters ---');
-    console.log('scriptsDir ', rarebert.scriptsDir);
-    console.log('libDir     ', rarebert.libDir);
-    console.log('srcDir     ', rarebert.srcDir);
-    console.log('supportsDir', rarebert.supportsDir);
-
-    console.log('\n--- projectByKey ---');
-    for (const key of ['lib', 'src', 'supports', 'unknown']) {
-        const proj = rarebert.projectByKey(key);
-        console.log(`${key}:`, proj?.rel ?? null);
-    }
-
-    console.log('\n--- discoverModules ---');
-    for (const folder of folders) {
-        const mods = rarebert.discoverModules(folder.dir, folder.exts);
-        if (mods.length > 0) {
-            console.log(
-                `${folder.key}: ${mods.length} module(s) — ${mods.map((m) => m.path).join(', ')}`
-            );
+        const mods = rarebert.discoverModules(f.dir, f.exts);
+        const modCount = mods.length > 0 ? `(${mods.length} module${mods.length === 1 ? '' : 's'})` : '(empty)';
+        console.log(`${f.key.padEnd(12)} ${f.rel.padEnd(16)} ${modCount}`);
+        for (const m of mods) {
+            console.log(`  ${m.path}`);
         }
     }
 
@@ -104,7 +86,7 @@ async function stageLaunchEdit() {
 
     if (launch === 'exit') return STAGE_EXIT;
 
-    const editScript = path.join(rarebert.root, 'scripts', 'edit.mjs');
+    const editScript = path.join(home.root, 'scripts', 'edit.mjs');
     console.dir({ editScript });
     const result = spawnSync(process.execPath, [editScript], {
         stdio: 'inherit',
@@ -130,31 +112,26 @@ async function promptContinue() {
 // ---------------------------------------------------------------------------
 
 function printDebugListing() {
-    console.log('=== discover() ===');
-    for (const f of rarebert.discover())
-        console.log(f.key.padEnd(10), f.rel.padEnd(14), f.exts.join(','));
+    const folders = rarebert.discover();
+    console.log(`${'key'.padEnd(12)} ${'path'.padEnd(16)} modules`);
+    for (const f of folders) {
+        const mods = rarebert.discoverModules(f.dir, f.exts);
+        const modCount = mods.length > 0 ? `(${mods.length} module${mods.length === 1 ? '' : 's'})` : '(empty)';
+        console.log(`${f.key.padEnd(12)} ${f.rel.padEnd(16)} ${modCount}`);
+        for (const m of mods) {
+            console.log(`  ${m.path}`);
+        }
+    }
 
-    console.log('\n=== getters ===');
-    console.log('scriptsDir ', rarebert.scriptsDir);
-    console.log('libDir     ', rarebert.libDir);
-    console.log('srcDir     ', rarebert.srcDir);
-    console.log('supportsDir', rarebert.supportsDir);
+    console.log('\n=== git status ===');
+    console.log(git.statusSummary() || '(clean)');
 
-    console.log('\n=== projectByKey ===');
-    console.log('lib:', rarebert.projectByKey('lib')?.rel);
-    console.log('src:', rarebert.projectByKey('src')?.rel);
-    console.log('supports:', rarebert.projectByKey('supports')?.rel);
-    console.log('unknown:', rarebert.projectByKey('unknown'));
-
-    console.log('\n=== discoverModules ===');
-    const srcProj = rarebert.projectByKey('src');
-    console.log('src modules:', rarebert.discoverModules(srcProj.dir, srcProj.exts));
-
-    console.log('\n=== libs.dirForDirectory ===');
-    console.log('lib:', libs.dirForDirectory('lib'));
-    console.log('src:', libs.dirForDirectory('src'));
-    console.log('scripts:', libs.dirForDirectory('scripts'));
-    console.log('supports:', libs.dirForDirectory('supports'));
+    const { branch, upstream, aheadBehind } = git.branchInfo();
+    console.log('\n=== branch & remote ===');
+    console.log(`branch:       ${branch}`);
+    console.log(`upstream:     ${upstream}`);
+    console.log(`ahead/behind: ${aheadBehind}`);
+    console.log(git.remoteInfo());
 }
 
 // ---------------------------------------------------------------------------
@@ -168,10 +145,10 @@ async function main(opts, positional) {
     }
 
     const stages = [
+        stageProjectDiscovery,
         stageGitStatus,
         stageGitDiff,
         stageBranchRemote,
-        stageProjectDiscovery,
         stageLaunchEdit
     ];
 
