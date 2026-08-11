@@ -3,7 +3,8 @@
     "version": "1.0.0",
     "type": "module",
     "bin": {
-        "rarebert": "./index.js"
+        "rarebert": "./index.js",
+        "rumshell": "./launcher.js"
     },
     "scripts": {
         "list": "node index.js",
