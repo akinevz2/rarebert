@@ -2,15 +2,14 @@
 
 import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
+import { ide } from '../lib/ide.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
-import { opencode } from '../lib/opencode.mjs';
 import { languages } from '../lib/languages.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 import { Module } from '../lib/modules.mjs';
@@ -233,11 +232,11 @@ async function main(opts, positional) {
         console.error('add: git add -A failed; continuing');
     }
 
-    const editorChild = editor.editFile(modulePath);
-    const editorExit = await new Promise((resolve) => {
-        editorChild.on('exit', (code) => resolve(code ?? 0));
-    });
-    if (editorExit !== 0) return exit(editorExit);
+    const editorChild = ide.spawnEditor(modulePath);
+    if (editorChild) {
+        const editorExit = await ide.awaitChild(editorChild);
+        if (editorExit !== 0) return exit(editorExit);
+    }
 
     const modelArg = positional[0];
     const model = await models.resolve(modelArg);
@@ -252,19 +251,12 @@ async function main(opts, positional) {
         .filter((s) => s && s.trim())
         .join('\n');
 
-    const ocArgs = ['run', instruction, '-m', model, '--auto'];
-    console.log(
-        `$ opencode run "<prompt: ${instruction.length} bytes, 1 file>" -m ${model} --auto`
-    );
-    const result = spawnSync(opencode.resolve(), ocArgs, {
-        cwd: rarebert.root,
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'inherit']
+    const { status: runStatus, stdout: out } = ide.spawnHeadless(instruction, model, {
+        cwd: rarebert.root
     });
-    if (result.status !== 0) {
-        console.error(`add: opencode run exited with status ${result.status ?? 0}`);
+    if (runStatus !== 0) {
+        console.error(`add: opencode run exited with status ${runStatus}`);
     }
-    const out = (result.stdout ?? '').trim();
     if (out) console.log(out);
 
     console.log(

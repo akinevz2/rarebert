@@ -2,13 +2,12 @@
 
 import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'child_process';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { listAllModules, Module } from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
 import { models } from '../lib/models.mjs';
-import { opencode } from '../lib/opencode.mjs';
+import { ide } from '../lib/ide.mjs';
 import { languages } from '../lib/languages.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 
@@ -28,17 +27,11 @@ const meta = {
  * Returns the trimmed stdout string.
  */
 function runOpencodeHeadless(prompt, model) {
-    const args = ['run', prompt, '-m', model, '--auto'];
-    console.log(`$ opencode run "<prompt: ${prompt.length} bytes>" -m ${model} --auto`);
-    const result = spawnSync(opencode.resolve(), args, {
-        cwd: rarebert.root,
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'inherit']
-    });
-    if (result.status !== 0) {
-        console.error(`analyze: opencode run exited with status ${result.status ?? 0}`);
+    const { status, stdout } = ide.spawnHeadless(prompt, model, { cwd: rarebert.root });
+    if (status !== 0) {
+        console.error(`analyze: opencode run exited with status ${status}`);
     }
-    return (result.stdout ?? '').trim();
+    return stdout;
 }
 
 /**

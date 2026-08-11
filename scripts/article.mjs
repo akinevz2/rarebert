@@ -363,30 +363,36 @@ function runOpencode(model) {
 }
 
 async function editSection(model, sectionPath, sectionRel) {
-    const ideChild = runOpencode(model);
     console.log(`Opening $EDITOR ${libs.relPath(sectionPath)}`);
-    const editorChild = editor.editFile(sectionPath);
+    const editorChild = ide.spawnEditor(sectionPath);
 
     let finalStatus = 0;
 
-    const editorExit = new Promise((resolve) => {
-        editorChild.on('exit', (code) => resolve(code ?? 0));
-    });
-    const ideExit = new Promise((resolve) => {
-        ideChild.on('exit', (code) => resolve(code ?? 0));
-    });
+    if (ide.isTerminalEditor() && editorChild) {
+        // Terminal editor needs the TTY exclusively — can't race the mini
+        // TUI. Await the editor, then run opencode mini alone.
+        const editorCode = await ide.awaitChild(editorChild);
+        if (editorCode !== 0) finalStatus = editorCode;
+        const ideChild = runOpencode(model);
+        const ideCode = await ide.awaitChild(ideChild);
+        if (ideCode !== 0) finalStatus = ideCode;
+        if (finalStatus === 0) rebuildAndOpen();
+        return finalStatus;
+    }
 
-    const first = await Promise.race([
-        editorExit.then((code) => ({ kind: 'editor', code })),
-        ideExit.then((code) => ({ kind: 'ide', code }))
-    ]);
+    // Graphical editor (or unset): race against the opencode mini. The
+    // editor's stdio is ignored so it can't clobber the mini's TTY.
+    const ideChild = runOpencode(model);
+    const first = await ide.raceChildren([editorChild, ideChild]);
 
-    if (first.kind === 'editor') {
+    if (first.index === 0) {
+        // editor exited first — stop the opencode mini and proceed
         if (first.code !== 0) finalStatus = first.code;
-        await ide.exit(ideChild);
-        const ideCode = await ideExit;
+        await ide.stopChild(ideChild);
+        const ideCode = await ide.awaitChild(ideChild);
         if (ideCode !== 0) finalStatus = ideCode;
     } else {
+        // opencode mini exited first
         finalStatus = first.code;
     }
 

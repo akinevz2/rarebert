@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import path from 'path';
 import { listAllModules, promptModule, resolveModule, Module } from '../lib/modules.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
-import { server } from '../lib/server.mjs';
-import { libs } from '../lib/libs.mjs';
+import { ide } from '../lib/ide.mjs';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
@@ -50,38 +48,31 @@ async function main(opts, positional) {
 
     editor.writeLastModule(rel);
 
-    const launchEditor = (files) => {
-        const targets = files || [rel];
-        const child = editor.editFile(targets);
-        if (child && child.error) {
-            console.error(`edit: failed to launch $EDITOR: ${child.error.message}`);
-            return { error: true, code: 1 };
-        }
-        if (!child) return { error: false, code: 0 };
-        return new Promise((resolve) => {
-            child.on('exit', (code) => resolve({ error: false, code: code ?? 0 }));
-        });
-    };
-
-    // First pass: let the developer edit the module.
-    {
-        const result = launchEditor();
-        if (result.error || result.code !== 0) return exit(result.code);
+    // First pass: let the developer edit the module. spawnEditor picks
+    // the stdio strategy from the editor-type preference — graphical
+    // editors get stdio 'ignore' so they run alongside the opencode TUI
+    // below without TTY contention (their exit can't clobber the TUI's
+    // render). Terminal editors get stdio 'inherit' and must finish
+    // before the TUI takes the TTY, so we await them first.
+    const editorChild = ide.spawnEditor([rel]);
+    if (ide.isTerminalEditor() && editorChild) {
+        const editorCode = await ide.awaitChild(editorChild);
+        if (editorCode !== 0) return exit(editorCode);
     }
 
     // Snapshot git status before the opencode TUI so we can detect any
     // files it modifies while the developer is in the review session.
     const before = new Set(git.statusPorcelain().map((row) => row.path));
 
-    // Start a full opencode TUI for the review session.
+    // Start a full opencode TUI for the review session. For graphical
+    // editors the editor is still open in the background; for terminal
+    // editors it has already exited.
     const model = modelArg ? await models.resolve(modelArg) : await models.resolve();
-
-    const status = await server.startFullTUI({
+    const tui = ide.spawnTui(model, {
         cwd: rarebert.root,
-        model,
-        port: null,
-        prompt: null
+        prompt: `We're reviewing ${rel}`
     });
+    const status = tui.done ? await tui.done : tui.status;
     if (status !== 0) return exit(status);
 
     // After opencode exits, compute which files changed during the TUI
@@ -102,8 +93,8 @@ async function main(opts, positional) {
     }
 
     if (reviewFiles.length > 0) {
-        const result = launchEditor(reviewFiles);
-        if (result.error || result.code !== 0) return exit(result.code);
+        const reviewChild = ide.spawnEditor(reviewFiles);
+        if (reviewChild) await ide.awaitChild(reviewChild);
     }
 
     return exit(await git.commitFlow(rel));
@@ -112,5 +103,6 @@ async function main(opts, positional) {
 export { main };
 
 const module = new Module('edit.mjs', main, meta);
+
 export default module;
 module.supportsDirectRunning(import.meta.url);

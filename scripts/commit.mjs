@@ -12,6 +12,7 @@ import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
 import { memo } from '../lib/memo.mjs';
 import { editor } from '../lib/editor.mjs';
+import { ide } from '../lib/ide.mjs';
 import { opencode } from '../lib/opencode.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 
@@ -434,11 +435,8 @@ async function editSummaryInEditor(summary) {
     const templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
     fs.writeFileSync(templateFile, summary + '\n');
 
-    const editorChild = editor.editFile(templateFile);
-
-    const exitCode = await new Promise((resolve) => {
-        editorChild.on('exit', (code) => resolve(code ?? 0));
-    });
+    const editorChild = ide.spawnEditor(templateFile);
+    const exitCode = editorChild ? await ide.awaitChild(editorChild) : 0;
 
     // Editor exited with a nonzero status — treat as abort. Unstage
     // all changes so the user can cherry-pick files or rerun.

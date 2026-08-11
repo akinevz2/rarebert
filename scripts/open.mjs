@@ -2,10 +2,9 @@
 
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { server } from '../lib/server.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
-import { backend } from '../lib/backend.mjs';
+import { ide } from '../lib/ide.mjs';
 import { cli } from '../lib/cli.mjs';
 import { listAllModules, promptModule, Module } from '../lib/modules.mjs';
 
@@ -26,49 +25,29 @@ async function main(opts, positional) {
         const target = await promptModule(modules, moduleArg, 'Select a module to open');
         editor.writeLastModule(target.path);
 
-        const editorType = backend.getEditorType();
+        const editorChild = ide.spawnEditor(target.path);
 
-        if (editorType === 'terminal') {
-            // Terminal editors (nano, vim, ...) need the TTY exclusively,
-            // so we can't render the prompt after spawning them. Ask up
-            // front whether to launch opencode afterwards; then spawn the
-            // editor, await its exit, and launch the TUI (or skip) per the
-            // answer. A second confirmation after exit would be clobbered
-            // by the editor redrawing the TTY on close.
+        // Terminal editors need the TTY exclusively; we can't render the
+        // confirm after spawning them (they'd clobber it). Ask up front,
+        // await the editor's exit, then launch the TUI per the answer.
+        // Graphical editors run in parallel — their stdio is ignored by
+        // spawnEditor, so the TUI takes the TTY immediately.
+        if (ide.isTerminalEditor() && editorChild) {
             const launchAfter = await cli.confirm(
                 'Launch opencode after you close the editor?',
                 true
             );
-            const editorChild = editor.editFile(target.path);
-            if (editorChild) {
-                await new Promise((resolve) => {
-                    editorChild.on('exit', () => resolve());
-                    editorChild.on('error', () => resolve());
-                });
-            }
+            await ide.awaitChild(editorChild);
             if (!launchAfter) {
                 console.log('open: skipped TUI launch per user choice.');
                 return exit(0);
-            }
-        } else {
-            // Graphical editor (code, subl, ...) or unset preference: launch
-            // both in parallel. The editor runs in the background; the TUI
-            // takes the TTY immediately. The editor exiting is a non-event.
-            const editorChild = editor.editFile(target.path);
-            if (editorChild) {
-                editorChild.on('exit', () => {});
-                editorChild.on('error', () => {});
             }
         }
     }
 
     console.log('open: launching full TUI at project root');
-    const status = await server.startFullTUI({
-        cwd: rarebert.root,
-        model,
-        port: null,
-        prompt: null
-    });
+    const tui = ide.spawnTui(model, { cwd: rarebert.root });
+    const status = tui.done ? await tui.done : tui.status;
     return exit(status);
 }
 

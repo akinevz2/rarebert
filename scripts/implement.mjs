@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 import path from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import { models } from '../lib/models.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
 import { server } from '../lib/server.mjs';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { editor } from '../lib/editor.mjs';
-import { opencode } from '../lib/opencode.mjs';
+import { ide } from '../lib/ide.mjs';
 import { Module } from '../lib/modules.mjs';
 
 const meta = {
@@ -30,21 +30,12 @@ function runHeadless({ entries, context, model, instruction }) {
         .filter((s) => s && s.trim())
         .join('\n');
 
-    const args = ['run', prompt, '-m', model, '--auto'];
-    console.log(
-        `$ opencode run "<prompt: ${prompt.length} bytes, ${entries.length} file(s)>" -m ${model} --auto`
-    );
-    const result = spawnSync(opencode.resolve(), args, {
-        cwd: rarebert.root,
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'inherit']
-    });
-    if (result.status !== 0) {
-        console.error(`opencode run exited with status ${result.status ?? 0}`);
+    const { status, stdout: out } = ide.spawnHeadless(prompt, model, { cwd: rarebert.root });
+    if (status !== 0) {
+        console.error(`opencode run exited with status ${status}`);
     }
-    const out = (result.stdout ?? '').trim();
     if (out) console.log(out);
-    return exit(result.status ?? 0);
+    return exit(status);
 }
 
 async function runInteractive(fileArgs) {
@@ -119,17 +110,14 @@ async function runInteractive(fileArgs) {
 
 function runEditorThenBash(entries, moduleLabel) {
     return new Promise((resolve) => {
-        const envEditor = process.env.EDITOR || 'nano';
-        const [editor, ...maybeArgs] = envEditor.split(/\s+/).filter(Boolean);
-        const editorFlags = process.env.EDITOR_FLAGS
-            ? process.env.EDITOR_FLAGS.split(/\s+/).filter(Boolean)
-            : [];
-        const editorArgs = [...maybeArgs, ...editorFlags, ...entries.map((e) => e.abs)];
-
         console.log(
             `implement: please close the last edited file (${entries.map((e) => e.rel).join(', ')}) to continue`
         );
-        const editorChild = spawn(editor, editorArgs, { stdio: 'inherit' });
+        const editorChild = ide.spawnEditor(entries.map((e) => e.abs));
+        if (!editorChild) {
+            resolve();
+            return;
+        }
         editorChild.on('exit', () => {
             const bashChild = spawn(
                 process.env.SHELL || 'bash',
