@@ -1,7 +1,7 @@
 # Modules
 
-A **module** is a single file inside one of a project's **constituent
-folders**. The rarebert repository is one project, and it exposes five
+A **module** is a single file inside one of a project's **folders**.
+The rarebert repository is one project, and it exposes five
 constituent folders that modules live in:
 
 | project    | folder          | extensions    | contents                                  |
