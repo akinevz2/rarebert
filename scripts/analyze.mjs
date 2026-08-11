@@ -5,7 +5,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { listAllModules } from '../lib/modules.mjs';
+import { listAllModules, Module } from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
 import { models } from '../lib/models.mjs';
 import { opencode } from '../lib/opencode.mjs';
@@ -18,8 +18,8 @@ const meta = {
         'Analyze a module: record imports (foo::mod / foo<-mod / mod notation), segment the main() function into whitespace-delimited blocks via opencode, document each block, and memoize the documentation. Falls back to documenting public members when no main() exists.',
     usage: 'node index.js analyze <module> [--yes] [-v]',
     options: [
-        { flag: 'yes', label: '', description: 'memoize documentation without confirmation' },
-        { flag: 'v, verbose', label: '', description: 'show verbose output' }
+        { flag: '-v, --verbose', description: 'Verbose output' },
+        { flag: '-y, --yes', description: 'Skip confirmation prompts' }
     ]
 };
 
@@ -390,15 +390,15 @@ async function load(moduleRef, options = {}) {
     return { path: modulePath, relative: relPath, language: ext, segments, docs };
 }
 
-async function main(args = []) {
-    if (args.length === 0) {
+async function main(opts, positional) {
+    if (positional.length === 0) {
         console.error('Usage: node index.js analyze <module> [--yes] [-v]');
         return exit(1);
     }
 
-    const moduleArg = args.find((a) => !a.startsWith('-') && a);
-    const verbose = args.includes('-v') || args.includes('--verbose');
-    const yes = args.includes('--yes') || args.includes('-y');
+    const moduleArg = positional[0];
+    const verbose = !!opts.verbose;
+    const yes = !!opts.yes;
 
     if (!moduleArg) {
         console.error('Usage: node index.js analyze <module> [--yes] [-v]');
@@ -417,14 +417,6 @@ async function main(args = []) {
 
 export { load, main };
 
-export default {
-    name: 'analyze',
-    description:
-        'Analyze a module: record imports (foo::mod / foo<-mod / mod notation), segment the main() function into whitespace-delimited blocks via opencode, document each block, and memoize the documentation. Falls back to documenting public members when no main() exists.',
-    usage: 'node index.js analyze <module> [--yes] [-v]',
-    options: [
-        { flag: 'yes', label: '', description: 'memoize documentation without confirmation' },
-        { flag: 'v, verbose', label: '', description: 'show verbose output' }
-    ],
-    main: cli.run(meta, main)
-};
+const module = new Module('analyze.mjs', main, meta);
+export default module;
+module.supportsDirectRunning(import.meta.url);

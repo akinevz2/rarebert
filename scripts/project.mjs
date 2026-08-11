@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import Enquirer from 'enquirer';
+import { Module } from '../lib/modules.mjs';
 import { languages } from '../lib/languages.mjs';
 import { cli } from '../lib/cli.mjs';
 
@@ -8,7 +8,7 @@ const meta = {
     name: 'project',
     description: 'Choose or install a module language before scaffolding a destination file',
     usage: 'node index.js project [list | install <lang> | choose]',
-    options: [{ flag: 'force', label: '', description: 'overwrite an installed template' }]
+    options: [{ flag: '--force', description: 'overwrite an installed template' }]
 };
 
 function describeChoices() {
@@ -56,9 +56,9 @@ async function installNewLanguage() {
     return result.name;
 }
 
-async function install(args = []) {
-    const nameArg = args.find((a) => !a.startsWith('-') && a);
-    const force = args.includes('--force');
+async function install(opts, positional) {
+    const nameArg = positional[0];
+    const force = !!opts.force;
     if (!nameArg) cli.fail('Usage: node index.js project install <lang> [--force]');
 
     const name = nameArg.replace(/^\.+/, '').toLowerCase();
@@ -79,10 +79,10 @@ function showList() {
     for (const l of langs) console.log(`  - ${l}  (.${l})`);
 }
 
-async function main(args = []) {
-    const sub = args[0];
+async function main(opts, positional) {
+    const sub = positional[0];
     if (!sub || sub === 'list' || sub === '--list') return showList();
-    if (sub === 'install') return await install(args.slice(1));
+    if (sub === 'install') return await install(opts, positional.slice(1));
     if (sub === 'choose') {
         const lang = await chooseLanguage();
         console.log(lang);
@@ -93,8 +93,6 @@ async function main(args = []) {
 
 export { main };
 
-export default {
-    name: 'project',
-    description: meta.description,
-    main: cli.run(meta, main)
-};
+const module = new Module('project.mjs', main, meta);
+export default module;
+module.supportsDirectRunning(import.meta.url);

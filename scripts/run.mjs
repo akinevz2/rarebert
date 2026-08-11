@@ -5,7 +5,14 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { listAllModules } from '../lib/modules.mjs';
+import { listAllModules, Module } from '../lib/modules.mjs';
+
+const meta = {
+    name: 'run',
+    description: 'Run a module (defaults to src/main.py); forwards extra args',
+    usage: 'node index.js run <module> [args...]',
+    options: []
+};
 
 const SRC_DIR = path.join(rarebert.root, 'src');
 const DEFAULT_MODULE = path.join(SRC_DIR, 'main.py');
@@ -44,10 +51,9 @@ function findPyModule(name) {
     return candidates.find((p) => fs.existsSync(p));
 }
 
-async function main(args = []) {
-    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-    const moduleArg = nonFlag[0];
-    const rest = nonFlag.slice(1);
+async function main(opts, positional) {
+    const moduleArg = positional[0];
+    const rest = positional.slice(1);
 
     if (!moduleArg) {
         if (!fs.existsSync(DEFAULT_MODULE)) {
@@ -98,8 +104,7 @@ async function main(args = []) {
 
 export { main };
 
-export default {
-    name: 'run',
-    description: 'Run a module (defaults to src/main.py); forwards extra args',
-    main
-};
+const module = new Module('run.mjs', main, meta);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);

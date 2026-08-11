@@ -8,7 +8,8 @@ import {
     promptModule,
     resolveModule,
     resolveModuleSet,
-    promptModuleChoices
+    promptModuleChoices,
+    Module
 } from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
@@ -17,50 +18,15 @@ const META = {
     name: 'memo',
     description: 'Inspect and mutate memos stored alongside modules',
     usage: 'node index.js memo [files...|--all|--add <path> <memo>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
+    allowUnknownOption: true,
     options: [
-        { flag: '', label: '(no args)', description: 'TUI: select a module to add a memo to' },
-        { flag: 'all', label: '--all', description: 'Print all memos (flat, oldest-first)' },
         {
-            flag: 'files',
-            label: '<files/folders>',
-            description: 'Print memos only for modules within the given set'
+            flag: '--all',
+            description: 'Print all memos (flat, oldest-first); with files, ancestor-traversal'
         },
-        {
-            flag: 'files --all',
-            label: '<files/folders> --all',
-            description: 'Ancestor-traversal: print memos for the set and its ancestors'
-        },
-        {
-            flag: 'add',
-            label: '--add <path> <memo>',
-            description: 'Add a memo non-interactively; repeat --add for multiple'
-        },
-        {
-            flag: 'commit',
-            label: '--commit [--yes] [--fresh]',
-            description:
-                'Snapshot memos to git notes (TUI confirm; --yes skips; --fresh clears after)'
-        },
-        {
-            flag: 'log',
-            label: '--log [files...]',
-            description: 'Show memo snapshot history, optionally filtered to filenames'
-        },
-        {
-            flag: 'recall',
-            label: '--recall <ref> [files...]',
-            description: 'Restore memos for filenames from a git notes snapshot ref'
-        },
-        {
-            flag: 'drop',
-            label: '--drop <module> [indexes, 1-based]',
-            description: 'Remove selected memos for a module (interactive)'
-        },
-        {
-            flag: 'forget',
-            label: '--forget <module> [module ...]',
-            description: 'Remove all memos (sidecar) for one or more modules'
-        }
+        { flag: '--yes', description: 'Skip confirmation for --commit' },
+        { flag: '--fresh', description: 'Clear working sidecars after --commit' },
+        { flag: '--verbose', description: 'Verbose output' }
     ]
 };
 
@@ -525,13 +491,20 @@ function cmdForget(moduleArgs, modules) {
 // main()
 // ---------------------------------------------------------------------------
 
-async function main(args = []) {
-    const groups = groupArgs(args);
-    const allFlags = args.filter((a) => a.startsWith('--'));
-    const nonFlag = args.filter((a) => (!a.startsWith('-') || /^-?\d+$/.test(a)) && a);
+async function main(opts, positional) {
+    // `--add`, `--commit`, `--log`, `--recall`, `--drop`, and `--forget`
+    // are "action" subcommands: with `meta.allowUnknownOption` they pass
+    // through Commander into `positional` so groupArgs can preserve their
+    // argument grouping. The boolean toggles (--all/--yes/--fresh/--verbose)
+    // are declared options and arrive on `opts`.
+    const ACTION_FLAGS = new Set(['--add', '--commit', '--log', '--recall', '--drop', '--forget']);
+
+    const groups = groupArgs(positional);
+    const actionFlagsPresent = positional.filter((a) => ACTION_FLAGS.has(a));
+    const nonFlag = positional.filter((a) => (!a.startsWith('-') || /^-?\d+$/.test(a)) && a);
     const modules = listAllModules();
 
-    const has = (f) => allFlags.includes(f);
+    const has = (f) => actionFlagsPresent.includes(f);
 
     if (has('--add')) {
         await cmdAdd(groups, modules);
@@ -539,7 +512,7 @@ async function main(args = []) {
     }
 
     if (has('--commit')) {
-        await cmdCommit(has('--yes'), has('--fresh'));
+        await cmdCommit(opts.yes, opts.fresh);
         return;
     }
 
@@ -564,7 +537,7 @@ async function main(args = []) {
         return;
     }
 
-    if (has('--all')) {
+    if (opts.all) {
         if (nonFlag.length) {
             const resolvedSet = resolveModuleSet(nonFlag, modules);
             cmdPrintSet(resolvedSet, true);
@@ -585,7 +558,7 @@ async function main(args = []) {
 
 export { main };
 
-export default {
-    ...META,
-    main
-};
+const module = new Module('memo.mjs', main, META);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);

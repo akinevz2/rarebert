@@ -5,9 +5,10 @@ import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
 import { rarebert } from '../lib/projects.mjs';
+import { Module } from '../lib/modules.mjs';
 import { cli } from '../lib/cli.mjs';
 
-const DEFAULT_PREFIX = path.join(os.homedir(), '.local', 'rarebert');
+const DEFAULT_PREFIX = path.join(os.homedir(), '.local', 'share', 'rarebert');
 const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 const meta = {
@@ -15,19 +16,14 @@ const meta = {
     description: `Install rarebert to a user-controlled npm prefix (default: ${DEFAULT_PREFIX})`,
     usage: 'node index.js install [--prefix <dir>] [--force]',
     options: [
-        { flag: 'prefix', label: '<dir>', description: 'npm prefix to install into' },
-        { flag: 'force', label: '', description: 'overwrite an existing prefix directory' }
+        { flag: '--prefix <dir>', description: 'npm prefix to install into' },
+        { flag: '--force', description: 'overwrite an existing prefix directory' }
     ]
 };
 
-function resolvePrefix(args) {
-    const i = args.indexOf('--prefix');
-    if (i !== -1 && args[i + 1]) return path.resolve(args[i + 1]);
+function resolvePrefix(opts) {
+    if (opts.prefix) return path.resolve(opts.prefix);
     return DEFAULT_PREFIX;
-}
-
-function hasForce(args) {
-    return args.includes('--force');
 }
 
 function linkBinary(prefix) {
@@ -40,9 +36,9 @@ function linkBinary(prefix) {
     return linkPath;
 }
 
-async function main(args = []) {
-    const prefix = resolvePrefix(args);
-    const force = hasForce(args);
+async function main(opts, positional) {
+    const prefix = resolvePrefix(opts);
+    const force = !!opts.force;
 
     if (fs.existsSync(prefix) && !force && fs.readdirSync(prefix).length > 0) {
         const overwrite = await cli.confirm(`Prefix "${prefix}" is non-empty. Continue?`, false);
@@ -52,11 +48,10 @@ async function main(args = []) {
     fs.mkdirSync(prefix, { recursive: true });
     console.log(`install: prefix -> ${prefix}`);
 
-    const result = spawnSync(
-        NPM_BIN,
-        ['install', '--prefix', prefix, '--ignore-scripts'],
-        { cwd: rarebert.root, stdio: 'inherit' }
-    );
+    const result = spawnSync(NPM_BIN, ['install', '--prefix', prefix, '--ignore-scripts'], {
+        cwd: rarebert.root,
+        stdio: 'inherit'
+    });
 
     if (result.status !== 0) {
         console.error(`install: npm install exited with status ${result.status ?? 0}`);
@@ -71,8 +66,7 @@ async function main(args = []) {
 
 export { main, resolvePrefix, DEFAULT_PREFIX };
 
-export default {
-    name: 'install',
-    description: meta.description,
-    main: cli.run(meta, main)
-};
+const module = new Module('install.mjs', main, meta);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import Enquirer from 'enquirer';
+import { Module } from '../lib/modules.mjs';
 import { languages } from '../lib/languages.mjs';
 import { cli } from '../lib/cli.mjs';
 
@@ -8,7 +8,7 @@ const meta = {
     name: 'languages',
     description: 'Install or list supported module languages (templates under lib/supports/)',
     usage: 'node index.js languages [install <lang> [--force]]',
-    options: [{ flag: 'force', label: '', description: 'overwrite an existing template' }]
+    options: [{ flag: '--force', description: 'overwrite an existing template' }]
 };
 
 function showLanguages() {
@@ -23,9 +23,9 @@ function showLanguages() {
     }
 }
 
-async function install(args = []) {
-    const nameArg = args.find((a) => !a.startsWith('-') && a);
-    const force = args.includes('--force');
+async function install(opts, positional) {
+    const nameArg = positional[0];
+    const force = !!opts.force;
 
     let lang = nameArg;
     if (!lang) {
@@ -52,14 +52,14 @@ async function install(args = []) {
     cli.ok(`Done. New modules can now use .${result.name}`);
 }
 
-async function main(args = []) {
-    const sub = args[0];
+async function main(opts, positional) {
+    const sub = positional[0];
     if (!sub || sub === 'list' || sub === '--list') {
         showLanguages();
         return;
     }
     if (sub === 'install') {
-        await install(args.slice(1));
+        await install(opts, positional.slice(1));
         return;
     }
     cli.fail(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
@@ -67,8 +67,6 @@ async function main(args = []) {
 
 export { main, showLanguages };
 
-export default {
-    name: 'languages',
-    description: meta.description,
-    main: cli.run(meta, main)
-};
+const module = new Module('languages.mjs', main, meta);
+export default module;
+module.supportsDirectRunning(import.meta.url);

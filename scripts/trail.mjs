@@ -5,22 +5,25 @@ import Enquirer from 'enquirer';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
+import { Module } from '../lib/modules.mjs';
 
 const meta = {
     name: 'trail',
     description:
         'Walk the git history as a TrailLog: per-commit files, diffs, full messages, and memos tagged by module',
-    usage: 'node index.js trail [limit]',
-    options: [{ label: 'limit', description: 'max commits to walk from HEAD (default 20)' }]
+    usage: 'node index.js trail [--limit <n>]',
+    options: [
+        {
+            flag: '--limit <n>',
+            type: 'int',
+            description: 'max commits to walk from HEAD (default 20)',
+            default: 20
+        }
+    ]
 };
 
 function fullScreenLimit() {
     return Math.max(8, (process.stdout.rows || 24) - 4);
-}
-
-function parseLimit(args) {
-    const n = args.find((a) => /^\d+$/.test(a));
-    return n ? parseInt(n, 10) : 20;
 }
 
 function readCommits(limit) {
@@ -160,12 +163,13 @@ function formatMemo(view) {
     return [view.header, '---', view.body, '---', `mod: ${view.subscript}`].join('\n');
 }
 
-async function main(args = []) {
+async function main(opts, positional) {
     if (!cli.isInteractive()) {
         cli.nonInteractive('trail requires an interactive terminal.');
+        return;
     }
 
-    const limit = parseLimit(args);
+    const limit = opts.limit;
     const commits = readCommits(limit);
     if (commits.length === 0) {
         console.log('trail: no commits to display.');
@@ -205,8 +209,7 @@ async function main(args = []) {
 
 export { main };
 
-export default {
-    name: 'trail',
-    description: meta.description,
-    main: cli.run(meta, main)
-};
+const module = new Module('trail.mjs', main, meta);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);

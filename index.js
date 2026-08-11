@@ -3,7 +3,6 @@
 import fs from 'fs';
 import path from 'path';
 import { rarebert } from './lib/projects.mjs';
-import { ExitSignal } from './lib/core.mjs';
 import { list } from './lib/list.mjs';
 import { memo } from './lib/memo.mjs';
 import { backend } from './lib/backend.mjs';
@@ -39,12 +38,19 @@ async function maybeOnboard(cmd) {
     await backend.ensureConfig();
 }
 
+/**
+ * Resolve a scripts/ module by name or path, import it, and run it.
+ *
+ * This is the sole purpose of index.js — it's an optional dispatcher.
+ * Each scripts/*.mjs module is directly runnable via `node scripts/<name>.mjs`
+ * because it exports a Module instance with a .run(args) method.
+ *
+ * Both the new Module-based exports and legacy `main(args)` exports are
+ * supported.
+ */
 async function runModule(ref, args = []) {
     const scripts = rarebert.discoverModules();
 
-    // Resolve `ref` either by relative path (e.g. "scripts/name.mjs")
-    // or by normalized module name (e.g. "name"). A leading "./" or a
-    // path separator marks a path lookup; otherwise fall back to name.
     const isPathRef = ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
 
     let script;
@@ -68,10 +74,17 @@ async function runModule(ref, args = []) {
 
     try {
         const mod = await import('file://' + rarebert.absPath(script.path));
+
+        // New system: default export is a Module instance with .run(args)
+        if (mod.default && typeof mod.default.run === 'function') {
+            await mod.default.run(args);
+            return;
+        }
+
+        // Legacy: default.main or main is a function
         const main = mod.default?.main ?? mod.main;
         if (typeof main === 'function') {
-            const result = await main(args);
-            if (result instanceof ExitSignal) process.exit(result.code);
+            await main(args);
         }
     } catch (err) {
         console.error(err.message || err);
@@ -86,12 +99,17 @@ async function helpVerbose() {
         if (script !== scripts[0]) console.log();
         try {
             const mod = await import('file://' + rarebert.absPath(script.path));
-            const main = mod.default?.main ?? mod.main;
-            if (typeof main === 'function') {
-                await main(['--help']);
+            // New system
+            if (mod.default && typeof mod.default.run === 'function') {
+                await mod.default.run(['--help']);
             } else {
-                const meta = mod.default || {};
-                console.log('  ' + (meta.description || '(no description)'));
+                const main = mod.default?.main ?? mod.main;
+                if (typeof main === 'function') {
+                    await main(['--help']);
+                } else {
+                    const meta = mod.default || {};
+                    console.log('  ' + (meta.description || '(no description)'));
+                }
             }
         } catch (err) {
             console.error('  (failed:', err.message, ')');

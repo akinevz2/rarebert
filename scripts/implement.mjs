@@ -4,21 +4,19 @@ import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { models } from '../lib/models.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
-import { server, DEFAULT_PORT } from '../lib/server.mjs';
+import { server } from '../lib/server.mjs';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { editor } from '../lib/editor.mjs';
 import { opencode } from '../lib/opencode.mjs';
+import { Module } from '../lib/modules.mjs';
 
 const meta = {
     name: 'implement',
     description:
         'Implement module file(s): non-interactive reads args as a file list and runs opencode headlessly; interactive runs a REPL that prompts for an instruction, runs opencode --auto (on a running server or a fresh full TUI), then launches $EDITOR and a testing bash in parallel — exits when both close, or loops back to the prompt when the bash is closed alone',
     usage: 'node index.js implement [file/dir ...] [model]',
-    options: [
-        { label: 'file', description: 'one or more module files or directories to implement' },
-        { label: 'model', description: 'opencode model id (otherwise resolved from opencode.json)' }
-    ]
+    options: []
 };
 
 function relCwdFor(absCwd) {
@@ -49,14 +47,13 @@ function runHeadless({ entries, context, model, instruction }) {
     return exit(result.status ?? 0);
 }
 
-async function runInteractive(args) {
-    const { entries, context } = await editor.resolveActiveFiles(args, {
+async function runInteractive(fileArgs) {
+    const { entries, context } = await editor.resolveActiveFiles(fileArgs, {
         message: 'Select a module to implement'
     });
     if (entries.length === 0) return exit(1);
 
-    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-    const model = await models.resolve(nonFlag[0]);
+    const model = await models.resolve(fileArgs[0]);
 
     const fileLabel =
         entries.length === 1
@@ -96,16 +93,15 @@ async function runInteractive(args) {
         } else {
             const cwd = server.cwdForModule(entries[0].rel);
             const relCwd = relCwdFor(cwd);
-            const port = DEFAULT_PORT;
             console.log(
-                `implement: no running server; starting full TUI on port ${port} (password=${port})`
+                `implement: no running server; starting full TUI (free port, password=port)`
             );
             console.log(`  cwd: ${relCwd}`);
             console.log(`  subsequent \`make implement\` invocations will attach with --mini`);
             const status = await server.startFullTUI({
                 cwd,
                 model,
-                port,
+                port: null,
                 prompt: instruction.trim() || null
             });
             if (status !== 0) {
@@ -150,11 +146,9 @@ function runEditorThenBash(entries, moduleLabel) {
     });
 }
 
-async function main(args = []) {
-    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-
+async function main(opts, positional) {
     if (!cli.isInteractive()) {
-        const fileArgs = nonFlag;
+        const fileArgs = positional;
         if (fileArgs.length === 0) {
             console.error('Non-interactive: pass file or directory arguments to implement.');
             return exit(1);
@@ -174,13 +168,11 @@ async function main(args = []) {
         return;
     }
 
-    await runInteractive(nonFlag);
+    await runInteractive(positional);
 }
 
 export { main };
 
-export default {
-    name: 'implement',
-    description: meta.description,
-    main: cli.run(meta, main)
-};
+const module = new Module('implement.mjs', main, meta);
+export default module;
+module.supportsDirectRunning(import.meta.url);

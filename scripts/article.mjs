@@ -11,20 +11,13 @@ import { opencode } from '../lib/opencode.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
+import { Module } from '../lib/modules.mjs';
 
 const meta = {
     name: 'article',
     description: 'Manage the academic report: clone, build, edit a section, commit',
     usage: 'node index.js article [--preview] [section] [model]',
-    options: [
-        { flag: 'preview', label: '', description: 'build the report then open it' },
-        {
-            label: 'section',
-            description:
-                'path under report/src/ (e.g. introduction/introduction.md); if omitted, opens an interactive menu'
-        },
-        { label: 'model', description: 'opencode model id (otherwise prompted from opencode.json)' }
-    ]
+    options: [{ flag: '-p, --preview', description: 'Preview mode' }]
 };
 
 const { Select, Input, Confirm } = Enquirer;
@@ -556,11 +549,10 @@ async function makeTodoNote() {
     if (!isNotes) rebuildAndOpen();
 }
 
-async function runMenu(args) {
-    const preview = args.includes('--preview') || args.includes('-p');
-    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-    const sectionArg = nonFlag[0];
-    const modelArg = nonFlag[1];
+async function runMenu(opts, positional) {
+    const preview = opts.preview;
+    const sectionArg = positional[0];
+    const modelArg = positional[1];
 
     ensureCloned();
     await assertHostCleanOrCommit();
@@ -734,8 +726,8 @@ async function confirmCommit(label) {
     return true;
 }
 
-async function main(args = []) {
-    await runMenu(args);
+async function main(opts, positional) {
+    await runMenu(opts, positional);
 }
 
 export {
@@ -760,8 +752,6 @@ export {
     main
 };
 
-export default {
-    name: 'article',
-    description: 'Manage the academic report: clone, build, edit a section, commit',
-    main: cli.run(meta, main)
-};
+const module = new Module('article.mjs', main, meta);
+export default module;
+module.supportsDirectRunning(import.meta.url);

@@ -13,13 +13,14 @@ import { models } from '../lib/models.mjs';
 import { opencode } from '../lib/opencode.mjs';
 import { languages } from '../lib/languages.mjs';
 import { cli, AbortError } from '../lib/cli.mjs';
+import { Module } from '../lib/modules.mjs';
 
 const meta = {
     name: 'add',
     description:
         'Scaffold a new module: pick project, pick language, then git add, edit, and run opencode headlessly to implement',
     usage: 'node index.js add [model]',
-    options: [{ flag: 'force', label: '', description: 'overwrite an installed language template' }]
+    options: [{ flag: '--force', description: 'overwrite an installed language template' }]
 };
 
 function projectChoices() {
@@ -157,7 +158,7 @@ async function scaffoldSrcModule(lang, moduleName) {
     return { modulePath, selectedLibs };
 }
 
-async function main(args = []) {
+async function main(opts, positional) {
     console.log('\n=== Rarebert Module Creator ===\n');
 
     const proj = await cli.select('Select a project for the new module:', projectChoices(), {
@@ -238,8 +239,7 @@ async function main(args = []) {
     });
     if (editorExit !== 0) return exit(editorExit);
 
-    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-    const modelArg = nonFlag[0];
+    const modelArg = positional[0];
     const model = await models.resolve(modelArg);
 
     const context = editor.loadContent(modulePath) || '';
@@ -275,9 +275,6 @@ async function main(args = []) {
 
 export { main, pickLanguage, ensureLanguage, buildPreamble };
 
-export default {
-    name: 'add',
-    description:
-        'Scaffold a new module: pick project, pick language, then git add, edit, and run opencode headlessly to implement',
-    main: cli.run(meta, main)
-};
+const module = new Module('add.mjs', main, meta);
+export default module;
+module.supportsDirectRunning(import.meta.url);

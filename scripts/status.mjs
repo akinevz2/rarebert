@@ -2,8 +2,9 @@
 
 import { spawnSync } from 'child_process';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { rarebert } from '../lib/projects.mjs';
-import { listAllModules } from '../lib/modules.mjs';
+import { listAllModules, Module } from '../lib/modules.mjs';
 import { libs } from '../lib/libs.mjs';
 import { git } from '../lib/git.mjs';
 import { cli } from '../lib/cli.mjs';
@@ -16,8 +17,7 @@ const meta = {
     usage: 'node index.js status [--debug]',
     options: [
         {
-            flag: 'debug',
-            label: '',
+            flag: '--debug',
             description: 'print prod-ready project discovery listing and exit'
         }
     ]
@@ -87,19 +87,6 @@ async function stageProjectDiscovery() {
         }
     }
 
-    console.log('\n--- libs.dirForDirectory ---');
-    for (const key of ['lib', 'src', 'scripts', 'supports']) {
-        console.log(`${key}:`, libs.dirForDirectory(key));
-    }
-
-    console.log('\n--- listAllModules ---');
-    const mods = listAllModules();
-    console.log(`${mods.length} modules`);
-    console.log(
-        'first 3:',
-        mods.slice(0, 3).map((m) => m.path)
-    );
-
     return await promptContinue();
 }
 
@@ -118,6 +105,7 @@ async function stageLaunchEdit() {
     if (launch === 'exit') return STAGE_EXIT;
 
     const editScript = path.join(rarebert.root, 'scripts', 'edit.mjs');
+    console.dir({ editScript });
     const result = spawnSync(process.execPath, [editScript], {
         stdio: 'inherit',
         cwd: rarebert.root
@@ -167,22 +155,14 @@ function printDebugListing() {
     console.log('src:', libs.dirForDirectory('src'));
     console.log('scripts:', libs.dirForDirectory('scripts'));
     console.log('supports:', libs.dirForDirectory('supports'));
-
-    console.log('\n=== listAllModules ===');
-    const mods = listAllModules();
-    console.log(`${mods.length} modules`);
-    console.log(
-        'first 3:',
-        mods.slice(0, 3).map((m) => m.path)
-    );
 }
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-async function main(args = []) {
-    if (args.includes('--debug')) {
+async function main(opts, positional) {
+    if (opts.debug) {
         printDebugListing();
         return exit(0);
     }
@@ -206,8 +186,8 @@ async function main(args = []) {
 
 export { main };
 
-export default {
-    name: 'status',
-    description: meta.description,
-    main: cli.run(meta, main)
-};
+// --- New Module system: self-runnable via `node scripts/status.mjs` ---
+const module = new Module('status.mjs', main, meta);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);

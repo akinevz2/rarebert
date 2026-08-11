@@ -1,14 +1,25 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'child_process';
-import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
-import { listAllModules, promptModule } from '../lib/modules.mjs';
+import { listAllModules, promptModule, Module } from '../lib/modules.mjs';
 import { libs } from '../lib/libs.mjs';
 
+const meta = {
+    name: 'diff',
+    description: 'Show working-tree changes (or staged) in a pager',
+    usage: 'node index.js diff [--staged] [--stat] [module]',
+    options: [
+        { flag: '--staged', description: 'Show staged (cached) changes' },
+        { flag: '--stat', description: 'Show diffstat summary only' }
+    ]
+};
+
 function showDiff(diffArgs, usePager) {
-    const result = git.git('diff', diffArgs);
+    // Force colour so the pager (less -R) renders it; when not paging, write
+    // raw to stdout.  Consistent with lib/git.mjs previewDiffFor / commit.mjs.
+    const result = git.git('diff', ['--color=always', ...diffArgs]);
     if (result.status !== 0) {
         if (result.stderr) process.stderr.write(result.stderr);
         return result.status ?? 1;
@@ -21,23 +32,13 @@ function showDiff(diffArgs, usePager) {
         process.stdout.write(result.stdout);
         return 0;
     }
-    const pager = process.env.PAGER || 'less';
-    const child = spawnSync(pager, [], {
-        input: result.stdout,
-        stdio: ['pipe', 'inherit', 'inherit']
-    });
-    if (child.error) {
-        process.stderr.write(`Failed to launch pager (${pager}): ${child.error.message}\n`);
-        process.stdout.write(result.stdout);
-    }
-    return child.status ?? 0;
+    return git.pipeToPager(result.stdout);
 }
 
-async function main(args = []) {
-    const staged = args.includes('--staged');
-    const stat = args.includes('--stat');
-    const nonFlag = args.filter((a) => !a.startsWith('-') && a);
-    const moduleArg = nonFlag[0];
+async function main(opts, positional) {
+    const staged = opts.staged;
+    const stat = opts.stat;
+    const moduleArg = positional[0];
 
     let pathspecs = [];
     if (moduleArg) {
@@ -58,8 +59,7 @@ async function main(args = []) {
 
 export { main };
 
-export default {
-    name: 'diff',
-    description: 'Show working-tree changes (or staged) in a pager',
-    main
-};
+const module = new Module('diff.mjs', main, meta);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);

@@ -14,6 +14,7 @@
         "format:check": "prettier --check lib/ scripts/ index.js *.json *.md"
     },
     "dependencies": {
+        "commander": "^15.0.0",
         "enquirer": "^2.4.1",
         "opencode-ai": "^1.18.12"
     },

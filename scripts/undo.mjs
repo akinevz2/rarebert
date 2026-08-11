@@ -2,12 +2,20 @@
 
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
+import { Module } from '../lib/modules.mjs';
 import { editor } from '../lib/editor.mjs';
 import { cli } from '../lib/cli.mjs';
 import fs from 'fs';
 import path from 'path';
 
-async function main(args = []) {
+const meta = {
+    name: 'undo',
+    description: 'Remove the last-added module and clear .last-module',
+    usage: 'node index.js undo',
+    options: []
+};
+
+async function main(opts, positional) {
     const rel = editor.readLastModule();
     if (!rel) {
         console.error('Nothing to undo. No .last-module marker found.');
@@ -37,8 +45,7 @@ async function main(args = []) {
 
 export { main };
 
-export default {
-    name: 'undo',
-    description: 'Remove the last-added module and clear .last-module',
-    main
-};
+const module = new Module('undo.mjs', main, meta);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);

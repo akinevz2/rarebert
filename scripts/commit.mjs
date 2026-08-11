@@ -7,7 +7,7 @@ import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { listAllModules } from '../lib/modules.mjs';
+import { listAllModules, Module } from '../lib/modules.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
 import { memo } from '../lib/memo.mjs';
@@ -21,10 +21,10 @@ const meta = {
     usage: 'node index.js commit [model] [--verbose]',
     options: [
         {
-            label: 'model',
+            flag: '--model <id>',
             description: 'opencode model id (otherwise prompted from opencode.json)'
         },
-        { label: '--verbose', description: 'Print the full opencode prompt before the summary' }
+        { flag: '-v, --verbose', description: 'Print the full opencode prompt before the summary' }
     ]
 };
 
@@ -173,25 +173,13 @@ function bailCommit(reason) {
 }
 
 function previewDiff() {
-    // Use less -R so ANSI color codes are rendered as colors, not printed
-    // literally. Fall back to the user's $PAGER if set (assume it already
-    // handles raw control chars).
-    const pager = process.env.PAGER || 'less -R';
-    const pagerParts = pager.split(/\s+/);
-    const pagerCmd = pagerParts[0];
-    const pagerArgs = pagerParts.slice(1);
+    // Use the shared pipeToPager helper so colour and fallback handling are
+    // consistent across all diff viewers.  Force --color=always since the
+    // output is captured (not a TTY); the pager renders the ANSI codes.
     const staged = git.git('diff', ['--cached', '--name-only']);
     const diffArgs = staged.stdout.trim() ? ['--cached'] : ['HEAD'];
-    // Force color even though stdout is piped — git disables color when
-    // output is not a TTY, but less -R renders ANSI codes correctly.
     const diff = git.git('diff', ['--color=always', ...diffArgs]);
-    const child = spawnSync(pagerCmd, pagerArgs, {
-        input: diff.stdout,
-        stdio: ['pipe', 'inherit', 'inherit']
-    });
-    if (child.error) {
-        console.error(`Failed to launch pager (${pager}): ${child.error.message}`);
-    }
+    git.pipeToPager(diff.stdout);
 }
 
 const DEFAULT_PROMPT_FIRST_LINE = 'Write a git commit message for the staged changelist below.';
@@ -298,14 +286,14 @@ function summariseChangelist(model, changelist, firstLine, verbose = false) {
     return cleanSummary(text.trim());
 }
 
-async function main(args = []) {
+async function main(opts, positional) {
     const interactive = process.stdin.isTTY === true;
-    const verbose = args.includes('--verbose') || args.includes('-v');
+    const verbose = opts.verbose;
 
     // Validate a user-supplied model id against opencode.json early so
     // typos and unfamiliar usage produce a clear error before any
     // interactive prompts or git operations run.
-    const modelArg = args.find((a) => !a.startsWith('-'));
+    const modelArg = positional[0];
     if (modelArg) {
         const known = models.list(models.readConfig());
         if (known.length > 0 && !known.some((m) => m.id === modelArg)) {
@@ -536,8 +524,6 @@ function stageAndCommit(commitArgs) {
 
 export { main };
 
-export default {
-    name: 'commit',
-    description: 'Stage all, summarise via opencode, then commit with $EDITOR',
-    main: cli.run(meta, main)
-};
+const module = new Module('commit.mjs', main, meta);
+export default module;
+module.supportsDirectRunning(import.meta.url);

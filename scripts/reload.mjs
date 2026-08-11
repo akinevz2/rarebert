@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { rarebert } from '../lib/projects.mjs';
 import { editor } from '../lib/editor.mjs';
-import { cli } from '../lib/cli.mjs';
+import { Module } from '../lib/modules.mjs';
 
 const HEADER = '# Auto-generated Makefile: a pure index of `node index.js <name>` targets';
 const EXTRA_TARGETS = {
@@ -15,9 +15,7 @@ const meta = {
     name: 'reload',
     description: 'Rebuild Makefile as a pure index of node index.js <name> targets',
     usage: 'node index.js reload [--forget]',
-    options: [
-        { flag: 'forget', label: '', description: 'also delete .last-module after refreshing' }
-    ]
+    options: [{ flag: '--forget', description: 'also delete .last-module after refreshing' }]
 };
 
 function buildPreamble(targetNames) {
@@ -47,8 +45,8 @@ function buildBody(names) {
     return blocks.map((b) => `\n\n${b}`).join('') + '\n';
 }
 
-async function main(args = []) {
-    if (args.includes('--forget')) {
+async function main(opts, positional) {
+    if (opts.forget) {
         editor.clearLastModule();
     }
 
@@ -77,8 +75,7 @@ async function main(args = []) {
 
 export { main };
 
-export default {
-    name: 'reload',
-    description: 'Rebuild Makefile as a pure index of node index.js <name> targets',
-    main: cli.run(meta, main)
-};
+const module = new Module('reload.mjs', main, meta);
+
+export default module;
+module.supportsDirectRunning(import.meta.url);
