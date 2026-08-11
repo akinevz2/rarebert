@@ -1,22 +1,21 @@
 #!/usr/bin/env node
 import { Module } from '../lib/modules.mjs';
-import * as languages from '../lib/languages.mjs';
-import * as memo from '../lib/memo.mjs';
+import * as bindings from '../lib/bindings.mjs';
 import { home as projects } from '../lib/projects.mjs';
 
 const meta = {
     name: 'refactor',
     description:
-        'Resolve bindings across import trees, detect damage after edits, emit LLM-ready repair job specs',
+        'Resolve bindings across import trees, detect damage after edits, emit LLM-ready repair job specs. Baselines are pinned to commits via git notes (refs/notes/refactor). Damage and what-if automatically generate memos via opencode.',
     usage: 'node index.js refactor <subcommand> [options]',
     options: [
         {
             flag: '--entry <file>',
-            description: 'Entry point for import-tree walk (defaults to project root module)'
+            description: 'Entry point for import-tree walk (defaults to scripts/ directory)'
         },
         {
-            flag: '--snapshot <path>',
-            description: 'Path to save/load binding baseline (defaults to .refactor-snapshot.json)'
+            flag: '--baseline <ref>',
+            description: 'Git ref whose refactor note holds the baseline (default: HEAD)'
         },
         {
             flag: '--format <type>',
@@ -39,6 +38,14 @@ const meta = {
             description: 'Operation type for what-if: move | rename | extract (used with --select)'
         },
         {
+            flag: '--model <id>',
+            description: 'Model override for opencode memo generation (e.g. ollama_wsvision/qwen3-coder:latest)'
+        },
+        {
+            flag: '--no-memos',
+            description: 'Skip automatic memo generation (damage/select) and cleanup (cleanup)'
+        },
+        {
             flag: '--verbose',
             description: 'Include resolved-but-healthy bindings in output, not just damaged ones'
         }
@@ -48,262 +55,15 @@ const meta = {
 // ─── Subcommands ──────────────────────────────────────────────
 
 const subcommands = {
-    snapshot: 'Capture the current binding state as a healthy baseline',
-    damage: 'Compare current state against last snapshot — emit damage report',
-    select: 'What-if analysis: simulate a refactor and report blast radius',
-    resolve: 'Walk the import tree and print all resolved bindings (no snapshot, no diff)'
+    snapshot: 'Capture binding baseline + memo state as a note on HEAD (run on a clean commit)',
+    damage: 'Compare current state against baseline — emit damage report + auto-generate memos via opencode',
+    select: 'What-if analysis: simulate a refactor, report blast radius + record memo on source module',
+    resolve: 'Walk the import tree and print all resolved bindings (no snapshot, no diff)',
+    cleanup: 'Post-commit cleanup: drop stale pre-snapshot memos and confirm new summaries on affected modules'
 };
 
-// ─── Core: Binding Resolution ─────────────────────────────────
+// ─── Report Formatting ──────────────────────────────────────────
 
-/**
- * Walks the import tree starting from `entryFile` and resolves every
- * binding (named exports, default exports, namespace imports).
- *
- * This is the "leveled up" version of memo's import walker — instead of
- * "does this file have a companion memo?", it asks "what does this file
- * export, and who imports it?"
- *
- * Returns a binding registry:
- *   {
- *     "config.js": {
- *       exports: {
- *         "parseConfig": { line: 5, type: "named", exported: true },
- *         "default":     { line: 12, type: "default", exported: true }
- *       },
- *       imports: {
- *         "app.js": [
- *           { binding: "parseConfig", source: "./config", line: 3, type: "named" }
- *         ]
- *       }
- *     }
- *   }
- *
- * Reuses memo.mjs's import-walking infrastructure for tree traversal,
- * but adds AST-level binding resolution via languages.mjs.
- */
-async function resolveBindings(entryFile) {
-    // TODO: Use memo.mjs's walk logic to enumerate the import tree.
-    //       memo already knows how to traverse includes — we hook into
-    //       that traversal and, for each visited file, parse it with
-    //       languages.mjs to extract export/import declarations.
-    //
-    // For each file in the tree:
-    //   1. Parse with languages.mjs → AST
-    //   2. Extract all ExportNamedDeclaration, ExportDefaultDeclaration,
-    //      ImportDeclaration (and re-exports, dynamic imports)
-    //   3. Record: file → { exports: {...}, importedFrom: {...} }
-    //
-    // Then invert: build a reverse map of
-    //   binding → { definedIn, importedBy: [...] }
-
-    const visited = new Set();
-    const registry = {};
-
-    async function visit(filePath) {
-        if (visited.has(filePath)) return;
-        visited.add(filePath);
-
-        // Use languages.mjs to parse the file
-        const ast = await languages.parse(filePath); // TODO: verify API
-        const { exports, imports } = extractBindings(ast, filePath);
-
-        registry[filePath] = { exports, imports };
-
-        // Walk children — reuse memo's resolution to find import targets
-        for (const imp of imports) {
-            const target = memo.resolveImport(filePath, imp.source); // TODO: verify API
-            if (target) await visit(target);
-        }
-    }
-
-    await visit(entryFile);
-    return registry;
-}
-
-/**
- * Extracts export and import binding declarations from an AST.
- * Handles: named, default, namespace, re-exports.
- */
-function extractBindings(ast, filePath) {
-    const exports = {};
-    const imports = [];
-
-    // TODO: Walk AST body for:
-    //   ExportNamedDeclaration → record each exported name + line
-    //   ExportDefaultDeclaration → record "default" + line
-    //   ExportAllDeclaration → re-export (record namespace)
-    //   ImportDeclaration → record each imported name, source, line
-    //   CallExpression with Import() → dynamic import (best-effort)
-
-    return { exports, imports };
-}
-
-// ─── Core: Snapshot ───────────────────────────────────────────
-
-/**
- * Captures the current binding registry as a JSON file.
- * This is the "healthy baseline" — the state before the developer
- * starts refactoring.
- *
- * The developer runs `refactor snapshot` before making changes,
- * then `refactor damage` after.
- */
-async function saveSnapshot(entryFile, snapshotPath) {
-    const registry = await resolveBindings(entryFile);
-    const snapshot = {
-        entry: entryFile,
-        timestamp: Date.now(),
-        registry
-    };
-    // TODO: write to snapshotPath (default: .refactor-snapshot.json at project root)
-    // Could use projects.mjs to resolve the project root.
-    return snapshot;
-}
-
-async function loadSnapshot(snapshotPath) {
-    // TODO: read and parse snapshotPath
-    // Return null if file doesn't exist (no baseline captured yet)
-}
-
-// ─── Core: Damage Detection ───────────────────────────────────
-
-/**
- * Compares the current binding state against the saved snapshot.
- *
- * The developer has already edited the code (moved/renamed/extracted
- * bindings). This function re-resolves the import tree and finds
- * everything that was healthy in the snapshot but is now broken.
- *
- * "Broken" = an import statement that previously resolved to a real
- * export, but no longer does.
- *
- * The damage report is the LLM's job spec — it's not "refactor this
- * module" but "these specific imports are now dangling, fix them."
- */
-async function detectDamage(entryFile, snapshotPath) {
-    const snapshot = await loadSnapshot(snapshotPath);
-    if (!snapshot) {
-        throw new Error('No snapshot found. Run `refactor snapshot` before editing.');
-    }
-
-    const currentRegistry = await resolveBindings(entryFile);
-    const baseline = snapshot.registry;
-    const damage = [];
-
-    // For each file in the baseline, compare its imports against the
-    // current registry to find dangling bindings.
-    for (const [file, info] of Object.entries(baseline)) {
-        for (const imp of info.imports) {
-            const wasResolvable = isResolvable(imp, baseline);
-            const isStillResolvable = isResolvable(imp, currentRegistry);
-
-            if (wasResolvable && !isStillResolvable) {
-                // This import was healthy before, now it's broken.
-                // Try to figure out where the binding went.
-                const relocated = findRelocation(imp.binding, baseline, currentRegistry);
-
-                damage.push({
-                    file: file,
-                    line: imp.line,
-                    binding: imp.binding,
-                    source: imp.source,
-                    issue: `import { ${imp.binding} } from '${imp.source}' — no longer exported`,
-                    relocatedTo: relocated // null if truly removed, or { file, export } if found elsewhere
-                });
-            }
-        }
-    }
-
-    return {
-        entry: entryFile,
-        snapshotTimestamp: snapshot.timestamp,
-        damagedFiles: [...new Set(damage.map((d) => d.file))],
-        damage: damage
-    };
-}
-
-/**
- * Checks whether a given import resolves to a real export in the registry.
- */
-function isResolvable(imp, registry) {
-    // TODO: resolve the import's source path relative to the importing file,
-    //       then check if the target file's exports include the binding.
-    return false; // scaffold
-}
-
-/**
- * After the developer moves a binding, the old export disappears but a
- * new export appears elsewhere. This function tries to find it by
- * searching the current registry for a binding with the same name
- * that wasn't in the baseline (or was in a different file).
- */
-function findRelocation(bindingName, baseline, current) {
-    // TODO: search current registry for an export matching bindingName
-    //       that either didn't exist in baseline or existed in a different file.
-    return null; // scaffold
-}
-
-// ─── Core: What-If / Select ────────────────────────────────────
-
-/**
- * Simulates a refactor without actually editing any files.
- *
- * The developer specifies: "I want to move `parseConfig` from
- * `config.js` to `config/parser.js`." This function computes which
- * files would have broken imports if that were done — the blast radius.
- *
- * This is a read-only preview. The developer uses it to decide
- * whether the refactor is worth it, or to batch multiple refactors.
- */
-async function whatIf(entryFile, selection) {
-    // selection = { op: "move", bindings: ["parseConfig"], from: "config.js", to: "config/parser.js" }
-    const registry = await resolveBindings(entryFile);
-    const blastRadius = [];
-
-    for (const [file, info] of Object.entries(registry)) {
-        for (const imp of info.imports) {
-            if (selection.bindings.includes(imp.binding) && isResolvable(imp, registry)) {
-                blastRadius.push({
-                    file: file,
-                    line: imp.line,
-                    binding: imp.binding,
-                    currentSource: imp.source,
-                    wouldBreak: true,
-                    suggestedFix: suggestFix(imp, selection)
-                });
-            }
-        }
-    }
-
-    return {
-        selection: selection,
-        affectedFiles: [...new Set(blastRadius.map((b) => b.file))],
-        blastRadius: blastRadius
-    };
-}
-
-function suggestFix(imp, selection) {
-    // TODO: based on the operation type, suggest the new import path
-    //   move   → update source path
-    //   rename → update binding name
-    //   extract → update source path + possibly binding name
-    return null; // scaffold
-}
-
-// ─── Core: Report Formatting ──────────────────────────────────
-
-/**
- * Formats the damage report for LLM consumption.
- *
- * The output is the LLM's job spec. It should be constrained and
- * specific — not "refactor this" but "fix these broken imports."
- *
- * Formats:
- *   json     → structured data (for programmatic use or agent APIs)
- *   markdown → human-readable table (for review)
- *   prompt   → ready-to-paste LLM prompt with the damage report embedded
- */
 function formatReport(damageReport, format) {
     if (format === 'json') {
         return JSON.stringify(damageReport, null, 2);
@@ -314,6 +74,7 @@ function formatReport(damageReport, format) {
             `# Refactor Damage Report`,
             ``,
             `Entry: ${damageReport.entry}`,
+            `Baseline: ${damageReport.baselineRef}`,
             `Snapshot: ${new Date(damageReport.snapshotTimestamp).toISOString()}`,
             `Damaged files: ${damageReport.damagedFiles.length}`,
             ``,
@@ -321,9 +82,8 @@ function formatReport(damageReport, format) {
             `|------|------|---------|-------|--------------|`
         ];
         for (const d of damageReport.damage) {
-            lines.push(
-                `| ${d.file} | ${d.line} | ${d.binding} | ${d.issue} | ${d.relocatedTo || '—'} |`
-            );
+            const relocated = d.relocatedTo ? d.relocatedTo.file : '—';
+            lines.push(`| ${d.file} | ${d.line} | ${d.binding} | ${d.issue} | ${relocated} |`);
         }
         return lines.join('\n');
     }
@@ -347,30 +107,81 @@ function formatReport(damageReport, format) {
     }
 }
 
+// ─── Usage ─────────────────────────────────────────────────────
+
+function printUsage() {
+    console.log(`Usage: ${meta.usage}\n`);
+    console.log('Subcommands:');
+    for (const [name, desc] of Object.entries(subcommands)) {
+        console.log(`  ${name.padEnd(10)} ${desc}`);
+    }
+    console.log(`\nOptions:`);
+    for (const opt of meta.options) {
+        console.log(`  ${opt.flag.padEnd(22)} ${opt.description}`);
+    }
+}
+
 // ─── Main ─────────────────────────────────────────────────────
 
 async function main(opts, positional) {
     const sub = positional[0] || '';
 
     const entryFile = opts.entry || projects.scriptsDir;
-    const snapshotPath = opts.snapshot || '.refactor-snapshot.json';
+    const baselineRef = opts.baseline || 'HEAD';
     const format = opts.format || 'json';
+    const noMemos = opts['no-memos'] === true;
+    const model = opts.model || null;
 
-    switch (sub) {
+    // ─── No-args path ──────────────────────────────────────────
+    let effectiveSub = sub;
+    if (!sub) {
+        if (bindings.isSnapshotInProgress(baselineRef)) {
+            effectiveSub = 'resolve';
+            console.error('refactor: baseline note found — defaulting to `resolve`.\n');
+        } else {
+            effectiveSub = 'snapshot';
+            console.error('refactor: no baseline note found — defaulting to `snapshot`.\n');
+        }
+    }
+
+    switch (effectiveSub) {
         case 'snapshot': {
-            const snap = await saveSnapshot(entryFile, snapshotPath);
+            const snap = await bindings.saveSnapshot(entryFile, baselineRef);
+            const memoCount = snap.memoState ? Object.keys(snap.memoState).length : 0;
+            const memoTotal = snap.memoState
+                ? Object.values(snap.memoState).reduce((n, m) => n + m.length, 0)
+                : 0;
             console.log(
-                `Snapshot saved: ${snapshotPath} (${Object.keys(snap.registry).length} files resolved)`
+                `Baseline saved on ${baselineRef} (${snap.baselineSha?.slice(0, 8) ?? '?'}) — ` +
+                    `${Object.keys(snap.registry).length} files, ` +
+                    `${Object.values(snap.registry).reduce((n, f) => n + Object.keys(f.exports).length, 0)} exports resolved.`
             );
+            if (memoCount > 0) {
+                console.log(`Memo state captured: ${memoCount} modules, ${memoTotal} memos.`);
+            }
             break;
         }
 
         case 'damage': {
-            const report = await detectDamage(entryFile, snapshotPath);
+            const report = await bindings.detectDamage(entryFile, baselineRef);
             if (report.damage.length === 0) {
                 console.log('No damage detected — all bindings still resolve.');
-            } else {
-                console.log(formatReport(report, format));
+                break;
+            }
+            console.log(formatReport(report, format));
+
+            // Auto-generate memos on affected modules via opencode.
+            if (!noMemos) {
+                console.error('\n┌─ memo generation ────────────────────────────');
+                console.error(`│ Generating damage summaries via opencode${model ? ' (' + model + ')' : ''}...`);
+                const generated = await bindings.generateDamageMemos(report, model);
+                if (generated.length > 0) {
+                    console.error(`│ Generated ${generated.length} memo(s).`);
+                    console.error('│ Run `make commit`, then `refactor cleanup` to finalize.');
+                } else {
+                    console.error('│ No memos generated (opencode may be unavailable).');
+                }
+                console.error('└───────────────────────────────────────────────\n');
             }
             break;
         }
@@ -388,17 +199,24 @@ async function main(opts, positional) {
                 from: opts.from,
                 to: opts.to
             };
-            const result = await whatIf(entryFile, selection);
+            const registry = await bindings.resolveBindings(entryFile);
+            const result = bindings.whatIf(registry, selection);
             console.log(JSON.stringify(result, null, 2));
+
+            // Record a blast-radius memo on the source module.
+            if (!noMemos) {
+                console.error('\n┌─ memo recording ──────────────────────────────');
+                bindings.recordBlastRadiusMemo(result, selection);
+                console.error('└───────────────────────────────────────────────\n');
+            }
             break;
         }
 
         case 'resolve': {
-            const registry = await resolveBindings(entryFile);
+            const registry = await bindings.resolveBindings(entryFile);
             if (opts.verbose) {
                 console.log(JSON.stringify(registry, null, 2));
             } else {
-                // Summary: file count, total bindings, any unresolved
                 const totalExports = Object.values(registry).reduce(
                     (n, f) => n + Object.keys(f.exports).length,
                     0
@@ -414,16 +232,36 @@ async function main(opts, positional) {
             break;
         }
 
+        case 'cleanup': {
+            // Post-commit cleanup: drop stale pre-snapshot memos on
+            // affected modules. The new memos were already added by
+            // `damage` (or can be re-added with --no-cleanup on damage
+            // then manual memo --add).
+            //
+            // By default, looks at HEAD~1 for the baseline (since the
+            // user just committed the refactor changes, HEAD has moved
+            // forward by one commit).
+            const cleanupRef = opts.baseline || 'HEAD~1';
+            console.log(`Cleaning up memos against baseline on ${cleanupRef}...`);
+
+            if (noMemos) {
+                console.log('  (--no-memos: skipping cleanup)');
+                break;
+            }
+
+            // If no new memos were passed in, we can still drop stale ones.
+            const summary = await bindings.cleanupMemos(cleanupRef, []);
+            if (summary.length === 0) {
+                console.log('  No stale memos found to clean up.');
+            } else {
+                const totalDropped = summary.reduce((n, s) => n + s.dropped, 0);
+                console.log(`  Done: ${totalDropped} stale memo(s) dropped across ${summary.length} module(s).`);
+            }
+            break;
+        }
+
         default:
-            console.log(`Usage: ${meta.usage}\n`);
-            console.log('Subcommands:');
-            for (const [name, desc] of Object.entries(subcommands)) {
-                console.log(`  ${name.padEnd(10)} ${desc}`);
-            }
-            console.log(`\nOptions:`);
-            for (const opt of meta.options) {
-                console.log(`  ${opt.flag.padEnd(22)} ${opt.description}`);
-            }
+            printUsage();
     }
 }
 
