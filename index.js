@@ -3,7 +3,6 @@
 import path from 'path';
 import { rarebert, home } from './lib/projects.mjs';
 import { listModules } from './scripts/list.mjs';
-import { memo } from './lib/memo.mjs';
 import { backend } from './lib/backend.mjs';
 import { Module, CLI, TUI, cli } from './lib/module.mjs';
 
@@ -60,8 +59,6 @@ async function runModule(ref, args = []) {
         console.error('Module not found:', ref);
         process.exit(1);
     }
-
-    memo.loadForRun(script.path, script.name);
 
     try {
         const mod = await import('file://' + home.absPath(script.path));

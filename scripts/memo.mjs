@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { CLI, listAllModules, resolveModuleSet } from '../lib/module.mjs';
+import { CLI, listAllModules } from '../lib/module.mjs';
 import {
     memo,
     groupArgs,
@@ -10,37 +10,22 @@ import {
     cmdRecall,
     cmdDrop,
     cmdForget,
-    cmdPrintSet,
-    cmdBare,
-    printDagForSet
+    cmdBare
 } from '../lib/memo.mjs';
 
 const META = {
     name: 'memo',
-    description: 'Inspect and mutate memos stored alongside modules',
-    usage: 'node index.js memo [files...|--all|--add <path> <memo>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
+    description: 'Enter memos: add, drop, forget, commit, recall, or log. Use `make check` to display memos.',
+    usage: 'node index.js memo [--add <path> <memo>...|--drop <path> [indices]|--forget <path>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
     allowUnknownOption: true,
     options: [
-        {
-            flag: '--all',
-            description: 'Print all memos (flat, oldest-first); with files, ancestor-traversal'
-        },
         { flag: '--yes', description: 'Skip confirmation for --commit' },
         { flag: '--fresh', description: 'Clear working sidecars after --commit' },
         { flag: '--verbose', description: 'Verbose output' }
     ]
 };
 
-// ---------------------------------------------------------------------------
-// main()
-// ---------------------------------------------------------------------------
-
 async function main(opts, positional) {
-    // `--add`, `--commit`, `--log`, `--recall`, `--drop`, and `--forget`
-    // are "action" subcommands: with `meta.allowUnknownOption` they pass
-    // through Commander into `positional` so groupArgs can preserve their
-    // argument grouping. The boolean toggles (--all/--yes/--fresh/--verbose)
-    // are declared options and arrive on `opts`.
     const ACTION_FLAGS = new Set(['--add', '--commit', '--log', '--recall', '--drop', '--forget']);
 
     const groups = groupArgs(positional);
@@ -78,22 +63,6 @@ async function main(opts, positional) {
 
     if (has('--forget')) {
         cmdForget(nonFlag, modules);
-        return;
-    }
-
-    if (opts.all) {
-        if (nonFlag.length) {
-            const resolvedSet = resolveModuleSet(nonFlag, modules);
-            cmdPrintSet(resolvedSet, true);
-        } else {
-            printDagForSet(null);
-        }
-        return;
-    }
-
-    if (nonFlag.length) {
-        const resolvedSet = resolveModuleSet(nonFlag, modules);
-        cmdPrintSet(resolvedSet, false);
         return;
     }
 
