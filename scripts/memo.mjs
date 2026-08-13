@@ -9,10 +9,11 @@ import {
     resolveModule,
     resolveModuleSet,
     promptModuleChoices,
-    Module
-} from '../lib/modules.mjs';
+    CLI,
+    cli,
+    AbortError
+} from '../lib/module.mjs';
 import { memo } from '../lib/memo.mjs';
-import { cli, AbortError } from '../lib/cli.mjs';
 
 const META = {
     name: 'memo',
@@ -558,7 +559,7 @@ async function main(opts, positional) {
 
 export { main };
 
-const module = new Module('memo.mjs', main, META);
+const module = new CLI('memo.mjs', main, META);
 
 export default module;
 module.supportsDirectRunning(import.meta.url);

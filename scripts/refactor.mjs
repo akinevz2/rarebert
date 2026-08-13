@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { Module } from '../lib/modules.mjs';
+import { CLI } from '../lib/module.mjs';
 import * as bindings from '../lib/bindings.mjs';
 import { home as projects } from '../lib/projects.mjs';
+import { formatReport, printUsage } from '../lib/refactor.mjs';
 
 const meta = {
     name: 'refactor',
@@ -9,50 +10,18 @@ const meta = {
         'Resolve bindings across import trees, detect damage after edits, emit LLM-ready repair job specs. Baselines are pinned to commits via git notes (refs/notes/refactor). Damage and what-if automatically generate memos via opencode.',
     usage: 'node index.js refactor <subcommand> [options]',
     options: [
-        {
-            flag: '--entry <file>',
-            description: 'Entry point for import-tree walk (defaults to scripts/ directory)'
-        },
-        {
-            flag: '--baseline <ref>',
-            description: 'Git ref whose refactor note holds the baseline (default: HEAD)'
-        },
-        {
-            flag: '--format <type>',
-            description: 'Output format: json | markdown | prompt (default: json)'
-        },
-        {
-            flag: '--select <vars>',
-            description: 'Comma-separated bindings to simulate moving/renaming (what-if mode)'
-        },
-        {
-            flag: '--from <file>',
-            description: 'Source file for selected bindings (used with --select)'
-        },
-        {
-            flag: '--to <file>',
-            description: 'Target file for selected bindings (used with --select)'
-        },
-        {
-            flag: '--op <type>',
-            description: 'Operation type for what-if: move | rename | extract (used with --select)'
-        },
-        {
-            flag: '--model <id>',
-            description: 'Model override for opencode memo generation (e.g. ollama_wsvision/qwen3-coder:latest)'
-        },
-        {
-            flag: '--no-memos',
-            description: 'Skip automatic memo generation (damage/select) and cleanup (cleanup)'
-        },
-        {
-            flag: '--verbose',
-            description: 'Include resolved-but-healthy bindings in output, not just damaged ones'
-        }
+        { flag: '--entry <file>', description: 'Entry point for import-tree walk (defaults to scripts/ directory)' },
+        { flag: '--baseline <ref>', description: 'Git ref whose refactor note holds the baseline (default: HEAD)' },
+        { flag: '--format <type>', description: 'Output format: json | markdown | prompt (default: json)' },
+        { flag: '--select <vars>', description: 'Comma-separated bindings to simulate moving/renaming (what-if mode)' },
+        { flag: '--from <file>', description: 'Source file for selected bindings (used with --select)' },
+        { flag: '--to <file>', description: 'Target file for selected bindings (used with --select)' },
+        { flag: '--op <type>', description: 'Operation type for what-if: move | rename | extract (used with --select)' },
+        { flag: '--model <id>', description: 'Model override for opencode memo generation' },
+        { flag: '--no-memos', description: 'Skip automatic memo generation (damage/select) and cleanup (cleanup)' },
+        { flag: '--verbose', description: 'Include resolved-but-healthy bindings in output, not just damaged ones' }
     ]
 };
-
-// ─── Subcommands ──────────────────────────────────────────────
 
 const subcommands = {
     snapshot: 'Capture binding baseline + memo state as a note on HEAD (run on a clean commit)',
@@ -62,68 +31,9 @@ const subcommands = {
     cleanup: 'Post-commit cleanup: drop stale pre-snapshot memos and confirm new summaries on affected modules'
 };
 
-// ─── Report Formatting ──────────────────────────────────────────
+export { meta };
 
-function formatReport(damageReport, format) {
-    if (format === 'json') {
-        return JSON.stringify(damageReport, null, 2);
-    }
-
-    if (format === 'markdown') {
-        const lines = [
-            `# Refactor Damage Report`,
-            ``,
-            `Entry: ${damageReport.entry}`,
-            `Baseline: ${damageReport.baselineRef}`,
-            `Snapshot: ${new Date(damageReport.snapshotTimestamp).toISOString()}`,
-            `Damaged files: ${damageReport.damagedFiles.length}`,
-            ``,
-            `| File | Line | Binding | Issue | Relocated To |`,
-            `|------|------|---------|-------|--------------|`
-        ];
-        for (const d of damageReport.damage) {
-            const relocated = d.relocatedTo ? d.relocatedTo.file : '—';
-            lines.push(`| ${d.file} | ${d.line} | ${d.binding} | ${d.issue} | ${relocated} |`);
-        }
-        return lines.join('\n');
-    }
-
-    if (format === 'prompt') {
-        const lines = [
-            `The following imports are broken after a refactor.`,
-            `Fix each one by updating the import statement to point to the correct source.`,
-            `Do not change any logic — only repair the import declarations.`,
-            ``
-        ];
-        for (const d of damageReport.damage) {
-            lines.push(`File: ${d.file}:${d.line}`);
-            lines.push(`  Problem: ${d.issue}`);
-            if (d.relocatedTo) {
-                lines.push(`  Binding moved to: ${d.relocatedTo.file}`);
-            }
-            lines.push(``);
-        }
-        return lines.join('\n');
-    }
-}
-
-// ─── Usage ─────────────────────────────────────────────────────
-
-function printUsage() {
-    console.log(`Usage: ${meta.usage}\n`);
-    console.log('Subcommands:');
-    for (const [name, desc] of Object.entries(subcommands)) {
-        console.log(`  ${name.padEnd(10)} ${desc}`);
-    }
-    console.log(`\nOptions:`);
-    for (const opt of meta.options) {
-        console.log(`  ${opt.flag.padEnd(22)} ${opt.description}`);
-    }
-}
-
-// ─── Main ─────────────────────────────────────────────────────
-
-async function main(opts, positional) {
+export default new CLI('refactor.mjs', async (opts, positional) => {
     const sub = positional[0] || '';
 
     const entryFile = opts.entry || projects.scriptsDir;
@@ -132,7 +42,6 @@ async function main(opts, positional) {
     const noMemos = opts['no-memos'] === true;
     const model = opts.model || null;
 
-    // ─── No-args path ──────────────────────────────────────────
     let effectiveSub = sub;
     if (!sub) {
         if (bindings.isSnapshotInProgress(baselineRef)) {
@@ -170,7 +79,6 @@ async function main(opts, positional) {
             }
             console.log(formatReport(report, format));
 
-            // Auto-generate memos on affected modules via opencode.
             if (!noMemos) {
                 console.error('\n┌─ memo generation ────────────────────────────');
                 console.error(`│ Generating damage summaries via opencode${model ? ' (' + model + ')' : ''}...`);
@@ -188,9 +96,7 @@ async function main(opts, positional) {
 
         case 'select': {
             if (!opts.select || !opts.from) {
-                console.error(
-                    'Usage: refactor select --select <bindings> --from <file> [--to <file>] [--op <type>]'
-                );
+                console.error('Usage: refactor select --select <bindings> --from <file> [--to <file>] [--op <type>]');
                 process.exit(1);
             }
             const selection = {
@@ -203,7 +109,6 @@ async function main(opts, positional) {
             const result = bindings.whatIf(registry, selection);
             console.log(JSON.stringify(result, null, 2));
 
-            // Record a blast-radius memo on the source module.
             if (!noMemos) {
                 console.error('\n┌─ memo recording ──────────────────────────────');
                 bindings.recordBlastRadiusMemo(result, selection);
@@ -218,38 +123,23 @@ async function main(opts, positional) {
                 console.log(JSON.stringify(registry, null, 2));
             } else {
                 const totalExports = Object.values(registry).reduce(
-                    (n, f) => n + Object.keys(f.exports).length,
-                    0
+                    (n, f) => n + Object.keys(f.exports).length, 0
                 );
                 const totalImports = Object.values(registry).reduce(
-                    (n, f) => n + f.imports.length,
-                    0
+                    (n, f) => n + f.imports.length, 0
                 );
-                console.log(
-                    `Resolved ${Object.keys(registry).length} files, ${totalExports} exports, ${totalImports} imports`
-                );
+                console.log(`Resolved ${Object.keys(registry).length} files, ${totalExports} exports, ${totalImports} imports`);
             }
             break;
         }
 
         case 'cleanup': {
-            // Post-commit cleanup: drop stale pre-snapshot memos on
-            // affected modules. The new memos were already added by
-            // `damage` (or can be re-added with --no-cleanup on damage
-            // then manual memo --add).
-            //
-            // By default, looks at HEAD~1 for the baseline (since the
-            // user just committed the refactor changes, HEAD has moved
-            // forward by one commit).
             const cleanupRef = opts.baseline || 'HEAD~1';
             console.log(`Cleaning up memos against baseline on ${cleanupRef}...`);
-
             if (noMemos) {
                 console.log('  (--no-memos: skipping cleanup)');
                 break;
             }
-
-            // If no new memos were passed in, we can still drop stale ones.
             const summary = await bindings.cleanupMemos(cleanupRef, []);
             if (summary.length === 0) {
                 console.log('  No stale memos found to clean up.');
@@ -261,13 +151,6 @@ async function main(opts, positional) {
         }
 
         default:
-            printUsage();
+            printUsage(meta, subcommands);
     }
-}
-
-export { main };
-
-const module = new Module('refactor.mjs', main, meta);
-
-export default module;
-module.supportsDirectRunning(import.meta.url);
+}, meta).supportsDirectRunning(import.meta.url);

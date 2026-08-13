@@ -7,14 +7,14 @@ import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { listAllModules, Module } from '../lib/modules.mjs';
+import { listAllModules, CLI } from '../lib/module.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
 import { memo } from '../lib/memo.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
 import { opencode } from '../lib/opencode.mjs';
-import { cli, AbortError } from '../lib/cli.mjs';
+import { cli, AbortError } from '../lib/module.mjs';
 
 const meta = {
     name: 'commit',
@@ -522,6 +522,6 @@ function stageAndCommit(commitArgs) {
 
 export { main };
 
-const module = new Module('commit.mjs', main, meta);
+const module = new CLI('commit.mjs', main, meta);
 export default module;
 module.supportsDirectRunning(import.meta.url);

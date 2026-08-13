@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
-import { rarebert } from '../lib/projects.mjs';
-import { exit } from '../lib/core.mjs';
-import { Module } from '../lib/modules.mjs';
-import { editor } from '../lib/editor.mjs';
-import { cli } from '../lib/cli.mjs';
 import fs from 'fs';
 import path from 'path';
+import { rarebert } from '../lib/projects.mjs';
+import { exit } from '../lib/core.mjs';
+import { CLI, cli } from '../lib/module.mjs';
+import { editor } from '../lib/editor.mjs';
 
 const meta = {
     name: 'undo',
@@ -15,7 +14,9 @@ const meta = {
     options: []
 };
 
-async function main(opts, positional) {
+export { meta };
+
+export default new CLI('undo.mjs', async (opts, positional) => {
     const rel = editor.readLastModule();
     if (!rel) {
         console.error('Nothing to undo. No .last-module marker found.');
@@ -41,11 +42,4 @@ async function main(opts, positional) {
 
     editor.clearLastModule();
     console.log('✓ Cleared .last-module marker');
-}
-
-export { main };
-
-const module = new Module('undo.mjs', main, meta);
-
-export default module;
-module.supportsDirectRunning(import.meta.url);
+}, meta).supportsDirectRunning(import.meta.url);

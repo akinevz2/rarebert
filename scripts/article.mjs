@@ -10,8 +10,8 @@ import { ide } from '../lib/ide.mjs';
 import { opencode } from '../lib/opencode.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
-import { AbortError } from '../lib/cli.mjs';
-import { Module } from '../lib/modules.mjs';
+import { AbortError } from '../lib/module.mjs';
+import { CLI } from '../lib/module.mjs';
 
 const meta = {
     name: 'article',
@@ -758,6 +758,6 @@ export {
     main
 };
 
-const module = new Module('article.mjs', main, meta);
+const module = new CLI('article.mjs', main, meta);
 export default module;
 module.supportsDirectRunning(import.meta.url);
