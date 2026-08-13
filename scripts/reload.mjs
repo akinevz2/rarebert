@@ -1,15 +1,8 @@
 #!/usr/bin/env node
 
-import fs from 'fs';
-import path from 'path';
-import { home } from '../lib/projects.mjs';
 import { editor } from '../lib/editor.mjs';
-import { Module } from '../lib/modules.mjs';
-
-const HEADER = '# Auto-generated Makefile: a pure index of `node index.js <name>` targets';
-const EXTRA_TARGETS = {
-    deps: 'npm install'
-};
+import { CLI } from '../lib/module.mjs';
+import { refreshMakefile } from '../lib/makefile.mjs';
 
 const meta = {
     name: 'reload',
@@ -18,64 +11,24 @@ const meta = {
     options: [{ flag: '--forget', description: 'also delete .last-module after refreshing' }]
 };
 
-function buildPreamble(targetNames) {
-    return (
-        [
-            HEADER,
-            '',
-            '.DEFAULT_GOAL := list',
-            '',
-            `.PHONY: list ${targetNames.join(' ')}`,
-            '',
-            'list:',
-            '\tnode index.js'
-        ].join('\n') + '\n'
-    );
-}
+export { meta };
 
-function buildBody(names) {
-    const blocks = [];
-    for (const name of names) {
-        blocks.push(`${name}:\n\tnode index.js ${name}`);
-    }
-    for (const [name, recipe] of Object.entries(EXTRA_TARGETS)) {
-        if (names.includes(name)) continue;
-        blocks.push(`${name}:\n\t${recipe}`);
-    }
-    return blocks.map((b) => `\n\n${b}`).join('') + '\n';
-}
-
-async function main(opts, positional) {
+export default new CLI('reload.mjs', async (opts, positional) => {
     if (opts.forget) {
         editor.clearLastModule();
     }
 
-    const scripts = home.discoverModules();
+    const result = refreshMakefile();
     console.log(
-        `discover scripts/ -> ${scripts.length} found: ${scripts.map((s) => path.relative(home.root, s.path)).join(', ') || '(none)'}`
+        `discover scripts/ -> ${result.scriptCount} found: ${result.scripts.map((s) => s.name).join(', ') || '(none)'}`
     );
 
-    const makefilePath = path.join(home.root, 'Makefile');
-    const rel = path.relative(home.root, makefilePath);
-    const names = scripts.map((s) => s.name);
-
-    const phony = [...names, ...Object.keys(EXTRA_TARGETS).filter((n) => !names.includes(n))];
-    const content = buildPreamble(phony) + buildBody(names);
-
-    if (fs.existsSync(makefilePath) && fs.readFileSync(makefilePath, 'utf-8') === content) {
-        console.log(`up-to-date ${rel} (no changes)`);
-    } else {
-        fs.writeFileSync(makefilePath, content);
+    if (result.written) {
         console.log(
-            `refresh ${rel} (${scripts.length} script targets + ${Object.keys(EXTRA_TARGETS).length} extras)`
+            `refresh ${result.rel} (${result.scriptCount} script targets + ${result.extraCount} extras)`
         );
+    } else {
+        console.log(`up-to-date ${result.rel} (no changes)`);
     }
-    console.log(`done: ${scripts.length} module(s), ${makefilePath}`);
-}
-
-export { main };
-
-const module = new Module('reload.mjs', main, meta);
-
-export default module;
-module.supportsDirectRunning(import.meta.url);
+    console.log(`done: ${result.scriptCount} module(s)`);
+}, meta).supportsDirectRunning(import.meta.url);

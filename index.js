@@ -2,11 +2,9 @@
 
 import path from 'path';
 import { rarebert, home } from './lib/projects.mjs';
-import { list } from './lib/list.mjs';
-import { memo } from './lib/memo.mjs';
+import { listModules } from './scripts/list.mjs';
 import { backend } from './lib/backend.mjs';
-import { cli } from './lib/cli.mjs';
-import { Module } from './lib/modules.mjs';
+import { Module, CLI, TUI, cli } from './lib/module.mjs';
 
 const SKIP_ONBOARD = new Set([
     'onboard',
@@ -30,16 +28,15 @@ async function maybeOnboard(cmd) {
     } catch {
         /* not a valid module name; fall through to onboarding */
     }
-    await backend.ensureConfig();
+    await backend.ensureAll();
 }
 
 /**
  * Resolve a scripts/ module by name or path, import it, and run it.
  *
- * This is the sole purpose of this dispatcher — it's an optional entry
- * point.  Each scripts/*.mjs module is directly runnable via
- * `node scripts/<name>.mjs` because it exports a Module instance with
- * a .run(args) method.
+ * The default export must be an instance of Module (or a subclass like
+ * CLI/TUI). If it isn't, the dispatcher fails — every rarebert command
+ * must be a runnable Module.
  */
 async function runModule(ref, args = []) {
     const scripts = home.discoverModules();
@@ -63,19 +60,22 @@ async function runModule(ref, args = []) {
         process.exit(1);
     }
 
-    memo.loadForRun(script.path, script.name);
-
     try {
         const mod = await import('file://' + home.absPath(script.path));
+        const exported = mod.default;
 
-        if (mod.default && typeof mod.default.run === 'function') {
-            await mod.default.run(args);
-            return;
+        if (!(exported instanceof Module)) {
+            console.error(
+                `${script.path}: default export must be a Module instance, got ${exported?.constructor?.name ?? typeof exported}`
+            );
+            process.exit(1);
         }
 
-        const main = mod.default?.main ?? mod.main;
-        if (typeof main === 'function') {
-            await main(args);
+        await exported.run(args);
+
+        // TUI modules signal that the screen should be cleared after exit.
+        if (exported instanceof TUI && exported.clearScreen) {
+            process.stdout.write('\x1B[2J\x1B[H');
         }
     } catch (err) {
         console.error(err.message || err);
@@ -85,12 +85,30 @@ async function runModule(ref, args = []) {
 
 const HELP_COMMANDS = new Set(['--help', '-h', 'help']);
 
+const meta = {
+    name: 'rarebert',
+    description: 'Rarebert dispatcher: resolve a module by name/path and run it',
+    usage: 'node index.js [--core] [module] [args...]',
+    skipHelpIntercept: true,
+    allowUnknownOption: true,
+    options: [
+        { flag: '--core', description: 'operate against the rarebert install prefix instead of the current directory' }
+    ]
+};
+
 async function main(opts, positional) {
+    // --core redirects the `rarebert` singleton to the install prefix
+    // so all module discovery and the onboarding guard operate against
+    // rarebert's own modules rather than the CWD project.
+    if (opts.core) {
+        rarebert.redirect(home.root);
+    }
+
     const cmd = positional[0];
     const rest = positional.slice(1);
 
     if (!cmd || HELP_COMMANDS.has(cmd)) {
-        return list.listModules([cmd, ...rest].filter(Boolean));
+        return listModules([cmd, ...rest].filter(Boolean));
     }
 
     await maybeOnboard(cmd);
@@ -98,16 +116,7 @@ async function main(opts, positional) {
     await runModule(cmd, rest);
 }
 
-const meta = {
-    name: 'rarebert',
-    description: 'Rarebert dispatcher: resolve a module by name/path and run it',
-    usage: 'node index.js [module] [args...]',
-    skipHelpIntercept: true,
-    allowUnknownOption: true,
-    options: []
-};
-
-const module = new Module('index.js', main, meta);
+const module = new CLI('index.js', main, meta);
 
 cli.installSignalHandlers();
 

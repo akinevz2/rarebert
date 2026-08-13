@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'child_process';
-import path from 'path';
-import { rarebert, home } from '../lib/projects.mjs';
-import { Module } from '../lib/modules.mjs';
-import { git } from '../lib/git.mjs';
-import { cli } from '../lib/cli.mjs';
 import { exit } from '../lib/core.mjs';
+import { TUI } from '../lib/module.mjs';
+import {
+    stageProjectDiscovery,
+    stageGitStatus,
+    stageGitDiff,
+    stageBranchRemote,
+    stageLaunchEdit,
+    printDebugListing,
+    STAGE_EXIT
+} from '../lib/status.mjs';
 
 const meta = {
     name: 'status',
@@ -14,131 +18,13 @@ const meta = {
         'Show project folders and modules, then git status/diff/branch/remote, and optionally launch edit — interactive staged review',
     usage: 'node index.js status [--debug]',
     options: [
-        {
-            flag: '--debug',
-            description: 'print prod-ready project discovery listing and exit'
-        }
+        { flag: '--debug', description: 'print prod-ready project discovery listing and exit' }
     ]
 };
 
-const STAGE_CONTINUE = 'continue';
-const STAGE_EXIT = 'exit';
+export { meta };
 
-// ---------------------------------------------------------------------------
-// Stages
-// ---------------------------------------------------------------------------
-
-async function stageGitStatus() {
-    console.log('\n=== git status ===\n');
-    console.log(git.statusSummary());
-    return await promptContinue();
-}
-
-async function stageGitDiff() {
-    console.log('\n=== git diff (colour) ===\n');
-    const diff = git.diffSummary();
-    if (!diff) {
-        console.log('(no uncommitted changes)');
-    } else {
-        console.log(diff);
-    }
-    return await promptContinue();
-}
-
-async function stageBranchRemote() {
-    console.log('\n=== branch & remote ===\n');
-    const { branch, upstream, aheadBehind } = git.branchInfo();
-    console.log(`branch:    ${branch}`);
-    console.log(`upstream:  ${upstream}`);
-    console.log(`ahead/behind: ${aheadBehind}`);
-    console.log(`\n${git.remoteInfo()}`);
-    return await promptContinue();
-}
-
-async function stageProjectDiscovery() {
-    console.log('\n=== project folders ===\n');
-
-    const folders = rarebert.discover();
-    console.log(`${'key'.padEnd(12)} ${'path'.padEnd(16)} modules`);
-    for (const f of folders) {
-        const mods = rarebert.discoverModules(f.dir, f.exts);
-        const modCount = mods.length > 0 ? `(${mods.length} module${mods.length === 1 ? '' : 's'})` : '(empty)';
-        console.log(`${f.key.padEnd(12)} ${f.rel.padEnd(16)} ${modCount}`);
-        for (const m of mods) {
-            console.log(`  ${m.path}`);
-        }
-    }
-
-    return await promptContinue();
-}
-
-async function stageLaunchEdit() {
-    console.log('\n=== launch edit ===\n');
-    if (!cli.isInteractive()) {
-        console.log('Non-interactive; skipping edit launch.');
-        return STAGE_EXIT;
-    }
-
-    const launch = await cli.select('Launch the edit submodule?', [
-        { name: 'edit', message: 'Yes — select a module and edit' },
-        { name: 'exit', message: 'No — exit to shell' }
-    ]);
-
-    if (launch === 'exit') return STAGE_EXIT;
-
-    const editScript = path.join(home.root, 'scripts', 'edit.mjs');
-    console.dir({ editScript });
-    const result = spawnSync(process.execPath, [editScript], {
-        stdio: 'inherit',
-        cwd: rarebert.root
-    });
-    return result.status ?? 0;
-}
-
-// ---------------------------------------------------------------------------
-// Prompt
-// ---------------------------------------------------------------------------
-
-async function promptContinue() {
-    const choice = await cli.select('Continue?', [
-        { name: STAGE_CONTINUE, message: 'Continue to next stage' },
-        { name: STAGE_EXIT, message: 'Exit to shell' }
-    ]);
-    return choice;
-}
-
-// ---------------------------------------------------------------------------
-// Debug listing (prod-ready)
-// ---------------------------------------------------------------------------
-
-function printDebugListing() {
-    const folders = rarebert.discover();
-    console.log(`${'key'.padEnd(12)} ${'path'.padEnd(16)} modules`);
-    for (const f of folders) {
-        const mods = rarebert.discoverModules(f.dir, f.exts);
-        const modCount = mods.length > 0 ? `(${mods.length} module${mods.length === 1 ? '' : 's'})` : '(empty)';
-        console.log(`${f.key.padEnd(12)} ${f.rel.padEnd(16)} ${modCount}`);
-        for (const m of mods) {
-            console.log(`  ${m.path}`);
-        }
-    }
-
-    console.log('\n=== git status ===');
-    console.log(git.statusSummary() || '(clean)');
-
-    const { branch, upstream, aheadBehind } = git.branchInfo();
-    console.log('\n=== branch & remote ===');
-    console.log(`branch:       ${branch}`);
-    console.log(`upstream:     ${upstream}`);
-    console.log(`ahead/behind: ${aheadBehind}`);
-    console.log(git.remoteInfo());
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
-async function main(opts, positional) {
+export default new TUI('status.mjs', async (opts, positional) => {
     if (opts.debug) {
         printDebugListing();
         return exit(0);
@@ -159,12 +45,4 @@ async function main(opts, positional) {
     }
 
     return exit(0);
-}
-
-export { main };
-
-// --- New Module system: self-runnable via `node scripts/status.mjs` ---
-const module = new Module('status.mjs', main, meta);
-
-export default module;
-module.supportsDirectRunning(import.meta.url);
+}, meta).supportsDirectRunning(import.meta.url);

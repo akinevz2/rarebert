@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 
-import fs from 'fs';
-import path from 'path';
-import Enquirer from 'enquirer';
-import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
+import { CLI, cli, AbortError } from '../lib/module.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
-import { languages } from '../lib/languages.mjs';
-import { cli, AbortError } from '../lib/cli.mjs';
-import { Module } from '../lib/modules.mjs';
+import { rarebert } from '../lib/projects.mjs';
+import {
+    projectChoices,
+    pickLanguage,
+    ensureLanguage,
+    promptModuleName,
+    scaffoldSrcModule
+} from '../lib/add.mjs';
 
 const meta = {
     name: 'add',
@@ -22,142 +24,9 @@ const meta = {
     options: [{ flag: '--force', description: 'overwrite an installed language template' }]
 };
 
-function projectChoices() {
-    return rarebert.discover().map((p) => ({ name: p.key, message: p.label }));
-}
+export { meta };
 
-function languageChoices() {
-    const langs = languages.list();
-    const choices = langs.map((l) => ({ name: l, message: `.${l}` }));
-    choices.push({ name: '__install__', message: 'Install a new language via opencode...' });
-    return choices;
-}
-
-async function ensureLanguage(lang, options = {}) {
-    if (languages.isSupported(lang)) return lang;
-    if (!cli.isInteractive()) cli.nonInteractive(`language "${lang}" is not scaffolded.`);
-    console.log(`add: language "${lang}" is not scaffolded yet; running languages toolkit...`);
-    const result = await languages.install(lang, { force: options.force });
-    console.log(`\n✓ Installed language: ${result.name} (${result.path})`);
-    return result.name;
-}
-
-async function pickLanguage(defaultLang = 'mjs') {
-    if (!cli.isInteractive()) cli.nonInteractive('cannot pick a language.');
-    const langs = languages.list();
-    if (langs.length === 0) return await installNewLanguage();
-
-    const initial = Math.max(0, langs.indexOf(defaultLang));
-    const choice = await cli.select('Select a language for the new module:', languageChoices(), {
-        nonInteractiveBehavior: 'return',
-        initial
-    });
-
-    if (choice === '__install__') return await installNewLanguage();
-    return choice;
-}
-
-async function installNewLanguage() {
-    const lang = await cli.input('Language to install (e.g. ts, rb, go):', {
-        validate: (v) => (v.trim() ? true : 'Language is required')
-    });
-    const name = lang.replace(/^\.+/, '').toLowerCase();
-
-    if (languages.isSupported(name)) {
-        const overwrite = await cli.confirm(
-            `Language "${name}" is already installed. Overwrite?`,
-            false
-        );
-        if (!overwrite) cli.ok('Not overwritten.');
-    }
-
-    console.log(`add: installing "${name}"...`);
-    const result = await languages.install(name, { force: true });
-    console.log(`\n✓ Installed language: ${result.name} (${result.path})`);
-    return result.name;
-}
-
-async function promptModuleName(lang) {
-    const ext = `.${lang}`;
-    const namePrompt = new Enquirer.Input({
-        message: `Enter the module name (${ext} extension added automatically):`,
-        validate: (val) => {
-            if (!val.trim()) return 'Module name is required';
-            try {
-                rarebert.normalizeModuleName(val, [ext]);
-                return true;
-            } catch (e) {
-                return e.message;
-            }
-        }
-    });
-    try {
-        return await namePrompt.run();
-    } catch {
-        throw new AbortError();
-    }
-}
-
-async function promptProjectLibs(lang) {
-    const foundLibs = libs.findProjectLibs(lang);
-    if (foundLibs.length === 0 || !cli.isInteractive()) return [];
-
-    const choices = foundLibs.map((lib) => ({
-        name: lib,
-        message: `lib/${lang}/${lib}.${lang}`
-    }));
-
-    const prompt = new Enquirer.MultiSelect({
-        name: 'libraries',
-        message: `Select ${lang} libraries from lib/${lang}/ to add to the preamble:`,
-        choices,
-        result(names) {
-            return Array.isArray(names) ? names : [names];
-        }
-    });
-
-    try {
-        const answer = await prompt.run();
-        return Array.isArray(answer) ? answer : [answer];
-    } catch {
-        throw new AbortError();
-    }
-}
-
-function buildPreamble(lang, selectedLibs) {
-    if (selectedLibs.length === 0) return '';
-    if (lang === 'py') {
-        return selectedLibs.map((lib) => `from lib.${lang} import ${lib}`).join('\n');
-    }
-    const prefix = `../lib/${lang}/`;
-    return selectedLibs
-        .map((lib) => `import * as ${lib} from '${prefix}${lib}.${lang}';`)
-        .join('\n');
-}
-
-async function scaffoldSrcModule(lang, moduleName) {
-    const ext = `.${lang}`;
-    const selectedLibs = await promptProjectLibs(lang);
-    const preamble = buildPreamble(lang, selectedLibs);
-
-    const modulePath = path.join(rarebert.srcDir, `${moduleName}${ext}`);
-    if (fs.existsSync(modulePath)) {
-        cli.fail(`${moduleName}${ext} already exists in src/`);
-    }
-    fs.mkdirSync(rarebert.srcDir, { recursive: true });
-
-    const content = (
-        await languages.resolveTemplate(ext, {
-            MODULE_NAME: moduleName,
-            LIB_IMPORTS: preamble
-        })
-    ).join('\n');
-    fs.writeFileSync(modulePath, content);
-
-    return { modulePath, selectedLibs };
-}
-
-async function main(opts, positional) {
+export default new CLI('add.mjs', async (opts, positional) => {
     console.log('\n=== Rarebert Module Creator ===\n');
 
     const proj = await cli.select('Select a project for the new module:', projectChoices(), {
@@ -180,9 +49,7 @@ async function main(opts, positional) {
 
     const ext = `.${lang}`;
     const name = await promptModuleName(lang);
-    if (!name || !name.trim()) {
-        throw new AbortError();
-    }
+    if (!name || !name.trim()) throw new AbortError();
     const normalizedName = rarebert.normalizeModuleName(name, [ext]);
 
     console.log(`\nGenerating ${lang} module skeleton in ${directory}/...`);
@@ -202,10 +69,9 @@ async function main(opts, positional) {
     if (directory === 'src' && selectedLibs.length > 0) {
         console.log('  Preamble imports:');
         selectedLibs.forEach((lib) => {
-            const line =
-                lang === 'py'
-                    ? `    - from lib.${lang} import ${lib}`
-                    : `    - import * as ${lib} from '../lib/${lang}/${lib}.${lang}'`;
+            const line = lang === 'py'
+                ? `    - from lib.${lang} import ${lib}`
+                : `    - import * as ${lib} from '../lib/${lang}/${lib}.${lang}'`;
             console.log(line);
         });
     }
@@ -228,9 +94,7 @@ async function main(opts, positional) {
     console.log(rel);
 
     const stageResult = git.add([], { all: true, stdio: 'inherit' });
-    if (!stageResult.ok) {
-        console.error('add: git add -A failed; continuing');
-    }
+    if (!stageResult.ok) console.error('add: git add -A failed; continuing');
 
     const editorChild = ide.spawnEditor(modulePath);
     if (editorChild) {
@@ -247,26 +111,12 @@ async function main(opts, positional) {
         '',
         '--- active files context ---',
         context
-    ]
-        .filter((s) => s && s.trim())
-        .join('\n');
+    ].filter((s) => s && s.trim()).join('\n');
 
-    const { status: runStatus, stdout: out } = ide.spawnHeadless(instruction, model, {
-        cwd: rarebert.root
-    });
-    if (runStatus !== 0) {
-        console.error(`add: opencode run exited with status ${runStatus}`);
-    }
+    const { status: runStatus, stdout: out } = ide.spawnHeadless(instruction, model, { cwd: rarebert.root });
+    if (runStatus !== 0) console.error(`add: opencode run exited with status ${runStatus}`);
     if (out) console.log(out);
 
-    console.log(
-        '\nNext: `make commit` if happy with the one-shot, or `make edit` then `make implement` to iterate.'
-    );
-    return exit(result.status ?? 0);
-}
-
-export { main, pickLanguage, ensureLanguage, buildPreamble };
-
-const module = new Module('add.mjs', main, meta);
-export default module;
-module.supportsDirectRunning(import.meta.url);
+    console.log('\nNext: `make commit` if happy with the one-shot, or `make edit` then `make implement` to iterate.');
+    return exit(runStatus ?? 0);
+}, meta).supportsDirectRunning(import.meta.url);

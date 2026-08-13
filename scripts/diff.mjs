@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'child_process';
 import { exit } from '../lib/core.mjs';
-import { git } from '../lib/git.mjs';
-import { listAllModules, promptModule, Module } from '../lib/modules.mjs';
+import { listAllModules, promptModule, CLI } from '../lib/module.mjs';
 import { libs } from '../lib/libs.mjs';
+import { showDiff } from '../lib/diff.mjs';
 
 const meta = {
     name: 'diff',
@@ -16,26 +15,9 @@ const meta = {
     ]
 };
 
-function showDiff(diffArgs, usePager) {
-    // Force colour so the pager (less -R) renders it; when not paging, write
-    // raw to stdout.  Consistent with lib/git.mjs previewDiffFor / commit.mjs.
-    const result = git.git('diff', ['--color=always', ...diffArgs]);
-    if (result.status !== 0) {
-        if (result.stderr) process.stderr.write(result.stderr);
-        return result.status ?? 1;
-    }
-    if (!result.stdout.trim()) {
-        console.log('(no changes)');
-        return 0;
-    }
-    if (!usePager) {
-        process.stdout.write(result.stdout);
-        return 0;
-    }
-    return git.pipeToPager(result.stdout);
-}
+export { meta };
 
-async function main(opts, positional) {
+export default new CLI('diff.mjs', async (opts, positional) => {
     const staged = opts.staged;
     const stat = opts.stat;
     const moduleArg = positional[0];
@@ -55,11 +37,4 @@ async function main(opts, positional) {
     const usePager = process.stdin.isTTY === true && process.stdout.isTTY === true;
     const status = showDiff(diffArgs, usePager);
     return exit(status);
-}
-
-export { main };
-
-const module = new Module('diff.mjs', main, meta);
-
-export default module;
-module.supportsDirectRunning(import.meta.url);
+}, meta).supportsDirectRunning(import.meta.url);
