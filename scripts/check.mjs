@@ -437,8 +437,8 @@ async function main(opts = {}, positional = []) {
     const report = { syntax: [], integrity: [] };
 
     for (const mod of modules) {
-        const rel = rarebert.relPath(mod.path);
-        const { ok, skipped, locations } = runNodeCheck(mod.path);
+        const rel = rarebert.relPath(mod.abs);
+        const { ok, skipped, locations } = runNodeCheck(mod.abs);
 
         if (skipped) {
             console.log(`skip ${rel}`);
@@ -455,7 +455,7 @@ async function main(opts = {}, positional = []) {
             }
         }
 
-        const prior = memo.loadMemos(mod.path);
+        const prior = memo.loadMemos(mod.abs);
         for (const m of prior) {
             for (const content of m.content) {
                 console.log(`     memo ${rel}: ${content}`);

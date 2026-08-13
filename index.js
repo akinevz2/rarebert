@@ -30,7 +30,7 @@ async function maybeOnboard(cmd) {
     } catch {
         /* not a valid module name; fall through to onboarding */
     }
-    await backend.ensureConfig();
+    await backend.ensureAll();
 }
 
 /**
@@ -85,7 +85,25 @@ async function runModule(ref, args = []) {
 
 const HELP_COMMANDS = new Set(['--help', '-h', 'help']);
 
+const meta = {
+    name: 'rarebert',
+    description: 'Rarebert dispatcher: resolve a module by name/path and run it',
+    usage: 'node index.js [--core] [module] [args...]',
+    skipHelpIntercept: true,
+    allowUnknownOption: true,
+    options: [
+        { flag: '--core', description: 'operate against the rarebert install prefix instead of the current directory' }
+    ]
+};
+
 async function main(opts, positional) {
+    // --core redirects the `rarebert` singleton to the install prefix
+    // so all module discovery and the onboarding guard operate against
+    // rarebert's own modules rather than the CWD project.
+    if (opts.core) {
+        rarebert.redirect(home.root);
+    }
+
     const cmd = positional[0];
     const rest = positional.slice(1);
 
@@ -97,15 +115,6 @@ async function main(opts, positional) {
 
     await runModule(cmd, rest);
 }
-
-const meta = {
-    name: 'rarebert',
-    description: 'Rarebert dispatcher: resolve a module by name/path and run it',
-    usage: 'node index.js [module] [args...]',
-    skipHelpIntercept: true,
-    allowUnknownOption: true,
-    options: []
-};
 
 const module = new Module('index.js', main, meta);
 

@@ -9,7 +9,7 @@ import { Module } from '../lib/modules.mjs';
 import { cli } from '../lib/cli.mjs';
 import { backend } from '../lib/backend.mjs';
 
-const DEFAULT_PREFIX = path.join(os.homedir(), '.local', 'rarebert');
+const DEFAULT_PREFIX = path.join(os.homedir(), '.local', 'share', 'rarebert');
 const DEFAULT_BIN_DIR = path.join(os.homedir(), '.local', 'bin');
 const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 

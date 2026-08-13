@@ -46,3 +46,6 @@ report/
 # opencode project config (local-only, see ~/.config/opencode/opencode.json for global)
 opencode.json
 opencode.jsonc
+
+# SQLite database (per-project onboarding registry, lives in the install prefix)
+rarebert.db
