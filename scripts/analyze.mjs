@@ -4,12 +4,12 @@ import fs from 'fs';
 import path from 'path';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { listAllModules, Module } from '../lib/modules.mjs';
+import { listAllModules, resolveModule, Module } from '../lib/modules.mjs';
 import { memo } from '../lib/memo.mjs';
 import { models } from '../lib/models.mjs';
 import { ide } from '../lib/ide.mjs';
 import { languages } from '../lib/languages.mjs';
-import { cli, AbortError } from '../lib/cli.mjs';
+import { cli } from '../lib/cli.mjs';
 
 const meta = {
     name: 'analyze',
@@ -24,10 +24,12 @@ const meta = {
 
 /**
  * Run opencode headlessly (non-interactive) with a given prompt.
- * Returns the trimmed stdout string.
+ * Returns the trimmed stdout string. cwd defaults to the current
+ * project root (rarebert.root) via ide.spawnHeadless, so analysis
+ * runs against the user's project — not the rarebert install dir.
  */
 function runOpencodeHeadless(prompt, model) {
-    const { status, stdout } = ide.spawnHeadless(prompt, model, { cwd: rarebert.root });
+    const { status, stdout } = ide.spawnHeadless(prompt, model);
     if (status !== 0) {
         console.error(`analyze: opencode run exited with status ${status}`);
     }
@@ -118,7 +120,11 @@ function annotateSegmentsWithLineNumbers(segments, mainFunc) {
             }
         }
         if (matchedStart === -1) {
-            // Fallback: use the current cursor position.
+            // Fallback: use the current cursor position and warn — a silent
+            // misannotation here would produce incorrect line labels below.
+            console.error(
+                `analyze: segment "${firstTrim.slice(0, 40)}" not matched in body; falling back to cursor ${cursor}`
+            );
             matchedStart = cursor;
         }
 
@@ -198,27 +204,10 @@ function displayMemberDocs(members, docs, relPath) {
 }
 
 /**
- * Resolve a module reference (path, name, or relative path) to an
- * absolute path. Throws if not found.
- */
-function resolveModulePath(moduleRef) {
-    if (!moduleRef) throw new Error('Module reference is required');
-
-    if (fs.existsSync(path.resolve(moduleRef))) {
-        return path.resolve(moduleRef);
-    }
-    if (rarebert.relPath(moduleRef)) {
-        const found = listAllModules().find((m) => m.path === moduleRef || m.name === moduleRef);
-        if (found) return found.abs;
-    }
-    throw new Error(`Module not found: ${moduleRef}`);
-}
-
-/**
  * Segment + document a main() function. Returns { segments, docs } where
  * each segment is annotated with startLine / lineCount.
  */
-async function analyzeMain(mainFunc, model, relPath) {
+function analyzeMain(mainFunc, model, relPath) {
     console.log(
         `\nSegmenting main() (lines ${mainFunc.startLine}-${mainFunc.endLine}) via opencode...`
     );
@@ -253,7 +242,7 @@ async function analyzeMain(mainFunc, model, relPath) {
 /**
  * Document each public member when no main() exists. Returns { members, docs }.
  */
-async function analyzePublicMembers(members, model, relPath) {
+function analyzePublicMembers(members, model, relPath) {
     console.log(`\nDocumenting ${members.length} public member(s) via opencode...`);
     const docs = [];
     for (let i = 0; i < members.length; i++) {
@@ -270,8 +259,15 @@ async function load(moduleRef, options = {}) {
     const verbose = options.verbose || false;
     const yes = options.yes || false;
 
-    const modulePath = resolveModulePath(moduleRef);
-    const relPath = rarebert.relPath(modulePath);
+    // Canonical, external-project-safe resolution: listAllModules() scans
+    // the current project (rarebert = CWD), so this works both in-tree and
+    // when rarebert is installed on a user's PATH and run against an
+    // external project.
+    const resolved = resolveModule(moduleRef, listAllModules());
+    if (!resolved) throw new Error(`Module not found: ${moduleRef}`);
+    const mod = resolved.module;
+    const modulePath = mod.abs;
+    const relPath = mod.path;
     const ext = path.extname(modulePath).toLowerCase();
     const content = fs.readFileSync(modulePath, 'utf-8');
 
@@ -281,7 +277,7 @@ async function load(moduleRef, options = {}) {
     const imports = await languages.parseImports(content, ext);
     if (imports.length > 0) {
         const importMemoStr = `imports: ${imports.join('; ')}`;
-        memo.remember(modulePath, importMemoStr);
+        memo.remember(relPath, importMemoStr);
         if (verbose) console.log(`  ${importMemoStr}`);
     }
 
@@ -300,7 +296,7 @@ async function load(moduleRef, options = {}) {
     let usedFallback = false;
 
     if (mainFunc) {
-        const result = await analyzeMain(mainFunc, model, relPath);
+        const result = analyzeMain(mainFunc, model, relPath);
         segments = result.segments;
         docs = result.docs;
 
@@ -323,80 +319,66 @@ async function load(moduleRef, options = {}) {
 
         console.log(`\nNo main() found; analyzing ${members.length} public member(s).`);
         usedFallback = true;
-        const result = await analyzePublicMembers(members, model, relPath);
+        const result = analyzePublicMembers(members, model, relPath);
         memberDocs = result.docs;
 
         displayMemberDocs(members, memberDocs, relPath);
     }
 
     // --- Memoization flow ---
-    // Non-interactive without --yes: finish (no memoize)
-    // Non-interactive with --yes: memoize without confirmation
-    // Interactive without --yes: prompt for confirmation
-    // Interactive with --yes: memoize without confirmation
-    const interactive = cli.isInteractive();
+    //   --yes (any mode)            -> memoize without prompting
+    //   interactive, no --yes       -> prompt
+    //   non-interactive, no --yes   -> skip
     const blockCount = usedFallback ? members.length : segments.length;
+    const interactive = cli.isInteractive();
 
     const memoize = () => {
         if (usedFallback) {
             for (let i = 0; i < members.length; i++) {
                 const m = members[i];
                 const doc = memberDocs[i] || '(no documentation)';
-                memo.remember(modulePath, `${m.startLine}: ${doc}`);
+                memo.remember(relPath, `${m.startLine}: ${doc}`);
             }
         } else {
             for (let i = 0; i < segments.length; i++) {
                 const seg = segments[i];
                 const doc = docs[i] || '(no documentation)';
                 const prefix = seg.startLine != null ? `${seg.startLine}` : `block-${i + 1}`;
-                memo.remember(modulePath, `${prefix}: ${doc}`);
+                memo.remember(relPath, `${prefix}: ${doc}`);
             }
         }
         console.log(`\n✓ Memoized ${blockCount} block(s) for ${relPath}`);
     };
 
-    if (!interactive) {
-        if (!yes) {
-            console.log(`\n✓ Analysis complete for ${relPath} (non-interactive, not memoized)`);
-            return { path: modulePath, relative: relPath, language: ext, segments, docs };
-        }
-        memoize();
-        return { path: modulePath, relative: relPath, language: ext, segments, docs };
-    }
-
-    // Interactive
+    let memoized = false;
     if (yes) {
         memoize();
-        return { path: modulePath, relative: relPath, language: ext, segments, docs };
+        memoized = true;
+    } else if (interactive) {
+        const confirmed = await cli.confirm(
+            `Memoize ${blockCount} block(s) of documentation to ${relPath}?`,
+            false
+        );
+        if (confirmed) {
+            memoize();
+            memoized = true;
+        }
     }
 
-    const confirmed = await cli.confirm(
-        `Memoize ${blockCount} block(s) of documentation to ${relPath}?`,
-        false
-    );
-    if (!confirmed) {
-        console.log(`\n✓ Analysis complete for ${relPath} (not memoized)`);
-        return { path: modulePath, relative: relPath, language: ext, segments, docs };
-    }
-
-    memoize();
+    console.log(`\n✓ Analysis complete for ${relPath}${memoized ? '' : ' (not memoized)'}`);
     return { path: modulePath, relative: relPath, language: ext, segments, docs };
 }
 
-async function main(opts, positional) {
-    if (positional.length === 0) {
+async function main(opts = {}, positional = []) {
+    const args = Array.isArray(positional) ? positional : [];
+    if (args.length === 0) {
         console.error('Usage: node index.js analyze <module> [--yes] [-v]');
         return exit(1);
     }
 
-    const moduleArg = positional[0];
+    const moduleArg = args[0];
     const verbose = !!opts.verbose;
     const yes = !!opts.yes;
-
-    if (!moduleArg) {
-        console.error('Usage: node index.js analyze <module> [--yes] [-v]');
-        return exit(1);
-    }
 
     try {
         await load(moduleArg, { verbose, yes });

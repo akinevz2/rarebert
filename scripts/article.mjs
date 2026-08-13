@@ -10,7 +10,7 @@ import { ide } from '../lib/ide.mjs';
 import { opencode } from '../lib/opencode.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
-import { cli, AbortError } from '../lib/cli.mjs';
+import { AbortError } from '../lib/cli.mjs';
 import { Module } from '../lib/modules.mjs';
 
 const meta = {
