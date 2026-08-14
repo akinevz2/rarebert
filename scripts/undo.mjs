@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { current } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { CLI, cli } from '../lib/module.mjs';
+import { cli, CLI, TUI } from '../lib/module.mjs';
 import { editor } from '../lib/editor.mjs';
 
 const meta = {
@@ -16,7 +16,7 @@ const meta = {
 
 export { meta };
 
-export default new CLI('undo.mjs', async (opts, positional) => {
+async function mainTUI(opts, positional) {
     const rel = editor.readLastModule();
     if (!rel) {
         console.error('Nothing to undo. No .last-module marker found.');
@@ -42,4 +42,16 @@ export default new CLI('undo.mjs', async (opts, positional) => {
 
     editor.clearLastModule();
     console.log('✓ Cleared .last-module marker');
-}, meta).supportsDirectRunning(import.meta.url);
+}
+
+const tui = new TUI('undo.mjs', mainTUI, meta);
+
+// CLI errors non-interactive; delegates to TUI when interactive
+export default new CLI(
+    'undo.mjs',
+    async () => {
+        if (cli.isInteractive()) return tui.execute([]);
+        cli.nonInteractive('undo requires an interactive terminal.');
+    },
+    meta
+).supportsDirectRunning(import.meta.url);
