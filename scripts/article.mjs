@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import Enquirer from 'enquirer';
-import { CLI, AbortError } from '../lib/module.mjs';
+import { cli, CLI, TUI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
@@ -34,7 +34,7 @@ const meta = {
 
 export { meta };
 
-export default new CLI('article.mjs', async (opts, positional) => {
+async function mainCLI(opts, positional) {
     const preview = opts.preview;
     const sectionArg = positional[0];
     const modelArg = positional[1];
@@ -64,11 +64,11 @@ export default new CLI('article.mjs', async (opts, positional) => {
         });
     }
 
-    if (process.stdin.isTTY !== true) {
-        console.error('Non-interactive; pass a section path as an argument.');
-        return exit(1);
-    }
+    // No section arg: need to fall through to menu (but CLI can't do interactive)
+    cli.nonInteractive('Non-interactive; pass a section path as an argument.');
+}
 
+async function mainMenu(opts, positional) {
     while (true) {
         const menu = new Select({
             name: 'mode',
@@ -81,16 +81,15 @@ export default new CLI('article.mjs', async (opts, positional) => {
                 { name: 'exit', message: 'Exit' }
             ]
         });
+
         let choice;
         try {
             choice = await menu.run();
-        } catch {
+        } catch (e) {
             throw new AbortError();
         }
 
-        if (choice === 'exit') {
-            return exit(0);
-        }
+        if (choice === 'exit') return exit(0);
         if (choice === 'manage') {
             const before = isReportClean();
             await manageSections();
@@ -104,7 +103,7 @@ export default new CLI('article.mjs', async (opts, positional) => {
         }
         if (choice === 'preamble') {
             assertCleanBeforeSwitch();
-            const model = await models.resolve(modelArg);
+            const model = await models.resolve(positional[1]);
             await editPreamble(model);
             continue;
         }
@@ -116,10 +115,13 @@ export default new CLI('article.mjs', async (opts, positional) => {
                 continue;
             }
             const section = await promptSection(sections, null);
-            const model = await models.resolve(modelArg);
+            const model = await models.resolve(positional[1]);
             const status = await editSection(model, section.path, section.rel);
             if (status !== 0) console.error(`edit session exited with status ${status}.`);
             await confirmCommit(`update ${section.rel}`);
         }
     }
-}, meta).supportsDirectRunning(import.meta.url);
+}
+
+const tui = new TUI('article.mjs', mainMenu, meta);
+export default new CLI('article.mjs', mainCLI, meta).supportsDirectRunning(import.meta.url);
