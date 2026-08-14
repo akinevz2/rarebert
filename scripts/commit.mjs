@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { CLI } from '../lib/module.mjs';
+import { cli, CLI, TUI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import {
     promptCommitChoice,
@@ -18,7 +18,6 @@ import {
     models,
     git,
     memo,
-    cli,
     listAllModules
 } from '../lib/git.mjs';
 
@@ -35,7 +34,7 @@ const meta = {
     ]
 };
 
-async function main(opts, positional) {
+async function mainMenu(opts, positional) {
     const interactive = process.stdin.isTTY === true;
     const verbose = opts.verbose;
 
@@ -164,4 +163,17 @@ async function main(opts, positional) {
     }
 }
 
-export default new CLI('commit.mjs', main, meta).supportsDirectRunning(import.meta.url);
+const tui = new TUI('commit.mjs', mainMenu, meta);
+
+// CLI errors non-interactive; delegates to TUI when interactive
+export default new CLI(
+    'commit.mjs',
+    async () => {
+        if (cli.isInteractive()) return tui.execute([]);
+        cli.nonInteractive(
+            'commit: interactive mode required (stdin is not a TTY).\n' +
+                'Run `node index.js commit` from a terminal.'
+        );
+    },
+    meta
+).supportsDirectRunning(import.meta.url);
