@@ -2,7 +2,7 @@
 
 import { backend } from '../lib/backend.mjs';
 import { exit } from '../lib/core.mjs';
-import { cli, CLI, TUI } from '../lib/module.mjs';
+import { cli, CLI } from '../lib/module.mjs';
 import { store } from '../lib/core.mjs';
 import { current, rarebert } from '../lib/projects.mjs';
 
