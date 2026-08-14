@@ -5,6 +5,7 @@ import Enquirer from 'enquirer';
 import { git } from '../lib/git.mjs';
 import { cli, CLI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
+import { parseNoteMemos } from '../lib/memo.mjs';
 
 function fullScreenLimit() {
     return Math.max(8, (process.stdout.rows || 24) - 4);
@@ -47,55 +48,7 @@ function fileDiff(sha, filePath) {
 
 function commitMemos(sha) {
     const note = git.notesShow(sha);
-    if (!note) return [];
-
-    // Handle new format with header "N memos cached\n\n{JSON}"
-    let payload;
-    const newlineIdx = note.indexOf('\n\n');
-
-    if (newlineIdx >= 0) {
-        const header = note.slice(0, newlineIdx);
-        payload = note.slice(newlineIdx + 2);
-
-        // Check for new meta-object format header
-        if (/^\d+ memo(?:s)? cached$/.test(header.trim())) {
-            // New format with timestamp/modules structure
-            try {
-                const data = JSON.parse(payload);
-                if (data && typeof data === 'object' && Array.isArray(data.modules)) {
-                    return data.modules.map((m) => ({
-                        module: m.name || m.path,
-                        memos: Array.isArray(m.memos) ? m.memos : []
-                    }));
-                }
-            } catch {}
-        }
-    } else {
-        payload = note;
-    }
-
-    // Try parsing the content as JSON
-    let snap;
-    try {
-        const data = JSON.parse(payload);
-        if (data && typeof data === 'object' && Array.isArray(data.modules)) {
-            return data.modules.map((m) => ({
-                module: m.name || m.path,
-                memos: Array.isArray(m.memos) ? m.memos : []
-            }));
-        }
-        snap = data;
-    } catch {
-        return [];
-    }
-
-    // Legacy format: array of memo entries with .module and .memos
-    if (!Array.isArray(snap)) return [];
-
-    return snap.map((entry) => ({
-        module: entry.module?.name || entry.module?.path || 'unknown',
-        memos: entry.memos || []
-    }));
+    return parseNoteMemos(note);
 }
 
 function showInPager(content) {

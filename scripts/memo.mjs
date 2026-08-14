@@ -3,7 +3,6 @@
 import { CLI, listAllModules, resolveModuleSet } from '../lib/module.mjs';
 import {
     memo,
-    groupArgs,
     cmdAdd,
     cmdCommit,
     cmdLog,
@@ -19,7 +18,7 @@ const META = {
     description:
         'Print or manage memos. Default (no flags): print memos — all, or scoped to file args. Mutating flags: --add, --drop, --forget, --commit, --recall, --log.',
     usage:
-        'node index.js memo [files...] [--add <path> <memo>...|--drop <path> [indices]|--forget <path>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
+        'node index.js memo [files...] [--add <path> <memo>...|--drop <path> [indices]|--forget <path>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]. Only one mutating flag per invocation; the flag must precede at least one of its positional arguments (module or memo text). Memo text may precede the module target.',
     allowUnknownOption: true,
     options: [
         { flag: '--yes', description: 'Skip confirmation for --commit' },
@@ -31,15 +30,37 @@ const META = {
 async function main(opts, positional) {
     const ACTION_FLAGS = new Set(['--add', '--commit', '--log', '--recall', '--drop', '--forget']);
 
-    const groups = groupArgs(positional);
     const actionFlagsPresent = positional.filter((a) => ACTION_FLAGS.has(a));
     const nonFlag = positional.filter((a) => (!a.startsWith('-') || /^-?\d+$/.test(a)) && a);
     const modules = listAllModules();
 
+    if (actionFlagsPresent.length > 1) {
+        console.error(
+            `memo: only one mutating flag is allowed per invocation; got ${actionFlagsPresent.length} (${actionFlagsPresent.join(', ')})`
+        );
+        return;
+    }
+
+    if (actionFlagsPresent.length === 1) {
+        const flag = actionFlagsPresent[0];
+        const flagIdx = positional.indexOf(flag);
+        const before = positional.slice(0, flagIdx).filter((a) => !a.startsWith('--'));
+        const after = positional.slice(flagIdx + 1).filter((a) => !a.startsWith('--'));
+        // Postfix (flag after all its positionals) is not allowed; the
+        // flag must precede at least one positional. --commit takes no
+        // module/memo positionals, so the rule does not apply to it.
+        if (flag !== '--commit' && before.length > 0 && after.length === 0) {
+            console.error(
+                `memo: postfix form not allowed; ${flag} must precede at least one of its positional arguments (module or memo text)`
+            );
+            return;
+        }
+    }
+
     const has = (f) => actionFlagsPresent.includes(f);
 
     if (has('--add')) {
-        await cmdAdd(groups, modules);
+        await cmdAdd(nonFlag, modules);
         return;
     }
 
