@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { listAllModules, promptModule, resolveModule, CLI, cli } from '../lib/module.mjs';
+import { listAllModules, promptModule, resolveModule, TUI, cli } from '../lib/module.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
@@ -19,7 +19,7 @@ const meta = {
 
 export { meta };
 
-export default new CLI('edit.mjs', async (opts, positional) => {
+export default new TUI('edit.mjs', async (opts, positional) => {
     const modules = listAllModules();
     if (modules.length === 0) {
         return exit(1, () => console.error('No modules found.'));
