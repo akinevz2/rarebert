@@ -2,10 +2,8 @@
 
 .DEFAULT_GOAL := list
 
-.PHONY: list add analyze article check commit diff edit implement install languages memo onboard open project refactor reload run status trail undo upgrades update deps
+.PHONY: add analyze article check commit diff edit implement install languages list memo onboard open present project refactor reload run status symbols trail undo update upgrades deps
 
-list:
-	node index.js
 
 
 add:
@@ -38,6 +36,9 @@ install:
 languages:
 	node index.js languages
 
+list:
+	node index.js list
+
 memo:
 	node index.js memo
 
@@ -46,6 +47,9 @@ onboard:
 
 open:
 	node index.js open
+
+present:
+	node index.js present
 
 project:
 	node index.js project
@@ -62,17 +66,20 @@ run:
 status:
 	node index.js status
 
+symbols:
+	node index.js symbols
+
 trail:
 	node index.js trail
 
 undo:
 	node index.js undo
 
-upgrades:
-	node index.js upgrades
-
 update:
 	node index.js update
+
+upgrades:
+	node index.js upgrades
 
 deps:
 	npm install

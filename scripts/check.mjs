@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { rarebert } from '../lib/projects.mjs';
+import { current } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { listAllModules, CLI, resolveModuleSet } from '../lib/module.mjs';
 import { memo, printDagForSet } from '../lib/memo.mjs';
@@ -104,7 +104,7 @@ export default new CLI(
 
         if (!noSyntax) {
             for (const mod of scopedModules) {
-                const rel = rarebert.relPath(mod.abs);
+                const rel = current.relPath(mod.abs);
                 const { ok, skipped, locations } = runNodeCheck(mod.abs);
                 const hasMemo = memoedPaths.has(mod.path);
                 const marker = hasMemo ? ` ${YELLOW_STAR}` : '';

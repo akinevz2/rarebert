@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { rarebert } from '../lib/projects.mjs';
+import { current } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
@@ -43,7 +43,7 @@ export default new TUI(
         }
 
         console.log('open: launching full TUI at project root');
-        const tui = ide.spawnTui(model, { cwd: rarebert.root });
+        const tui = ide.spawnTui(model, { cwd: current.root });
         const status = tui.done ? await tui.done : tui.status;
         return exit(status);
     },

@@ -7,7 +7,7 @@ import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
 import { exit } from '../lib/core.mjs';
 import { git } from '../lib/git.mjs';
-import { rarebert } from '../lib/projects.mjs';
+import { current } from '../lib/projects.mjs';
 
 const meta = {
     name: 'edit',
@@ -56,7 +56,7 @@ export default new TUI('edit.mjs', async (opts, positional) => {
 
     const model = modelArg ? await models.resolve(modelArg) : await models.resolve();
     const tui = ide.spawnTui(model, {
-        cwd: rarebert.root,
+        cwd: current.root,
         prompt: `We're reviewing ${rel}`
     });
     const status = tui.done ? await tui.done : tui.status;

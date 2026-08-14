@@ -29,7 +29,7 @@ const meta = {
     options: [
         {
             flag: '--model <id>',
-            description: 'opencode model id (otherwise prompted from opencode.json)'
+            description: 'opencode model id (otherwise prompted from opencode.jsonc)'
         },
         { flag: '-v, --verbose', description: 'Print the full opencode prompt before the summary' }
     ]
@@ -39,7 +39,7 @@ async function main(opts, positional) {
     const interactive = process.stdin.isTTY === true;
     const verbose = opts.verbose;
 
-    // Validate a user-supplied model id against opencode.json early so
+    // Validate a user-supplied model id against opencode.jsonc early so
     // typos and unfamiliar usage produce a clear error before any
     // interactive prompts or git operations run.
     const modelArg = positional[0];

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
+import { exit } from '../lib/core.mjs';
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { home } from '../lib/projects.mjs';
+import { rarebert } from '../lib/projects.mjs';
 import { CLI, cli } from '../lib/module.mjs';
 import { backend } from '../lib/backend.mjs';
 import { DEFAULT_PREFIX, NPM_BIN, resolvePrefix, resolveBinDir, linkBinary } from '../lib/install.mjs';
@@ -27,15 +28,25 @@ export default new CLI('install.mjs', async (opts, positional) => {
     const force = !!opts.force;
 
     if (fs.existsSync(prefix) && !force && fs.readdirSync(prefix).length > 0) {
+        if (!process.stdin.isTTY) {
+            console.error(
+                `Error: Prefix "${prefix}" is non-empty. ` +
+                    'Run with --force to overwrite, or specify --prefix to use a different location.'
+            );
+            return exit(1);
+        }
         const overwrite = await cli.confirm(`Prefix "${prefix}" is non-empty. Continue?`, false);
-        if (!overwrite) cli.ok('Not installed.');
+        if (!overwrite) {
+            console.log(`To overwrite existing install, use --force.`);
+            return exit(0);
+        }
     }
 
     fs.mkdirSync(prefix, { recursive: true });
     console.log(`install: prefix -> ${prefix}`);
 
     const result = spawnSync(NPM_BIN, ['install', '--prefix', prefix, '--ignore-scripts'], {
-        cwd: home.root,
+        cwd: rarebert.root,
         stdio: 'inherit'
     });
 

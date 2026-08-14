@@ -46,7 +46,53 @@ than splicing into the middle of a class.
 Do **not** insert new methods alphabetically, by perceived importance, or
 "next to related code". Recency wins over locality.
 
-## 3. Adjacent-module refactors trigger a library extraction check
+## 3. Destructive operations require a user warning
+
+The user **must always be warned before** a destructive operation is
+performed. No destructive action runs without explicit acknowledgement.
+
+Operations considered destructive:
+
+- **File deletions** — no unauthorised `rm`, `fs.unlink`, `git clean`,
+  or any call that removes a tracked or working file. State what will be
+  deleted and wait for confirmation before executing.
+- **`git checkout` on a dirty tree** — never run `git checkout <ref>`
+  or `git checkout -- <paths>` while the working tree has uncommitted
+  changes. Check `git status` first; if dirty, warn the user and abort
+  the checkout until the tree is committed or stashed with confirmation.
+- **`git reset`** — never run `git reset --hard`, `git reset <ref>`
+  moving HEAD backwards, or `git reset --soft` that discards staged
+  work. Warn and require confirmation. Prefer non-destructive
+  alternatives (`git revert`, `git stash`) and surface them to the user.
+
+Rule of thumb: if an operation can lose uncommitted work, delete files,
+or move HEAD in a way that hides prior commits, it is destructive. Warn
+first, then act only on confirmation.
+
+## 4. Partial-overwrite collisions during insertion
+
+If you insert a function or method and discover that the edit
+accidentally overwrote part of another existing declaration (a partial
+collision — the new code landed on top of, or truncated, a prior
+`function`, `class`, `method`, or `const` body), you **must pause
+immediately**:
+
+1. **Stop editing** — do not attempt to repair the collision silently
+   or chain further edits on top of the damaged region.
+2. **Prompt the user** — ask whether they want their editor opened on
+   the conflicting line so they can undo the change themselves and
+   review the inserted code. Surface the file path and the offending
+   line number.
+3. **On acceptance** — use the `open-in-editor` skill to open the file
+   at the conflict and hand control back to the user for review.
+4. **On refusal** — only then proceed to repair the collision yourself,
+   re-reading the surrounding declarations to restore the overwritten
+   content before continuing.
+
+The user always gets the first chance to review a collision they did
+not author. Never bury the damage in a follow-up edit.
+
+## 5. Adjacent-module refactors trigger a library extraction check
 
 Any time an adjacent module (a sibling in `scripts/` or `lib/`, or a
 module reached through the import DAG) needs to be refactored, **before
@@ -90,3 +136,8 @@ projection.
   another module you have touched recently.
 - Run `audit-consistency naming` to verify placement conventions hold
   after edits that touch class bodies.
+- You are about to perform a destructive operation (file deletion,
+  `git checkout`, `git reset`) and need to confirm the warning rule
+  applies.
+- An edit collided with an existing declaration and you need to decide
+  whether to hand the conflict to the user's editor for review.

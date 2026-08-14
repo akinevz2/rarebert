@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import path from 'path';
-import { rarebert, home } from './lib/projects.mjs';
+import { current, rarebert } from './lib/projects.mjs';
 import { listModules } from './scripts/list.mjs';
 import { backend } from './lib/backend.mjs';
 import { Module, CLI, cli } from './lib/module.mjs';
 
 const SKIP_ONBOARD = new Set([
     'onboard',
+    'add',
     'reload',
     'help',
     'h',
@@ -23,7 +24,7 @@ const SKIP_ONBOARD = new Set([
 async function maybeOnboard(cmd) {
     if (cmd && SKIP_ONBOARD.has(cmd)) return;
     try {
-        const normalized = rarebert.normalizeModuleName(path.basename(cmd, path.extname(cmd)));
+        const normalized = current.normalizeModuleName(path.basename(cmd, path.extname(cmd)));
         if (SKIP_ONBOARD.has(normalized)) return;
     } catch {
         /* not a valid module name; fall through to onboarding */
@@ -39,20 +40,20 @@ async function maybeOnboard(cmd) {
  * must be a runnable Module.
  */
 async function runModule(ref, args = []) {
-    const scripts = home.discoverModules();
+    const scripts = rarebert.discoverModules();
 
     const isPathRef = ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
 
     let script;
     if (isPathRef) {
-        const rel = home.relPath(path.resolve(home.root, ref));
+        const rel = rarebert.relPath(path.resolve(rarebert.root, ref));
         script = scripts.find((s) => s.path === rel || s.path === ref);
-        if (!script && path.resolve(home.root, ref)) {
+        if (!script && path.resolve(rarebert.root, ref)) {
             script = { name: path.basename(ref, path.extname(ref)), path: rel };
         }
     } else {
-        const name = home.normalizeModuleName(ref);
-        script = scripts.find((s) => home.normalizeModuleName(s.name) === name);
+        const name = rarebert.normalizeModuleName(ref);
+        script = scripts.find((s) => rarebert.normalizeModuleName(s.name) === name);
     }
 
     if (!script) {
@@ -61,7 +62,7 @@ async function runModule(ref, args = []) {
     }
 
     try {
-        const mod = await import('file://' + home.absPath(script.path));
+        const mod = await import('file://' + rarebert.absPath(script.path));
         const exported = mod.default;
 
         if (!(exported instanceof Module)) {
@@ -92,11 +93,11 @@ const meta = {
 };
 
 async function main(opts, positional) {
-    // --core redirects the `rarebert` singleton to the install prefix
+    // --core redirects the `current` singleton to the install prefix
     // so all module discovery and the onboarding guard operate against
     // rarebert's own modules rather than the CWD project.
     if (opts.core) {
-        rarebert.redirect(home.root);
+        current.redirect(rarebert.root);
     }
 
     const cmd = positional[0];

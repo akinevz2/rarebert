@@ -2,7 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { rarebert } from '../lib/projects.mjs';
+import { current } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { CLI, cli } from '../lib/module.mjs';
 import { editor } from '../lib/editor.mjs';
@@ -23,7 +23,7 @@ export default new CLI('undo.mjs', async (opts, positional) => {
         return exit(1);
     }
 
-    const absPath = path.isAbsolute(rel) ? rel : path.join(rarebert.root, rel);
+    const absPath = path.isAbsolute(rel) ? rel : path.join(current.root, rel);
 
     if (fs.existsSync(absPath)) {
         const confirmed = await cli.confirm(

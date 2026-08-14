@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { CLI } from '../lib/module.mjs';
 import * as bindings from '../lib/bindings.mjs';
-import { home as projects } from '../lib/projects.mjs';
+import { rarebert as projects } from '../lib/projects.mjs';
 import { formatReport, printUsage } from '../lib/refactor.mjs';
 
 const meta = {
