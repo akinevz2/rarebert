@@ -3,7 +3,7 @@
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
 import { git } from '../lib/git.mjs';
-import { cli, CLI } from '../lib/module.mjs';
+import { cli, CLI, TUI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { parseNoteMemos } from '../lib/memo.mjs';
 
@@ -153,12 +153,7 @@ const meta = {
 
 export { meta };
 
-export default new CLI('trail.mjs', async (opts, positional) => {
-    if (!cli.isInteractive()) {
-        cli.nonInteractive('trail requires an interactive terminal.');
-        return;
-    }
-
+async function mainTUI(opts, positional) {
     const limit = opts.limit;
     const commits = readCommits(limit);
     if (commits.length === 0) {
@@ -195,4 +190,18 @@ export default new CLI('trail.mjs', async (opts, positional) => {
             continue;
         }
     }
-}, meta).supportsDirectRunning(import.meta.url);
+}
+
+const tui = new TUI('trail.mjs', mainTUI, meta);
+
+// CLI dispatch: delegate to TUI when interactive, error non-interactive
+export default new CLI(
+    'trail.mjs',
+    async () => {
+        if (cli.isInteractive()) {
+            return tui.execute([]);
+        }
+        cli.nonInteractive('trail requires an interactive terminal.');
+    },
+    meta
+).supportsDirectRunning(import.meta.url);
