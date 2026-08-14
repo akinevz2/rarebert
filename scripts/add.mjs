@@ -114,9 +114,9 @@ export default new CLI('add.mjs', async (opts, positional) => {
     ].filter((s) => s && s.trim()).join('\n');
 
     const { status: runStatus, stdout: out } = ide.spawnHeadless(instruction, model, { cwd: rarebert.root });
-    if (runStatus !== 0) console.error(`add: opencode run exited with status ${runStatus}`);
-    if (out) console.log(out);
-
-    console.log('\nNext: `make commit` if happy with the one-shot, or `make edit` then `make implement` to iterate.');
-    return exit(runStatus ?? 0);
+    return exit(runStatus ?? 0, () => {
+        if (runStatus !== 0) console.error(`add: opencode run exited with status ${runStatus}`);
+        if (out) console.log(out);
+        console.log('\nNext: `make commit` if happy with the one-shot, or `make edit` then `make implement` to iterate.');
+    });
 }, meta).supportsDirectRunning(import.meta.url);

@@ -31,14 +31,12 @@ export default new CLI('present.mjs', async (opts, positional) => {
             ? String(opts.instruction).trim()
             : await present.promptInstruction();
         if (!instruction) {
-            console.error('present: no instruction provided');
-            return exit(1);
+            return exit(1, () => console.error('present: no instruction provided'));
         }
         presentation = await present.buildPresentation(instruction, model, opts);
     }
 
     if (!presentation) return exit(1);
 
-    present.walkSlides(presentation);
-    return exit(0);
+    return exit(0, () => present.walkSlides(presentation));
 }, meta).supportsDirectRunning(import.meta.url);

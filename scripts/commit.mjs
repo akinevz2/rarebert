@@ -46,16 +46,15 @@ async function main(opts, positional) {
     if (modelArg) {
         const known = models.list(models.readConfig());
         if (known.length > 0 && !known.some((m) => m.id === modelArg)) {
-            console.error(
-                `commit: unknown model "${modelArg}".\n` +
-                    `Available models:\n` +
-                    known.map((m) => `  ${m.id}${m.isDefault ? ' (default)' : ''}`).join('\n')
-            );
-            return exit(1);
+            return exit(1, () => {
+                console.error(
+                    `commit: unknown model "${modelArg}".\n` +
+                        `Available models:\n` +
+                        known.map((m) => `  ${m.id}${m.isDefault ? ' (default)' : ''}`).join('\n')
+                );
+            });
         }
     }
-
-    const status = git.git('status', ['--short']);
     const diffStat = git.git('diff', ['HEAD', '--stat']);
     const diffFull = git.git('diff', ['HEAD']);
 
@@ -78,8 +77,7 @@ async function main(opts, positional) {
     ].join('\n');
 
     if (!status.stdout.trim()) {
-        console.log('Nothing to commit: working tree clean.');
-        return exit(0);
+        return exit(0, () => console.log('Nothing to commit: working tree clean.'));
     }
 
     // Non-interactive mode (stdin is not a TTY, e.g. piped or CI): the
@@ -89,11 +87,12 @@ async function main(opts, positional) {
     // and ask the caller to run from a TTY. This prevents the previous
     // bug where piping (| head) would hang waiting for opencode.
     if (!interactive) {
-        console.error(
-            'commit: interactive mode required (stdin is not a TTY).\n' +
-                'Run `node index.js commit` from a terminal, or use plain git for scripted commits.'
-        );
-        return exit(1);
+        return exit(1, () => {
+            console.error(
+                'commit: interactive mode required (stdin is not a TTY).\n' +
+                    'Run `node index.js commit` from a terminal, or use plain git for scripted commits.'
+            );
+        });
     }
 
     const choice = await promptCommitChoice();
@@ -114,8 +113,7 @@ async function main(opts, positional) {
             // User declined to commit after previewing. Do NOT unstage —
             // they may want to rerun make commit or manually adjust.
             git.git('status', [], { stdio: 'inherit' });
-            console.error('Aborted; staged files preserved.');
-            return exit(0);
+            return exit(0, () => console.error('Aborted; staged files preserved.'));
         }
     }
 
@@ -146,8 +144,7 @@ async function main(opts, positional) {
         const summary = summariseAndShow(model, changelist, firstLine, verbose);
 
         if (!summary) {
-            console.error('No summary produced; aborting.');
-            return exit(1);
+            return exit(1, () => console.error('No summary produced; aborting.'));
         }
 
         // Ask the user if the summary looks good. Default is yes —
