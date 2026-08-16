@@ -2,6 +2,7 @@
 
 import { git } from '../lib/git.mjs';
 import { CLI } from '../lib/module.mjs';
+import { exit } from '../lib/core.mjs';
 import {
     collectChanges,
     categorize,
@@ -29,10 +30,11 @@ export default new CLI('upgrades.mjs', async (opts, positional) => {
         rows = collectChanges(base);
     } catch (err) {
         console.error(`upgrades: ${err.message}`);
-        return;
+        return exit(1);
     }
 
     const buckets = categorize(rows);
     const inventory = inventoryAddedModules(buckets.added, git.root);
     printSummary(buckets, inventory, base);
+    return exit(0);
 }, meta).supportsDirectRunning(import.meta.url);

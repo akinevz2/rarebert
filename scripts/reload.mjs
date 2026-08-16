@@ -2,6 +2,7 @@
 
 import { editor } from '../lib/editor.mjs';
 import { CLI } from '../lib/module.mjs';
+import { exit } from '../lib/core.mjs';
 import { refreshMakefile } from '../lib/makefile.mjs';
 
 const meta = {
@@ -31,4 +32,5 @@ export default new CLI('reload.mjs', async (opts, positional) => {
         console.log(`up-to-date ${result.rel} (no changes)`);
     }
     console.log(`done: ${result.scriptCount} module(s)`);
+    return exit(0);
 }, meta).supportsDirectRunning(import.meta.url);

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { CLI, cli } from '../lib/module.mjs';
+import { CLI } from '../lib/module.mjs';
+import { exit } from '../lib/core.mjs';
 import { chooseLanguage, install, showList } from '../lib/project-helpers.mjs';
 
 const meta = {
@@ -14,12 +15,18 @@ export { meta };
 
 export default new CLI('project.mjs', async (opts, positional) => {
     const sub = positional[0];
-    if (!sub || sub === 'list' || sub === '--list') return showList();
-    if (sub === 'install') return await install(opts, positional.slice(1));
+    if (!sub || sub === 'list' || sub === '--list') {
+        showList();
+        return exit(0);
+    }
+    if (sub === 'install') {
+        await install(opts, positional.slice(1));
+        return exit(0);
+    }
     if (sub === 'choose') {
         const lang = await chooseLanguage();
         console.log(lang);
-        return;
+        return exit(0);
     }
-    cli.fail(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
+    return exit(1, () => console.error(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`));
 }, meta).supportsDirectRunning(import.meta.url);

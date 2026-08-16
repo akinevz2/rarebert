@@ -73,14 +73,89 @@ Before commits, review the request history stored in `.last-module`:
 ### Model Capabilities by Provider/VRAM
 
 - **WS-RAREBOX (24GB)**: Can run large quantization models, most flexible
-- **V9-MINI (16GB)**: Good for mid-sized models, suitable for most tasks
-- **WS-VISION (8GB)**: Limited to q4 or q5 quantizations; best for smaller prompts
+- **WS-MINIFRIDGE (16GB)**: Good for mid-sized models, suitable for most tasks
 
 Use `--model PROVIDER/MODEL` to override default, e.g.:
 
 ```
-node index.js edit mymodule --model ollama_wsvision/qwen3-coder:latest
+opencode run "<prompt>" -m ws-rarebox/laguna-xs-2.1:q8_0
 ```
+
+### Analyze command 
+
+The `analyze` command (`scripts/analyze.mjs` → `lib/analyze.mjs` +
+`lib/introspect.mjs`) is the canonical source-map and dependency-tracing
+tool. It is driven by polymorphic language primitives in `lib/languages.mjs`
+(`lang*.js` support modules under `lib/supports/`), so JS/mjs/ts/py each
+define their own parsing semantics. Below are the operational details an
+agent should know before invoking it.
+
+**Modes (mutually exclusive, in dispatch order):**
+1. `--document` — opencode documentation pass (segment `main()`, document
+   each block, optionally memoize). Requires a model; pass `--yes` to
+   auto-memoize non-interactively.
+2. `--trace <name>` — walk a binding's full dependency chain across modules.
+3. `--graph` — print the resolved import graph (module list with counts).
+4. default — condensed source-map summary per module (imports, declarations
+   with 1-step resolution, exports).
+
+**Module resolution:** `node index.js analyze scripts/commit.mjs` accepts
+one or more paths (relPath, basename, or stem). With no args, launches a TUI
+select over `listAllModules()`. Non-interactive stdin (piped) fails the
+select — always pass module args in scripts/CI.
+
+**Declarations are top-level, not just exported.** `extractTopLevelMembers`
+captures every column-0 `const`/`let`/`var`/`function`/`class` declaration
+with or without an `export` prefix. Non-exported decls are flagged
+`exported: false` and rendered with a `, local` tag in the summary. This is
+why `meta` and `main` (declared without `export`, re-exported via
+`export default new CLI(...)`) appear in the declarations list. The older
+`extractPublicMembers` is a back-compat filtered view (exported-only) and is
+still used by `--document`'s fallback path.
+
+**Import parsing handles multi-line blocks.** The gatherer caps continuation
+at 200 lines and bails early if a new top-level statement begins before
+`from` is found. A 19-line `import { ... } from '...'` block parses correctly.
+
+**Tracing (`--trace`):** the `--trace` argument is a `::`-qualified path:
+- `name` — find first module exporting/declaring `name`.
+- `module::name` — resolve `name` in `module` (module may be a short name
+  like `languages` → `lib/languages.mjs`, a basename, or full relPath).
+- `module::outer::inner` — **nested declaration tracing**: resolve `outer`
+  as a top-level declaration, then descend into its body to find `inner` as
+  a local declaration (via the language's `explorableMembers` map). The
+  chain renders `outer` as `(function, ...)` and `inner` as
+  `(local const, ...)`. Full recursion: the local's references are walked
+  against sibling locals, module imports, and top-level declarations;
+  imports recurse into their target module; cycles are detected via a
+  `visited` set keyed by `${modPath}::${namePath}`.
+
+**Pre-existing cycles in the import graph.** `lib/git.mjs::git`,
+`lib/module.mjs::AbortError`, `lib/core.mjs::store`, and
+`lib/projects.mjs::home` are mutually re-exported; traces that reach them
+report `[cycle]` issues. This is expected, not a regression — the
+cycle-detection prevents infinite recursion.
+
+**Language parser caveats:**
+- `lib/supports/lang*.js` files are ESM but have `.js` extensions, so
+  `analyze` parses them with the CommonJS parser (`jsExtractBindings`),
+  which looks for `require()` not `import`. These modules will show 0
+  imports — their real ESM imports are not recognized. This is a known
+  limitation of the `.js` extension mapping, not a bug in the module.
+- The CommonJS parser only matches export/require patterns at column 0
+  and skips comment lines, so template string values and JSDoc examples
+  containing `require(...)` / `exports.x = ...` do not produce
+  false-positive bindings.
+
+**Verification recipe after editing `lib/introspect.mjs` or any
+`lang*.js`:** run `node --check` on the touched files, then
+`node index.js analyze scripts/commit.mjs` (expect 19 imports, 2
+declarations `meta`/`main`), then
+`node index.js analyze scripts/commit.mjs --trace scripts/commit.mjs::main::interactive`
+(expect `local const, scripts/commit.mjs:39`, 0 issues), then `make check`.
+
+
+## Rarebert Specifications
 
 ### Signal handling & abort flow (ctrl-c / ctrl-d)
 
@@ -126,3 +201,95 @@ exercises `make check` and `make edit` non-interactively to verify a named
 topic across the codebase. Invoke it as `audit-consistency {topic}` with one
 of: `console-streams`, `signal-handling`, `abort-flow`, `naming`. See the
 skill body for the per-topic rules.
+
+### Brainstorm Pattern for Complex Tasks
+
+The `brainstorm` skill (`.opencode/skills/brainstorm/SKILL.md`) provides
+a strategy for complex multi-step tasks that requires both cloud and local
+model capabilities:
+
+1. **Plan with cloud**: Submit a planning workload to a cloud model via task
+   subagent. The model analyzes and returns structured JSON with todos and
+   exact code snippets.
+2. **Create todos**: Parse the planning response and create todo items using
+   the `todowrite` tool.
+3. **Implement locally**: Execute each todo using a local quantized model
+   via `opencode run`, with the agent orchestrating the flow.
+
+This pattern supersedes `delegate` by using expensive cloud credits only
+for reasoning (planning), while cheaper local models handle implementation.
+
+**Key difference from delegate:**
+- Delegate: subagent → cloud model → implementation
+- Brainstorm: subagent → cloud model (for PLAN ONLY) → agent → local model (for implementation)
+
+## Unfinished Work
+
+### Exit-handling migration (scripts/ and lib/)
+
+The `exit()` helper (`lib/core.mjs`) is the canonical termination path
+for `CLI` main callbacks: it routes through `Module.exit()` so signal
+handlers and `onAbort` cleanup callbacks (memo flush, git-index restore)
+run before the process ends. Several entry points still bypass it and
+must be migrated.
+
+**`scripts/` layer — direct `process.exit()` / `cli.fail()` / bare `return;`:**
+
+| File | Line | Current | Fix |
+|------|------|---------|-----|
+| `scripts/article.mjs` | 56 | `process.exit(1)` | `return exit(1, () => console.error(...))` |
+| `scripts/install.mjs` | 44 | `cli.fail('install failed')` | `return exit(1, () => console.error('install failed'))` and add `return exit(0)` at end (line 61) |
+| `scripts/install.mjs` | 61 | implicit `undefined` return | append `return exit(0)` |
+| `scripts/run.mjs` | 30, 42, 52, 58, 64 | bare `return;` after `runProcess(...)` | leave as-is — `runProcess` calls `process.exit(code)` itself; document this |
+
+`scripts/run.mjs` is a special case: `lib/run.mjs#runProcess` spawns a
+child and calls `process.exit(code)` from the child's `'exit'` handler,
+so the bare `return;` after it is unreachable in the normal path. The
+`process.exit(1)` in the child `'error'` handler is a leaf-level process
+kill and is acceptable there (no cleanup needed — the child never
+started). Do **not** migrate those without first reworking `runProcess`
+to return a code the caller can pass to `exit()`.
+
+**`scripts/trail.mjs` line 35**: bare `return;` after
+`cli.nonInteractive(...)`. `cli.nonInteractive` already calls
+`process.exit(code)` internally (see `lib/module.mjs:512`), so this is
+the same dead-code situation as `run.mjs`. Leave as-is or rework
+`nonInteractive` to throw/return.
+
+**`lib/` layer — `process.exit()` in library code (larger refactor):**
+
+These are harder because the calls live in library functions invoked
+from scripts, so the script cannot intercept them. Migration requires
+changing library functions to return error codes/throw `AbortError`
+and letting the script's `CLI` wrapper call `exit()`.
+
+| File | Lines | Context |
+|------|-------|---------|
+| `lib/article.mjs` | 142, 152, 155, 169, 179, 183, 242, 249, 317, 332, 342, 355 | `assertReportClean`, `runMake`, `editSection`, `confirmCommit`, etc. — all call `process.exit(1)` on failure |
+| `lib/present.mjs` | 81, 141, 146 | presentation walker fatal paths |
+| `lib/opencode.mjs` | 57 | spawn failure |
+| `lib/ide.mjs` | 273 | editor launch failure |
+| `lib/backend.mjs` | 415 | non-interactive config failure |
+| `lib/server.mjs` | 133–135 | ping probe — intentional, leave |
+
+**Recommended order:** finish the `scripts/` layer first (mechanical),
+then tackle `lib/article.mjs` (highest count, used by `scripts/article.mjs`),
+then the remaining `lib/` modules. Each migration should be followed by
+`make check` and a manual exercise of the affected command.
+
+### Tracked scratch files under `.opencode/system/`
+
+`.opencode/system/exit_analysis_summary.md` and
+`.opencode/system/modules_no_exit_memo.md` were committed in 45a9037
+despite `.gitignore` excluding `.opencode/system/`. They are still
+tracked. Remove them from the index with
+`git rm --cached .opencode/system/exit_analysis_summary.md .opencode/system/modules_no_exit_memo.md`
+so the gitignore rule takes effect; the files can stay on disk as
+local reference.
+
+### `run-opencode-cloud` agent directory
+
+`.opencode/agents/run-opencode-cloud/agent.md` is untracked and not in
+`.gitignore`. Either add `.opencode/agents/` to `.gitignore` (if it
+should remain local) or `git add` it (if it should ship with the repo).
+Decide and apply before the next push.

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { CLI, listAllModules, resolveModuleSet } from '../lib/module.mjs';
+import { exit } from '../lib/core.mjs';
 import {
     memo,
     groupArgs,
@@ -40,33 +41,33 @@ async function main(opts, positional) {
 
     if (has('--add')) {
         await cmdAdd(groups, modules);
-        return;
+        return exit(0);
     }
 
     if (has('--commit')) {
         await cmdCommit(opts.yes, opts.fresh);
-        return;
+        return exit(0);
     }
 
     if (has('--log')) {
         cmdLog(nonFlag);
-        return;
+        return exit(0);
     }
 
     if (has('--recall')) {
         cmdRecall(nonFlag[0], nonFlag.slice(1));
-        return;
+        return exit(0);
     }
 
     if (has('--drop')) {
         await cmdDrop(nonFlag[0], nonFlag[1], modules);
         memo.clearBuffer();
-        return;
+        return exit(0);
     }
 
     if (has('--forget')) {
         cmdForget(nonFlag, modules);
-        return;
+        return exit(0);
     }
 
     // Default: print memos as a DAG. No file args → whole-repo DAG
@@ -78,10 +79,11 @@ async function main(opts, positional) {
         const resolved = resolveModuleSet(nonFlag, modules);
         if (resolved.length === 0) {
             console.error(`No modules matched: ${nonFlag.join(', ')}`);
-            return;
+            return exit(1);
         }
         cmdPrintSet(resolved, true);
     }
+    return exit(0);
 }
 
 export default new CLI('memo.mjs', main, META).supportsDirectRunning(import.meta.url);
