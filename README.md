@@ -83,6 +83,7 @@ canonical shape.
 ## Repository layout
 
 The project at /workspaces/development/personal/rarebert has this key structure:
+```bash
 rarebert/
 ├── index.js                          # Entry point - dispatches commands
 ├── package.json
@@ -105,6 +106,8 @@ rarebert/
     ├── check.mjs                     # Syntax + integrity + memos
     ├── commit.mjs                    # Git commit with opencode summaries
     └── ... (other script files)
+```
+
 Key patterns:
 - Every scripts/*.mjs exports a default new CLI('name.mjs', main, meta) instance
 - Interactive branches delegate via return exit(new TUI(name, main, meta))
