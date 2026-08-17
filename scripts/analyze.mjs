@@ -2,7 +2,7 @@
 
 import { exit } from '../lib/core.mjs';
 import { store } from '../lib/core.mjs';
-import { CLI, listAllModules, resolveModule, promptModuleChoices } from '../lib/module.mjs';
+import { CLI, cli, listAllModules, resolveModule, promptModuleChoices, TUI } from '../lib/module.mjs';
 import { load } from '../lib/analyze.mjs';
 import {
     introspectFile,
@@ -44,9 +44,34 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
 
     try {
         if (clearCache) {
-            store.clearIntrospectCache();
-            console.log('introspect: cache cleared');
-            return exit(0);
+            return exit(new TUI('analyze.mjs', async (opts = {}, positional = []) => {
+                const confirmed = await cli.confirm(
+                    'Clear the introspect tool cache? This will reset all module binding analyses.',
+                    false
+                );
+                if (!confirmed) return exit(0, () => console.log('introspect: cache not cleared.'));
+                store.clearIntrospectCache();
+                console.log('introspect: cache cleared');
+            }, meta));
+        }
+
+        if (traceName) {
+            const traceParts = traceName.split('::');
+            const traceModule = traceParts[0].trim();
+            const traceBinding = traceParts.slice(1).join('::').trim();
+
+            if (!traceModule) {
+                console.error('analyze: --trace requires a module path (e.g., --trace scripts/list.mjs::listModules)');
+                return exit(1);
+            }
+
+            const module = listAllModules().find((m) => m.path === traceModule || m.abs.endsWith(traceModule));
+            if (!module) {
+                console.error(`analyze: module "${traceModule}" not found`);
+                return exit(1);
+            }
+
+            return await runTrace([traceModule], traceName);
         }
 
         if (document) {
@@ -56,10 +81,6 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
         }
 
         const moduleArgs = args.length > 0 ? args : null;
-
-        if (traceName) {
-            return await runTrace(moduleArgs, traceName);
-        }
 
         if (showGraph) {
             return await runGraph(moduleArgs);
