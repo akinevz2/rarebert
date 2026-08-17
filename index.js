@@ -5,6 +5,7 @@ import { rarebert, home } from './lib/projects.mjs';
 import { listModules } from './scripts/list.mjs';
 import { backend } from './lib/backend.mjs';
 import { Module, CLI, cli } from './lib/module.mjs';
+import { exit } from './lib/core.mjs';
 
 const SKIP_ONBOARD = new Set([
     'onboard',
@@ -56,8 +57,7 @@ async function runModule(ref, args = []) {
     }
 
     if (!script) {
-        console.error('Module not found:', ref);
-        process.exit(1);
+        throw new Error('Module not found: ' + ref);
     }
 
     try {
@@ -65,10 +65,9 @@ async function runModule(ref, args = []) {
         const exported = mod.default;
 
         if (!(exported instanceof Module)) {
-            console.error(
+            throw new Error(
                 `${script.path}: default export must be a Module instance, got ${exported?.constructor?.name ?? typeof exported}`
             );
-            process.exit(1);
         }
 
         await exported.executeAndExit(args);
@@ -103,7 +102,8 @@ async function main(opts, positional) {
     const rest = positional.slice(1);
 
     if (!cmd || HELP_COMMANDS.has(cmd)) {
-        return listModules([cmd, ...rest].filter(Boolean));
+        await listModules([cmd, ...rest].filter(Boolean));
+        return exit(0);
     }
 
     await maybeOnboard(cmd);

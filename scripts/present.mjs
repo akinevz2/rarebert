@@ -2,7 +2,7 @@
 
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';
-import { CLI } from '../lib/module.mjs';
+import { CLI, TUI } from '../lib/module.mjs';
 import * as present from '../lib/present.mjs';
 
 const meta = {
@@ -21,22 +21,24 @@ const meta = {
 export { meta };
 
 export default new CLI('present.mjs', async (opts, positional) => {
-    const model = await models.resolve(positional[0]);
+    return exit(new TUI('present.mjs', async (opts, positional) => {
+        const model = await models.resolve(positional[0]);
 
-    let presentation;
-    if (opts.file) {
-        presentation = present.readPresentation(opts.file);
-    } else {
-        const instruction = opts.instruction
-            ? String(opts.instruction).trim()
-            : await present.promptInstruction();
-        if (!instruction) {
-            return exit(1, () => console.error('present: no instruction provided'));
+        let presentation;
+        if (opts.file) {
+            presentation = present.readPresentation(opts.file);
+        } else {
+            const instruction = opts.instruction
+                ? String(opts.instruction).trim()
+                : await present.promptInstruction();
+            if (!instruction) {
+                return exit(1, () => console.error('present: no instruction provided'));
+            }
+            presentation = await present.buildPresentation(instruction, model, opts);
         }
-        presentation = await present.buildPresentation(instruction, model, opts);
-    }
 
-    if (!presentation) return exit(1);
+        if (!presentation) return exit(1);
 
-    return exit(0, () => present.walkSlides(presentation));
+        return exit(0, () => present.walkSlides(presentation));
+    }, meta));
 }, meta).supportsDirectRunning(import.meta.url);

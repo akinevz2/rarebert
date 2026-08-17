@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { CLI } from '../lib/module.mjs';
+import { CLI, TUI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import {
     promptCommitChoice,
@@ -14,7 +14,6 @@ import {
     editSummaryInEditor,
     stageAndCommit,
     DEFAULT_PROMPT_FIRST_LINE,
-    Enquirer,
     models,
     git,
     memo,
@@ -55,6 +54,7 @@ async function main(opts, positional) {
             });
         }
     }
+    const status = git.git('status', ['--porcelain']);
     const diffStat = git.git('diff', ['HEAD', '--stat']);
     const diffFull = git.git('diff', ['HEAD']);
 
@@ -95,73 +95,59 @@ async function main(opts, positional) {
         });
     }
 
-    const choice = await promptCommitChoice();
+    return exit(new TUI('commit.mjs', async (opts, positional) => {
+        const choice = await promptCommitChoice();
 
-    if (choice === 'later') {
-        git.git('status');
-        return;
-    }
-
-    if (interactive && (await promptPreview())) {
-        previewDiff();
-        const prompt = new Enquirer.Confirm({
-            name: 'unstage',
-            message: 'Are you ready to commit?',
-            initial: false
-        });
-        if (!(await prompt.run())) {
-            // User declined to commit after previewing. Do NOT unstage —
-            // they may want to rerun make commit or manually adjust.
-            git.git('status', [], { stdio: 'inherit' });
-            return exit(0, () => console.error('Aborted; staged files preserved.'));
-        }
-    }
-
-    if (choice === 'raw') {
-        if (interactive && (await promptBail('Bail before writing a commit message by hand?'))) {
-            bailCommit('declined raw commit');
-        }
-        // Raw mode: open $EDITOR with a blank template so the user writes
-        // the commit message by hand. Passing [] to git commit would
-        // invoke git's own editor, but going through editSummaryInEditor
-        // gives us control over the template and the empty-message
-        // bail behaviour (unstage only when the user erases everything).
-        const commitArgs = await editSummaryInEditor('');
-        if (!commitArgs) return exit(0);
-        stageAndCommit(commitArgs);
-        return;
-    }
-
-    const model = await models.resolve(modelArg);
-
-    if (choice === 'proceed') {
-        if (interactive && (await promptBail('Bail before running opencode summary?'))) {
-            bailCommit('declined opencode summary');
+        if (choice === 'later') {
+            git.git('status');
+            return exit(0);
         }
 
-        const modify = await promptModifyPrompt();
-        const firstLine = modify ? await promptPromptFirstLine() : DEFAULT_PROMPT_FIRST_LINE;
-        const summary = summariseAndShow(model, changelist, firstLine, verbose);
-
-        if (!summary) {
-            return exit(1, () => console.error('No summary produced; aborting.'));
+        if (await promptPreview()) {
+            previewDiff();
+            if (!(await cli.confirm('Are you ready to commit?', false))) {
+                git.git('status', [], { stdio: 'inherit' });
+                return exit(0, () => console.error('Aborted; staged files preserved.'));
+            }
         }
 
-        // Ask the user if the summary looks good. Default is yes —
-        // if accepted, commit directly with the summary text. If
-        // rejected, open the editor so the user can refine it.
-        const looksGood = await cli.confirm('Looks good?', true);
-        if (looksGood) {
-            stageAndCommit(['-m', summary]);
-            return;
+        if (choice === 'raw') {
+            if (await promptBail('Bail before writing a commit message by hand?')) {
+                bailCommit('declined raw commit');
+            }
+            const commitArgs = await editSummaryInEditor('');
+            if (!commitArgs) return exit(0);
+            stageAndCommit(commitArgs);
+            return exit(0);
         }
 
-        // User rejected — open editor with the summary as a starting point.
-        const commitArgs = await editSummaryInEditor(summary);
-        if (!commitArgs) return exit(0);
-        stageAndCommit(commitArgs);
-        return;
-    }
+        const model = await models.resolve(modelArg);
+
+        if (choice === 'proceed') {
+            if (await promptBail('Bail before running opencode summary?')) {
+                bailCommit('declined opencode summary');
+            }
+
+            const modify = await promptModifyPrompt();
+            const firstLine = modify ? await promptPromptFirstLine() : DEFAULT_PROMPT_FIRST_LINE;
+            const summary = summariseAndShow(model, changelist, firstLine, verbose);
+
+            if (!summary) {
+                return exit(1, () => console.error('No summary produced; aborting.'));
+            }
+
+            const looksGood = await cli.confirm('Looks good?', true);
+            if (looksGood) {
+                stageAndCommit(['-m', summary]);
+                return exit(0);
+            }
+
+            const commitArgs = await editSummaryInEditor(summary);
+            if (!commitArgs) return exit(0);
+            stageAndCommit(commitArgs);
+            return exit(0);
+        }
+    }, meta));
 }
 
 export default new CLI('commit.mjs', main, meta).supportsDirectRunning(import.meta.url);

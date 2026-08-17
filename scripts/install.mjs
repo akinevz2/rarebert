@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { home } from '../lib/projects.mjs';
-import { CLI, cli } from '../lib/module.mjs';
+import { CLI, cli, TUI } from '../lib/module.mjs';
 import { backend } from '../lib/backend.mjs';
 import { exit } from '../lib/core.mjs';
 
@@ -47,42 +48,44 @@ function linkBinary(binDir) {
 }
 
 async function main(opts, positional) {
-    const prefix = resolvePrefix(opts);
-    const binDir = resolveBinDir(opts);
-    const force = !!opts.force;
+    return exit(new TUI('install.mjs', async () => {
+        const prefix = resolvePrefix(opts);
+        const binDir = resolveBinDir(opts);
+        const force = !!opts.force;
 
-    if (fs.existsSync(prefix) && !force && fs.readdirSync(prefix).length > 0) {
-        const overwrite = await cli.confirm(`Prefix "${prefix}" is non-empty. Continue?`, false);
-        if (!overwrite) return exit(0, () => console.log('Not installed.'));
-    }
+        if (fs.existsSync(prefix) && !force && fs.readdirSync(prefix).length > 0) {
+            const overwrite = await cli.confirm(`Prefix "${prefix}" is non-empty. Continue?`, false);
+            if (!overwrite) return exit(0, () => console.log('Not installed.'));
+        }
 
-    fs.mkdirSync(prefix, { recursive: true });
-    console.log(`install: prefix -> ${prefix}`);
+        fs.mkdirSync(prefix, { recursive: true });
+        console.log(`install: prefix -> ${prefix}`);
 
-    const result = spawnSync(NPM_BIN, ['install', '--prefix', prefix, '--ignore-scripts'], {
-        cwd: home.root,
-        stdio: 'inherit'
-    });
+        const result = spawnSync(NPM_BIN, ['install', '--prefix', prefix, '--ignore-scripts'], {
+            cwd: home.root,
+            stdio: 'inherit'
+        });
 
-    if (result.status !== 0) {
-        return exit(1, () => console.error(`install: npm install exited with status ${result.status ?? 0}`));
-    }
+        if (result.status !== 0) {
+            return exit(1, () => console.error(`install: npm install exited with status ${result.status ?? 0}`));
+        }
 
-    const linkPath = linkBinary(binDir);
-    console.log(`install: linked rarebert -> ${linkPath}`);
-    if (process.env.PATH?.split(path.delimiter).includes(binDir)) {
-        console.log(`'rarebert' is on your PATH.`);
-    } else {
-        console.log(`\nAdd "${binDir}" to your PATH to use 'rarebert'.`);
-    }
+        const linkPath = linkBinary(binDir);
+        console.log(`install: linked rarebert -> ${linkPath}`);
+        if (process.env.PATH?.split(path.delimiter).includes(binDir)) {
+            console.log(`'rarebert' is on your PATH.`);
+        } else {
+            console.log(`\nAdd "${binDir}" to your PATH to use 'rarebert'.`);
+        }
 
-    console.log('\n=== onboarding ===');
-    const onboardOk = await backend.ensureConfig();
-    if (!onboardOk) {
-        console.log('Run `make onboard` to complete configuration later.');
-    }
+        console.log('\n=== onboarding ===');
+        const onboardOk = await backend.ensureConfig();
+        if (!onboardOk) {
+            console.log('Run `make onboard` to complete configuration later.');
+        }
 
-    return exit(0);
+        return exit(0);
+    }, meta));
 }
 
 export default new CLI('install.mjs', main, meta).supportsDirectRunning(import.meta.url);
