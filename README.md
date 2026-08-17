@@ -22,6 +22,7 @@ make commit    # opencode summarises the diff, edit the message, git commit
 make run       # run a module from scripts/ or src/ (python3)
 make check     # node --check every module, memo on syntax error
 make analyze   # source-map, import graph, dependency trace, usage scan
+make analyze   # source-map, import graph, dependency trace, usage scan
 ```
 
 Each turn ends in a commit, so the working tree is always clean before the next
@@ -80,9 +81,62 @@ callback to a full-screen TUI. The TUI's `execute()` guards against
 non-interactive stdin automatically. See `scripts/analyze.mjs` for the
 canonical shape.
 
+## Analyze & trace
+
+`make analyze` (or `node index.js analyze`) introspects the codebase:
+
+```sh
+node index.js analyze [module...]              # condensed source map per module
+node index.js analyze [module...] --oneline    # one-line summary
+node index.js analyze [module...] --graph      # resolved import graph
+node index.js analyze --trace module::name     # forward dependency chain
+node index.js analyze --trace mod::outer::inner  # nested declaration trace
+node index.js analyze --usage module::name     # reverse: all project-wide references
+node index.js analyze --usage module::name --yes  # auto-memoize references
+node index.js analyze --document [module]      # opencode documentation pass
+node index.js analyze --clear-cache            # reset introspect cache
+```
+
+The `Trace` class (`lib/introspect.mjs`) powers both directions:
+
+- **`Trace.forward()`** — walks imports and declarations down the dependency
+  chain from a binding to its roots. Supports `module::name` and nested
+  `module::outer::inner::local` paths.
+- **`Trace.usage()`** — reverse scan: finds every file:line that imports or
+  re-exports a given binding across the entire project. Results can be
+  memoized onto the target module with `--yes`.
+
+## Runtime cascade
+
+Every script returns an `ExitSignal` from `exit()`. The cascade is:
+
+```
+main callback → return exit(code) or exit(new TUI(...))
+  → Module.exit(result)     # validates, runs onExit hooks
+    → process.exit(code)    # sole terminal exit point
+```
+
+- `exit(0)` — success
+- `exit(1)` — failure
+- `exit('error message')` — prints to stderr, exits 1
+- `exit(new TUI(name, main, meta))` — delegates to a TUI submodule
+- `exit(new CLI(name, main, meta))` — delegates to a CLI submodule
+
+`AbortError` carries an `exitCode` for library functions that need to abort
+without calling `process.exit()` directly. The cascade catches it and exits
+with the appropriate code.
+
+### TUI-delegation pattern
+
+Interactive scripts use `return exit(new TUI(...))` to delegate from a CLI
+callback to a full-screen TUI. The TUI's `execute()` guards against
+non-interactive stdin automatically. See `scripts/analyze.mjs` for the
+canonical shape.
+
 ## Repository layout
 
 The project at /workspaces/development/personal/rarebert has this key structure:
+```bash
 rarebert/
 ├── index.js                          # Entry point - dispatches commands
 ├── package.json
@@ -102,11 +156,24 @@ rarebert/
 │   └── ... (other lib modules)
 └── scripts/                          # CLI command modules
     ├── analyze.mjs                   # Source map, trace, usage scan
+├── lib/                              # Core library modules
+│   ├── core.mjs                      # ExitSignal, exit(), Store, AbortError
+│   ├── module.mjs                    # Module, CLI, TUI classes, cli singleton
+│   ├── introspect.mjs                # Trace class, buildGraph, traceBinding
+│   ├── projects.mjs                  # Project class, home/rarebert singletons
+│   ├── memo.mjs                      # Memo management system
+│   ├── check.mjs                     # Integrity checks, reverse trace
+│   └── ... (other lib modules)
+└── scripts/                          # CLI command modules
+    ├── analyze.mjs                   # Source map, trace, usage scan
     ├── check.mjs                     # Syntax + integrity + memos
     ├── commit.mjs                    # Git commit with opencode summaries
     └── ... (other script files)
+```
+
 Key patterns:
 - Every scripts/*.mjs exports a default new CLI('name.mjs', main, meta) instance
+- Interactive branches delegate via return exit(new TUI(name, main, meta))
 - Interactive branches delegate via return exit(new TUI(name, main, meta))
 - index.js discovers modules via home.discoverModules() and runs them
 - lib/memo.mjs provides the memo infrastructure used by multiple scripts
