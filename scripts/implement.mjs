@@ -21,8 +21,9 @@ export default new CLI('implement.mjs', async (opts, positional) => {
     if (!cli.isInteractive()) {
         const fileArgs = positional;
         if (fileArgs.length === 0) {
-            console.error('Non-interactive: pass file or directory arguments to implement.');
-            return exit(1);
+            return exit(1, () =>
+                console.error('Non-interactive: pass file or directory arguments to implement.')
+            );
         }
         const { entries, context } = await editor.resolveActiveFiles(fileArgs, {
             message: 'implement'

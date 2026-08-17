@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { listAllModules, promptModule, resolveModule, CLI, cli } from '../lib/module.mjs';
+import { listAllModules, promptModule, resolveModule, TUI, cli } from '../lib/module.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
@@ -19,11 +19,10 @@ const meta = {
 
 export { meta };
 
-export default new CLI('edit.mjs', async (opts, positional) => {
+export default new TUI('edit.mjs', async (opts, positional) => {
     const modules = listAllModules();
     if (modules.length === 0) {
-        console.error('No modules found.');
-        return exit(1);
+        return exit(1, () => console.error('No modules found.'));
     }
 
     const moduleArg = positional[0];
@@ -33,8 +32,7 @@ export default new CLI('edit.mjs', async (opts, positional) => {
     if (moduleArg) {
         const resolved = resolveModule(moduleArg, modules);
         if (!resolved) {
-            console.error(`Module not found: ${moduleArg}`);
-            return exit(1);
+            return exit(1, () => console.error(`Module not found: ${moduleArg}`));
         }
         target = resolved.module;
     } else {
@@ -43,8 +41,7 @@ export default new CLI('edit.mjs', async (opts, positional) => {
     const rel = target.path;
 
     if (!fs.existsSync(target.abs)) {
-        console.error(`Module file not found: ${rel}`);
-        return exit(1);
+        return exit(1, () => console.error(`Module file not found: ${rel}`));
     }
 
     editor.writeLastModule(rel);

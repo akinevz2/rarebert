@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { CLI } from '../lib/module.mjs';
+import { exit } from '../lib/core.mjs';
 import { listModules } from '../lib/list.mjs';
 
 const meta = {
@@ -20,4 +21,5 @@ export { meta, listModules };
 export default new CLI('list.mjs', async (opts, positional) => {
     const args = Array.isArray(positional) ? positional : [];
     await listModules(args);
+    return exit(0);
 }, meta).supportsDirectRunning(import.meta.url);

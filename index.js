@@ -4,7 +4,7 @@ import path from 'path';
 import { rarebert, home } from './lib/projects.mjs';
 import { listModules } from './scripts/list.mjs';
 import { backend } from './lib/backend.mjs';
-import { Module, CLI, TUI, cli } from './lib/module.mjs';
+import { Module, CLI, cli } from './lib/module.mjs';
 
 const SKIP_ONBOARD = new Set([
     'onboard',
@@ -71,12 +71,7 @@ async function runModule(ref, args = []) {
             process.exit(1);
         }
 
-        await exported.run(args);
-
-        // TUI modules signal that the screen should be cleared after exit.
-        if (exported instanceof TUI && exported.clearScreen) {
-            process.stdout.write('\x1B[2J\x1B[H');
-        }
+        await exported.executeAndExit(args);
     } catch (err) {
         console.error(err.message || err);
         process.exit(1);

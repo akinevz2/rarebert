@@ -2,6 +2,7 @@
 
 import Enquirer from 'enquirer';
 import { CLI, AbortError } from '../lib/module.mjs';
+import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
 import {
@@ -57,14 +58,15 @@ export default new CLI('article.mjs', async (opts, positional) => {
         const section = await promptSection(sections, sectionArg);
         const model = await models.resolve(modelArg);
         const status = await editSection(model, section.path, section.rel);
-        if (status !== 0) console.error(`edit session exited with status ${status}.`);
         await confirmCommit(`update ${section.rel}`);
-        process.exit(status);
+        return exit(status, () => {
+            if (status !== 0) console.error(`edit session exited with status ${status}.`);
+        });
     }
 
     if (process.stdin.isTTY !== true) {
         console.error('Non-interactive; pass a section path as an argument.');
-        process.exit(1);
+        return exit(1);
     }
 
     while (true) {
@@ -87,7 +89,7 @@ export default new CLI('article.mjs', async (opts, positional) => {
         }
 
         if (choice === 'exit') {
-            process.exit(0);
+            return exit(0);
         }
         if (choice === 'manage') {
             const before = isReportClean();

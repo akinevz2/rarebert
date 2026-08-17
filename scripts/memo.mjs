@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { CLI, listAllModules } from '../lib/module.mjs';
+import { CLI, listAllModules, resolveModuleSet } from '../lib/module.mjs';
+import { exit } from '../lib/core.mjs';
 import {
     memo,
     groupArgs,
@@ -10,13 +11,16 @@ import {
     cmdRecall,
     cmdDrop,
     cmdForget,
-    cmdBare
+    cmdPrintAll,
+    cmdPrintSet
 } from '../lib/memo.mjs';
 
 const META = {
     name: 'memo',
-    description: 'Enter memos: add, drop, forget, commit, recall, or log. Use `make check` to display memos.',
-    usage: 'node index.js memo [--add <path> <memo>...|--drop <path> [indices]|--forget <path>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
+    description:
+        'Print or manage memos. Default (no flags): print memos — all, or scoped to file args. Mutating flags: --add, --drop, --forget, --commit, --recall, --log.',
+    usage:
+        'node index.js memo [files...] [--add <path> <memo>...|--drop <path> [indices]|--forget <path>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
     allowUnknownOption: true,
     options: [
         { flag: '--yes', description: 'Skip confirmation for --commit' },
@@ -37,36 +41,49 @@ async function main(opts, positional) {
 
     if (has('--add')) {
         await cmdAdd(groups, modules);
-        return;
+        return exit(0);
     }
 
     if (has('--commit')) {
         await cmdCommit(opts.yes, opts.fresh);
-        return;
+        return exit(0);
     }
 
     if (has('--log')) {
         cmdLog(nonFlag);
-        return;
+        return exit(0);
     }
 
     if (has('--recall')) {
         cmdRecall(nonFlag[0], nonFlag.slice(1));
-        return;
+        return exit(0);
     }
 
     if (has('--drop')) {
         await cmdDrop(nonFlag[0], nonFlag[1], modules);
         memo.clearBuffer();
-        return;
+        return exit(0);
     }
 
     if (has('--forget')) {
         cmdForget(nonFlag, modules);
-        return;
+        return exit(0);
     }
 
-    await cmdBare(modules);
+    // Default: print memos as a DAG. No file args → whole-repo DAG
+    // (root-level paths bold, ancestors dim). File args → DAG scoped
+    // to those files + ancestors.
+    if (nonFlag.length === 0) {
+        cmdPrintAll(true);
+    } else {
+        const resolved = resolveModuleSet(nonFlag, modules);
+        if (resolved.length === 0) {
+            console.error(`No modules matched: ${nonFlag.join(', ')}`);
+            return exit(1);
+        }
+        cmdPrintSet(resolved, true);
+    }
+    return exit(0);
 }
 
 export default new CLI('memo.mjs', main, META).supportsDirectRunning(import.meta.url);

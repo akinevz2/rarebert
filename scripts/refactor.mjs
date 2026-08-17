@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { CLI } from '../lib/module.mjs';
+import { exit } from '../lib/core.mjs';
 import * as bindings from '../lib/bindings.mjs';
 import { home as projects } from '../lib/projects.mjs';
 import { formatReport, printUsage } from '../lib/refactor.mjs';
@@ -68,14 +69,14 @@ export default new CLI('refactor.mjs', async (opts, positional) => {
             if (memoCount > 0) {
                 console.log(`Memo state captured: ${memoCount} modules, ${memoTotal} memos.`);
             }
-            break;
+            return exit(0);
         }
 
         case 'damage': {
             const report = await bindings.detectDamage(entryFile, baselineRef);
             if (report.damage.length === 0) {
                 console.log('No damage detected — all bindings still resolve.');
-                break;
+                return exit(0);
             }
             console.log(formatReport(report, format));
 
@@ -91,13 +92,13 @@ export default new CLI('refactor.mjs', async (opts, positional) => {
                 }
                 console.error('└───────────────────────────────────────────────\n');
             }
-            break;
+            return exit(0);
         }
 
         case 'select': {
             if (!opts.select || !opts.from) {
                 console.error('Usage: refactor select --select <bindings> --from <file> [--to <file>] [--op <type>]');
-                process.exit(1);
+                return exit(1);
             }
             const selection = {
                 op: opts.op || 'move',
@@ -114,7 +115,7 @@ export default new CLI('refactor.mjs', async (opts, positional) => {
                 bindings.recordBlastRadiusMemo(result, selection);
                 console.error('└───────────────────────────────────────────────\n');
             }
-            break;
+            return exit(0);
         }
 
         case 'resolve': {
@@ -130,7 +131,7 @@ export default new CLI('refactor.mjs', async (opts, positional) => {
                 );
                 console.log(`Resolved ${Object.keys(registry).length} files, ${totalExports} exports, ${totalImports} imports`);
             }
-            break;
+            return exit(0);
         }
 
         case 'cleanup': {
@@ -138,7 +139,7 @@ export default new CLI('refactor.mjs', async (opts, positional) => {
             console.log(`Cleaning up memos against baseline on ${cleanupRef}...`);
             if (noMemos) {
                 console.log('  (--no-memos: skipping cleanup)');
-                break;
+                return exit(0);
             }
             const summary = await bindings.cleanupMemos(cleanupRef, []);
             if (summary.length === 0) {
@@ -147,10 +148,11 @@ export default new CLI('refactor.mjs', async (opts, positional) => {
                 const totalDropped = summary.reduce((n, s) => n + s.dropped, 0);
                 console.log(`  Done: ${totalDropped} stale memo(s) dropped across ${summary.length} module(s).`);
             }
-            break;
+            return exit(0);
         }
 
         default:
             printUsage(meta, subcommands);
+            return exit(1);
     }
 }, meta).supportsDirectRunning(import.meta.url);
