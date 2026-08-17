@@ -29,33 +29,32 @@ time the model is invoked, so failures teach the next attempt.
 
 ## Repository layout
 
-<img src="docs/assets/layout.svg" alt="repository layout" width="100%" />
-
-```
+The project at /workspaces/development/personal/rarebert has this key structure:
 rarebert/
-  index.js              # dispatch by name: node index.js <script>
-  Makefile              # auto-generated index of `node index.js <name>` targets
-  opencode.json         # provider/model config (ollama, openai-compatible)
-  AGENTS.md             # instructions loaded by opencode sessions
-  scripts/              # CLI commands (add, edit, commit, run, check, memo, ...)
-  src/                  # python entrypoints (run via `make run`)
-  lib/                  # framework runtime (.mjs) — DO NOT put project code here
-    core.mjs            #   paths, discovery, metadata
-    memo.mjs            #   cascading memo buffer
-    cli.mjs             #   enquirer wrappers, help, run(meta, main)
-    editor.mjs          #   $EDITOR spawning, .last-module marker
-    git.mjs             #   allow-listed git wrapper
-    ide.mjs             #   opencode launch / graceful exit
-    libs.mjs            #   module creation, peer-import discovery
-    models.mjs          #   opencode.json model resolution
-    modules.mjs         #   module registry: Module(project, file) + autocomplete prompt
-    languages.mjs       #   lib/supports/ template install/resolve
-    template.mjs        #   per-language boilerplate rendering
-    opencode.mjs        #   bundled binary resolution
-    list.mjs            #   `node index.js` (default) listing
-    supports/           # per-language template modules (mjs/js/py)
-    {lang}/             # project-specific libs (per language, see below)
-```
+├── index.js                          # Entry point - dispatches commands
+├── package.json
+├── AGENTS.md
+├── README.md
+├── Makefile
+├── .git/
+├── .gitignore
+├── .opencode/                        # Temporary/work scratches
+├── lib/                              # Core library modules (38 files)
+│   ├── memo.mjs                      # 1226 lines - memo management system
+│   ├── projects.mjs                  # Module discovery & folder management
+│   ├── module.mjs                    # Module class + memoFile()
+│   ├── core.mjs                      # Exit codes, AbortError, signals
+│   └── ... (33 other lib modules)
+└── scripts/                          # CLI command modules (25 files)
+    ├── install.mjs                   # npm prefix + symlink setup
+    ├── memo.mjs                      # Memo management CLI
+    ├── check.mjs                     # Syntax + integrity + memos
+    ├── commit.mjs                    # Git commit with opencode summaries
+    └── ... (19 more script files)
+Key patterns:
+- Every scripts/*.mjs exports a default new CLI('name.mjs', main, meta) instance
+- index.js discovers modules via home.discoverModules() and runs them
+- lib/memo.mjs provides the memo infrastructure used by multiple scripts
 
 A **module** is a file inside one of a project's constituent folders — `./`,
 `scripts/`, `lib/`, `lib/supports/`, or `src/`. `rarebert.discover()` returns
