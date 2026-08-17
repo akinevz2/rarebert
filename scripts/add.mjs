@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { exit } from '../lib/core.mjs';
-import { CLI, cli, AbortError } from '../lib/module.mjs';
+import { CLI, cli, AbortError, TUI } from '../lib/module.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
@@ -27,6 +27,7 @@ const meta = {
 export { meta };
 
 export default new CLI('add.mjs', async (opts, positional) => {
+    return exit(new TUI('add.mjs', async (opts, positional) => {
     console.log('\n=== Rarebert Module Creator ===\n');
 
     const proj = await cli.select('Select a project for the new module:', projectChoices(), {
@@ -114,9 +115,10 @@ export default new CLI('add.mjs', async (opts, positional) => {
     ].filter((s) => s && s.trim()).join('\n');
 
     const { status: runStatus, stdout: out } = ide.spawnHeadless(instruction, model, { cwd: rarebert.root });
-    return exit(runStatus ?? 0, () => {
-        if (runStatus !== 0) console.error(`add: opencode run exited with status ${runStatus}`);
-        if (out) console.log(out);
-        console.log('\nNext: `make commit` if happy with the one-shot, or `make edit` then `make implement` to iterate.');
-    });
+        return exit(runStatus ?? 0, () => {
+            if (runStatus !== 0) console.error(`add: opencode run exited with status ${runStatus}`);
+            if (out) console.log(out);
+            console.log('\nNext: `make commit` if happy with the one-shot, or `make edit` then `make implement` to iterate.');
+        });
+    }, meta));
 }, meta).supportsDirectRunning(import.meta.url);

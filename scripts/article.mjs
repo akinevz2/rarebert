@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
-import Enquirer from 'enquirer';
-import { CLI, AbortError } from '../lib/module.mjs';
+import { CLI, TUI, cli } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
@@ -22,8 +21,6 @@ import {
     isReportClean,
     SRC_DIR
 } from '../lib/article.mjs';
-
-const { Select } = Enquirer;
 
 const meta = {
     name: 'article',
@@ -53,7 +50,7 @@ export default new CLI('article.mjs', async (opts, positional) => {
         const sections = listSections();
         if (sections.length === 0) {
             console.error(`No markdown sections found under ${libs.relPath(SRC_DIR)}/.`);
-            process.exit(1);
+            return exit(1);
         }
         const section = await promptSection(sections, sectionArg);
         const model = await models.resolve(modelArg);
@@ -69,57 +66,53 @@ export default new CLI('article.mjs', async (opts, positional) => {
         return exit(1);
     }
 
-    while (true) {
-        const menu = new Select({
-            name: 'mode',
-            message: 'Article mode',
-            choices: [
+    return exit(new TUI('article.mjs', async (opts, positional) => {
+        const preview = opts.preview;
+        const sectionArg = positional[0];
+        const modelArg = positional[1];
+
+        while (true) {
+            const choice = await cli.select('Article mode', [
                 { name: 'manage', message: 'Manage sections' },
                 { name: 'edit', message: 'Edit a section' },
                 { name: 'preamble', message: 'Edit the preamble' },
                 { name: 'todo', message: 'Make a TODO note' },
                 { name: 'exit', message: 'Exit' }
-            ]
-        });
-        let choice;
-        try {
-            choice = await menu.run();
-        } catch {
-            throw new AbortError();
-        }
+            ]);
 
-        if (choice === 'exit') {
-            return exit(0);
-        }
-        if (choice === 'manage') {
-            const before = isReportClean();
-            await manageSections();
-            const after = isReportClean();
-            if (before && !after) await confirmCommit('manage sections');
-            continue;
-        }
-        if (choice === 'todo') {
-            await makeTodoNote();
-            continue;
-        }
-        if (choice === 'preamble') {
-            assertCleanBeforeSwitch();
-            const model = await models.resolve(modelArg);
-            await editPreamble(model);
-            continue;
-        }
-        if (choice === 'edit') {
-            assertCleanBeforeSwitch();
-            const sections = listSections();
-            if (sections.length === 0) {
-                console.error(`No markdown sections found under ${libs.relPath(SRC_DIR)}/.`);
+            if (choice === 'exit') {
+                return exit(0);
+            }
+            if (choice === 'manage') {
+                const before = isReportClean();
+                await manageSections();
+                const after = isReportClean();
+                if (before && !after) await confirmCommit('manage sections');
                 continue;
             }
-            const section = await promptSection(sections, null);
-            const model = await models.resolve(modelArg);
-            const status = await editSection(model, section.path, section.rel);
-            if (status !== 0) console.error(`edit session exited with status ${status}.`);
-            await confirmCommit(`update ${section.rel}`);
+            if (choice === 'todo') {
+                await makeTodoNote();
+                continue;
+            }
+            if (choice === 'preamble') {
+                assertCleanBeforeSwitch();
+                const model = await models.resolve(modelArg);
+                await editPreamble(model);
+                continue;
+            }
+            if (choice === 'edit') {
+                assertCleanBeforeSwitch();
+                const sections = listSections();
+                if (sections.length === 0) {
+                    console.error(`No markdown sections found under ${libs.relPath(SRC_DIR)}/.`);
+                    continue;
+                }
+                const section = await promptSection(sections, null);
+                const model = await models.resolve(modelArg);
+                const status = await editSection(model, section.path, section.rel);
+                if (status !== 0) console.error(`edit session exited with status ${status}.`);
+                await confirmCommit(`update ${section.rel}`);
+            }
         }
-    }
+    }, meta));
 }, meta).supportsDirectRunning(import.meta.url);

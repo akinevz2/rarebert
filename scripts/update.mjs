@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { exit } from '../lib/core.mjs';
-import { cli, CLI } from '../lib/module.mjs';
+import { cli, CLI, TUI } from '../lib/module.mjs';
 import { updateSelf, updateLanguage } from '../lib/update.mjs';
 
 const meta = {
@@ -37,15 +37,17 @@ export default new CLI('update.mjs', async (opts = {}, positional = []) => {
         return exit(1);
     }
 
-    const choice = await cli.select('What would you like to update?', [
-        { name: 'self', message: 'rarebert itself — fetch + merge origin' },
-        { name: 'language', message: 'a language — scaffold support for a new language' }
-    ]);
+    return exit(new TUI('update.mjs', async (opts, positional) => {
+        const choice = await cli.select('What would you like to update?', [
+            { name: 'self', message: 'rarebert itself — fetch + merge origin' },
+            { name: 'language', message: 'a language — scaffold support for a new language' }
+        ]);
 
-    if (choice === 'self') return updateSelf();
+        if (choice === 'self') return updateSelf();
 
-    const langInput = await cli.input('Language to add (e.g. ts, rb, go):', {
-        validate: (v) => (v.trim() ? true : 'Language is required')
-    });
-    return updateLanguage(langInput, { force: !!opts.force, model: opts.model });
+        const langInput = await cli.input('Language to add (e.g. ts, rb, go):', {
+            validate: (v) => (v.trim() ? true : 'Language is required')
+        });
+        return updateLanguage(langInput, { force: !!opts.force, model: opts.model });
+    }, meta));
 }, meta).supportsDirectRunning(import.meta.url);

@@ -2,7 +2,7 @@
 
 import { CLI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
-import { listModules } from '../lib/list.mjs';
+import { home } from '../lib/projects.mjs';
 
 const meta = {
     name: 'list',
@@ -16,10 +16,11 @@ const meta = {
     ]
 };
 
+const listModules = (args) => home.listModules(args);
 export { meta, listModules };
 
 export default new CLI('list.mjs', async (opts, positional) => {
     const args = Array.isArray(positional) ? positional : [];
-    await listModules(args);
+    await home.listModules(args);
     return exit(0);
 }, meta).supportsDirectRunning(import.meta.url);

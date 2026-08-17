@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
-import { cli } from '../lib/module.mjs';
+import { cli, CLI, TUI } from '../lib/module.mjs';
 import { editor } from '../lib/editor.mjs';
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';
-import { CLI } from '../lib/module.mjs';
 import { runHeadless, runInteractive } from '../lib/implement.mjs';
 
 const meta = {
@@ -39,5 +38,7 @@ export default new CLI('implement.mjs', async (opts, positional) => {
         return runHeadless({ entries, context, model, instruction });
     }
 
-    await runInteractive(positional);
+    return exit(new TUI('implement.mjs', async (opts, positional) => {
+        await runInteractive(positional);
+    }, meta));
 }, meta).supportsDirectRunning(import.meta.url);

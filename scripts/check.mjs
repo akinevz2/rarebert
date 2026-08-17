@@ -130,7 +130,7 @@ export default new CLI(
         let integrityIssues = [];
         if (!noIntegrity) {
             const graph = await buildBindingGraph(scopedModules);
-            integrityIssues = runIntegrityChecks(graph);
+            integrityIssues = await runIntegrityChecks(graph);
             if (integrityIssues.length > 0) {
                 console.log(`\nintegrity: ${integrityIssues.length} issue(s)`);
                 for (const issue of integrityIssues) {
