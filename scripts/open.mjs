@@ -5,7 +5,7 @@ import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
-import { cli, listAllModules, promptModule, TUI } from '../lib/module.mjs';
+import { tui, listAllModules, promptModule, TUI } from '../lib/module.mjs';
 
 const meta = {
     name: 'open',
@@ -31,7 +31,7 @@ export default new TUI(
             const editorChild = ide.spawnEditor(target.path);
 
             if (ide.isTerminalEditor() && editorChild) {
-                const launchAfter = await cli.confirm(
+                const launchAfter = await tui.confirm(
                     'Launch opencode after you close the editor?',
                     true
                 );

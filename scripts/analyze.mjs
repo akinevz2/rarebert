@@ -2,7 +2,7 @@
 
 import { exit } from '../lib/core.mjs';
 import { store } from '../lib/core.mjs';
-import { CLI, cli, listAllModules, resolveModule, promptModuleChoices, TUI } from '../lib/module.mjs';
+import { CLI, cli, tui, listAllModules, resolveModule, promptModuleChoices, TUI } from '../lib/module.mjs';
 import { memo } from '../lib/memo.mjs';
 import { load } from '../lib/analyze.mjs';
 import {
@@ -49,7 +49,7 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
     try {
         if (clearCache) {
             return exit(new TUI('analyze.mjs', async () => {
-                const confirmed = await cli.confirm(
+                const confirmed = await tui.confirm(
                     'Clear the introspect tool cache? This will reset all module binding analyses.',
                     false
                 );
@@ -135,7 +135,7 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
                 }
                 console.log(`Memoized ${references.length} reference(s) on ${module.path}.`);
             } else if (cli.isInteractive()) {
-                const memoize = await cli.confirm('Memoize these references on the target module?', true);
+                const memoize = await tui.confirm('Memoize these references on the target module?', true);
                 if (memoize) {
                     for (const ref of references) {
                         const content = `usage-ref: ${ref.file}:${ref.line} (${ref.kind}${ref.via ? ', via ' + ref.via : ''}) → ${usageName}`;

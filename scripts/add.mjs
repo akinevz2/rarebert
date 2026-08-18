@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { exit } from '../lib/core.mjs';
-import { CLI, cli, AbortError, TUI } from '../lib/module.mjs';
+import { CLI, tui, AbortError, TUI } from '../lib/module.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
@@ -33,7 +33,7 @@ export default new CLI('add.mjs', async (opts, positional) => {
     return exit(new TUI('add.mjs', async (opts, positional) => {
     console.log('\n=== Rarebert Module Creator ===\n');
 
-    const proj = await cli.select('Select a project for the new module:', projectChoices(), {
+    const proj = await tui.select('Select a project for the new module:', projectChoices(), {
         nonInteractiveBehavior: 'fail',
         initial: 0
     });

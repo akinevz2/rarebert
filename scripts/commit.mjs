@@ -17,7 +17,7 @@ import {
     models,
     git,
     memo,
-    cli,
+    tui,
     listAllModules
 } from '../lib/git.mjs';
 
@@ -105,7 +105,7 @@ async function main(opts, positional) {
 
         if (await promptPreview()) {
             previewDiff();
-            if (!(await cli.confirm('Are you ready to commit?', false))) {
+            if (!(await tui.confirm('Are you ready to commit?', false))) {
                 git.git('status', [], { stdio: 'inherit' });
                 return exit(0, () => console.error('Aborted; staged files preserved.'));
             }
@@ -136,7 +136,7 @@ async function main(opts, positional) {
                 return exit(1, () => console.error('No summary produced; aborting.'));
             }
 
-            const looksGood = await cli.confirm('Looks good?', true);
+            const looksGood = await tui.confirm('Looks good?', true);
             if (looksGood) {
                 stageAndCommit(['-m', summary]);
                 return exit(0);

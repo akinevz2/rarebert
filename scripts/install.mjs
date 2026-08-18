@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { home } from '../lib/projects.mjs';
-import { CLI, cli, TUI } from '../lib/module.mjs';
+import { CLI, tui, TUI } from '../lib/module.mjs';
 import { backend } from '../lib/backend.mjs';
 import { exit } from '../lib/core.mjs';
 
@@ -92,7 +92,7 @@ async function main(opts, positional) {
 
     return exit(new TUI('install.mjs', async () => {
         if (isNonEmpty) {
-            const overwrite = await cli.confirm(`Prefix "${prefix}" is non-empty. Continue?`, false);
+            const overwrite = await tui.confirm(`Prefix "${prefix}" is non-empty. Continue?`, false);
             if (!overwrite) return exit(0, () => console.log('Not installed.'));
         }
 

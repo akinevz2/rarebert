@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cli, CLI, TUI } from '../lib/module.mjs';
+import { cli, tui, CLI, TUI } from '../lib/module.mjs';
 import { editor } from '../lib/editor.mjs';
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';
@@ -9,7 +9,7 @@ import { runHeadless, runInteractive } from '../lib/implement.mjs';
 const meta = {
     name: 'implement',
     description:
-        'Default refactor/bugfix workflow: accept a list of module paths and an instruction prompt, then run opencode interactively (launching `opencode <project>`) or non-interactively (`opencode run --auto`) with the local default model. The instruction is either the final positional argument (if it does not resolve to a file/module) or the --prompt flag.',
+        `Default refactor/bugfix workflow. Accept a list of module paths and an instruction prompt, then run opencode to implement the changes — interactively (launching the opencode TUI) when run from a terminal, or non-interactively (opencode run --auto) when piped or scripted. The instruction is the final positional argument if it does not resolve to a file/module, or the --prompt flag.\n\nThe model id is '<provider>/<model>' as declared under 'provider' in opencode.jsonc — e.g. 'ollama/laguna-xs-2.1:q8_0'. The provider name is whatever key is used in the config, not necessarily 'ollama'. The default model is resolved via models.resolveDefault() (reads opencode.jsonc, prefers config.model, falls back to first-provider/first-model); the -m/--model flag overrides it. If the specified model is not found, models.validateModel() returns a descriptive error and the process exits with status 1. opencode run is synchronous (spawnSync) — local ollama models can take 5-15 minutes per invocation as the LLM reads files, reasons, and writes code. A long-running command is normal, not a failure; only an immediate error (connection refused, model not found) indicates the backend is unavailable.`,
     usage:
         'node scripts/implement.mjs <module-path>... [--prompt <instruction>] [instruction]',
     args: [{ name: 'module-path', required: false }],
@@ -21,7 +21,7 @@ const meta = {
         },
         {
             flag: '-m, --model <id>',
-            description: 'opencode model id (overrides the default from opencode.json)'
+            description: "opencode model id in 'provider/model' format (overrides the default from opencode.json). Local ollama models are slow — allow 5-15 min per call, do not timeout"
         }
     ]
 };
@@ -95,7 +95,7 @@ async function main(opts, positional) {
 
     return exit(new TUI('implement.mjs', async (o = opts, p = positional) => {
         const fileArgs = moduleArgs.length > 0 ? moduleArgs : [];
-        const prompt = instruction || (await cli.input('Instruction for opencode:', {
+        const prompt = instruction || (await tui.input('Instruction for opencode:', {
             initial: fileArgs.length === 1 ? `Implement the module in ${fileArgs[0]}` : ''
         }));
         if (!prompt || !prompt.trim()) {

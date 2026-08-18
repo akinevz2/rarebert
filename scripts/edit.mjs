@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { listAllModules, promptModule, resolveModule, TUI, cli } from '../lib/module.mjs';
+import { listAllModules, promptModule, resolveModule, TUI, tui } from '../lib/module.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
@@ -68,10 +68,10 @@ export default new TUI('edit.mjs', async (opts, positional) => {
 
     let reviewFiles = [];
     if (touched.length === 1) {
-        const review = await cli.confirm(`Review ${touched[0]}?`, false);
+        const review = await tui.confirm(`Review ${touched[0]}?`, false);
         if (review) reviewFiles = touched;
     } else if (touched.length > 1) {
-        const review = await cli.confirm(
+        const review = await tui.confirm(
             `Review ${touched.length} changed files in $EDITOR?`,
             false
         );

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { CLI, TUI, cli } from '../lib/module.mjs';
+import { CLI, TUI, tui } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
@@ -75,7 +75,7 @@ export default new CLI('article.mjs', async (opts, positional) => {
         const modelArg = o.model;
 
         while (true) {
-            const choice = await cli.select('Article mode', [
+            const choice = await tui.select('Article mode', [
                 { name: 'manage', message: 'Manage sections' },
                 { name: 'edit', message: 'Edit a section' },
                 { name: 'preamble', message: 'Edit the preamble' },
