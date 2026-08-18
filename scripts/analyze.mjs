@@ -150,7 +150,7 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
 
         if (document) {
             const moduleArg = args.length > 0 ? args[0] : null;
-            await load(moduleArg, { verbose, yes, document });
+            await load(moduleArg, { verbose, yes, document, model: opts.model });
             return exit(0);
         }
 

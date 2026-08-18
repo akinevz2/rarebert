@@ -11,7 +11,7 @@ const meta = {
     usage: 'node index.js update <self|language> [lang] [--force] [--model <id>]',
     options: [
         { flag: '--force', description: 'overwrite an existing language support module' },
-        { flag: '--model <id>', description: 'opencode model for generating the support module' }
+        { flag: '-m, --model <id>', description: 'opencode model for generating the support module' }
     ]
 };
 

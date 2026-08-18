@@ -13,8 +13,10 @@ const meta = {
     name: 'edit',
     description:
         'Edit a module in $EDITOR; optionally review with opencode (which re-launches the editor on exit), then commit/diff/discard prompt',
-    usage: 'node index.js edit [module] [model]',
-    options: []
+    usage: 'node index.js edit [module] [--model <id>]',
+    options: [
+        { flag: '-m, --model <id>', description: 'opencode model id (overrides the default from opencode.json)' }
+    ]
 };
 
 export { meta };
@@ -26,7 +28,6 @@ export default new TUI('edit.mjs', async (opts, positional) => {
     }
 
     const moduleArg = positional[0];
-    const modelArg = positional[1];
 
     let target;
     if (moduleArg) {
@@ -54,7 +55,7 @@ export default new TUI('edit.mjs', async (opts, positional) => {
 
     const before = new Set(git.statusPorcelain().map((row) => row.path));
 
-    const model = modelArg ? await models.resolve(modelArg) : await models.resolve();
+    const model = opts.model ? await models.resolve(opts.model) : models.resolveDefault();
     const tui = ide.spawnTui(model, {
         cwd: rarebert.root,
         prompt: `We're reviewing ${rel}`

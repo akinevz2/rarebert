@@ -11,7 +11,7 @@ const meta = {
     name: 'open',
     description: 'Open a module in $EDITOR then launch the opencode full TUI at the project root',
     usage: 'node index.js open [module] [--model <id>]',
-    options: [{ flag: '--model <id>', description: 'opencode model id' }]
+    options: [{ flag: '-m, --model <id>', description: 'opencode model id (overrides the default from opencode.json)' }]
 };
 
 export { meta };
@@ -19,8 +19,8 @@ export { meta };
 export default new TUI(
     'open.mjs',
     async (opts, positional) => {
-        const modelArg = opts.model || positional[1];
-        const model = modelArg ? await models.resolve(modelArg) : await models.resolve();
+        const modelArg = opts.model;
+        const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
 
         const modules = listAllModules();
         const moduleArg = positional[0];

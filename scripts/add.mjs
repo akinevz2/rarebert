@@ -20,8 +20,11 @@ const meta = {
     name: 'add',
     description:
         'Scaffold a new module: pick project, pick language, then git add, edit, and run opencode headlessly to implement',
-    usage: 'node index.js add [model]',
-    options: [{ flag: '--force', description: 'overwrite an installed language template' }]
+    usage: 'node index.js add [--model <id>] [--force]',
+    options: [
+        { flag: '-m, --model <id>', description: 'opencode model id (overrides the default from opencode.json)' },
+        { flag: '--force', description: 'overwrite an installed language template' }
+    ]
 };
 
 export { meta };
@@ -103,8 +106,7 @@ export default new CLI('add.mjs', async (opts, positional) => {
         if (editorExit !== 0) return exit(editorExit);
     }
 
-    const modelArg = positional[0];
-    const model = await models.resolve(modelArg);
+    const model = opts.model ? await models.resolve(opts.model) : models.resolveDefault();
 
     const context = editor.loadContent(modulePath) || '';
     const instruction = [

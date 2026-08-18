@@ -9,36 +9,83 @@ import { runHeadless, runInteractive } from '../lib/implement.mjs';
 const meta = {
     name: 'implement',
     description:
-        'Implement module file(s): non-interactive reads args as a file list and runs opencode headlessly; interactive runs a REPL that prompts for an instruction, runs opencode --auto (on a running server or a fresh full TUI), then launches $EDITOR and a testing bash in parallel — exits when both close, or loops back to the prompt when the bash is closed alone',
-    usage: 'node index.js implement [file/dir ...] [model]',
-    options: []
+        'Default refactor/bugfix workflow: accept a list of module paths and an instruction prompt, then run opencode interactively (launching `opencode <project>`) or non-interactively (`opencode run --auto`) with the local default model. The instruction is either the final positional argument (if it does not resolve to a file/module) or the --prompt flag.',
+    usage:
+        'node scripts/implement.mjs <module-path>... [--prompt <instruction>] [instruction]',
+    args: [{ name: 'module-path', required: false }],
+    options: [
+        {
+            flag: '--prompt <text>',
+            description:
+                'instruction prompt for opencode (if omitted, the last positional arg that does not resolve to a file is used)'
+        },
+        {
+            flag: '-m, --model <id>',
+            description: 'opencode model id (overrides the default from opencode.json)'
+        }
+    ]
 };
 
 export { meta };
 
-export default new CLI('implement.mjs', async (opts, positional) => {
+/**
+ * Split positional args into module paths and a trailing instruction.
+ * The last positional arg is treated as the instruction prompt if it
+ * does NOT resolve to a file or module via editor.resolveTargetArg.
+ * If --prompt is set, it always takes precedence and all positionals
+ * are treated as module paths.
+ */
+function splitArgs(positional, promptFlag) {
+    if (promptFlag) {
+        return { moduleArgs: positional, instruction: promptFlag };
+    }
+    if (positional.length === 0) {
+        return { moduleArgs: [], instruction: null };
+    }
+    const last = positional[positional.length - 1];
+    const target = editor.resolveTargetArg(last);
+    if (target) {
+        return { moduleArgs: positional, instruction: null };
+    }
+    return {
+        moduleArgs: positional.slice(0, -1),
+        instruction: last
+    };
+}
+
+async function main(opts, positional) {
+    const { moduleArgs, instruction } = splitArgs(positional, opts.prompt);
+    const model = opts.model || models.resolveDefault();
+
     if (!cli.isInteractive()) {
-        const fileArgs = positional;
-        if (fileArgs.length === 0) {
+        if (moduleArgs.length === 0) {
             return exit(1, () =>
-                console.error('Non-interactive: pass file or directory arguments to implement.')
+                console.error(
+                    'implement: non-interactive mode requires module path arguments.'
+                )
             );
         }
-        const { entries, context } = await editor.resolveActiveFiles(fileArgs, {
-            message: 'implement'
-        });
-        if (entries.length === 0) return exit(1);
-
-        const model = await models.resolve(null);
-        const fileLabel =
-            entries.length === 1
-                ? entries[0].rel
-                : `${entries.length} files (${entries.map((e) => e.rel).join(', ')})`;
-        const instruction = `Implement the module in ${fileLabel}.\n\n--- active files context ---\n${context}`;
-        return runHeadless({ entries, context, model, instruction });
+        if (!instruction) {
+            return exit(1, () =>
+                console.error(
+                    'implement: non-interactive mode requires an instruction prompt ' +
+                        '(--prompt <text> or a trailing string arg).'
+                )
+            );
+        }
+        return runHeadless({ fileArgs: moduleArgs, model, instruction });
     }
 
-    return exit(new TUI('implement.mjs', async (opts, positional) => {
-        await runInteractive(positional);
+    return exit(new TUI('implement.mjs', async (o = opts, p = positional) => {
+        const fileArgs = moduleArgs.length > 0 ? moduleArgs : [];
+        const prompt = instruction || (await cli.input('Instruction for opencode:', {
+            initial: fileArgs.length === 1 ? `Implement the module in ${fileArgs[0]}` : ''
+        }));
+        if (!prompt || !prompt.trim()) {
+            return exit(1, () => console.error('implement: no instruction provided.'));
+        }
+        await runInteractive({ fileArgs, model, instruction: prompt.trim() });
     }, meta));
-}, meta).supportsDirectRunning(import.meta.url);
+}
+
+export default new CLI('implement.mjs', main, meta).supportsDirectRunning(import.meta.url);
