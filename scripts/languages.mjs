@@ -2,7 +2,7 @@
 
 import { CLI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
-import { showLanguages, install } from '../lib/languages-helpers.mjs';
+import { languages } from '../lib/languages.mjs';
 
 const meta = {
     name: 'languages',
@@ -16,11 +16,11 @@ export { meta };
 export default new CLI('languages.mjs', async (opts, positional) => {
     const sub = positional[0];
     if (!sub || sub === 'list' || sub === '--list') {
-        showLanguages();
+        languages.show();
         return exit(0);
     }
     if (sub === 'install') {
-        await install(opts, positional.slice(1));
+        await languages.installFromArgs(opts, positional.slice(1));
         return exit(0);
     }
     return exit(1, () => console.error(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`));

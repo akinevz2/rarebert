@@ -77,10 +77,13 @@ Before commits, review the request history stored in `.last-module`:
 - **WS-RAREBOX (24GB)**: Can run large quantization models, most flexible
 - **WS-MINIFRIDGE (16GB)**: Good for mid-sized models, suitable for most tasks
 
-Use `--model PROVIDER/MODEL` to override default, e.g.:
+The canonical provider keys and baseURLs live in `opencode.jsonc` — read it
+before invoking `opencode run` (do not assume `localhost` or hardcode a host).
+The model id format is `<provider>/<model>` where `<provider>` is a key under
+`provider` in the config. Use `--model` to override the default, e.g.:
 
 ```
-opencode run "<prompt>" -m ws-rarebox/laguna-xs-2.1:q8_0
+opencode run "<prompt>" -m ollama/laguna-xs-2.1:q8_0
 ```
 
 ### Analyze command 

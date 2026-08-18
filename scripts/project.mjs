@@ -2,7 +2,7 @@
 
 import { CLI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
-import { chooseLanguage, install, showList } from '../lib/project-helpers.mjs';
+import { languages } from '../lib/languages.mjs';
 
 const meta = {
     name: 'project',
@@ -16,15 +16,15 @@ export { meta };
 export default new CLI('project.mjs', async (opts, positional) => {
     const sub = positional[0];
     if (!sub || sub === 'list' || sub === '--list') {
-        showList();
+        languages.show({ label: 'project' });
         return exit(0);
     }
     if (sub === 'install') {
-        await install(opts, positional.slice(1));
+        await languages.installFromArgs(opts, positional.slice(1));
         return exit(0);
     }
     if (sub === 'choose') {
-        const lang = await chooseLanguage();
+        const lang = await languages.choose();
         console.log(lang);
         return exit(0);
     }

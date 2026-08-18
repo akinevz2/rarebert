@@ -8,9 +8,9 @@ import { ide } from '../lib/ide.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
 import { rarebert } from '../lib/projects.mjs';
+import { languages } from '../lib/languages.mjs';
 import {
     projectChoices,
-    pickLanguage,
     ensureLanguage,
     promptModuleName,
     scaffoldSrcModule
@@ -43,7 +43,7 @@ export default new CLI('add.mjs', async (opts, positional) => {
     let lang;
     let directory;
     if (project.key === 'src') {
-        lang = await pickLanguage();
+        lang = await languages.choose();
         directory = project.rel;
     } else {
         lang = 'mjs';
