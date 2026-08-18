@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cli, CLI, TUI } from '../lib/module.mjs';
+import { cli, tui, CLI, TUI } from '../lib/module.mjs';
 import { editor } from '../lib/editor.mjs';
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';
@@ -9,36 +9,100 @@ import { runHeadless, runInteractive } from '../lib/implement.mjs';
 const meta = {
     name: 'implement',
     description:
-        'Implement module file(s): non-interactive reads args as a file list and runs opencode headlessly; interactive runs a REPL that prompts for an instruction, runs opencode --auto (on a running server or a fresh full TUI), then launches $EDITOR and a testing bash in parallel — exits when both close, or loops back to the prompt when the bash is closed alone',
-    usage: 'node index.js implement [file/dir ...] [model]',
-    options: []
+        `Default refactor/bugfix workflow. Accept a list of module paths and an instruction prompt, then run opencode to implement the changes — interactively (launching the opencode TUI) when run from a terminal, or non-interactively (opencode run --auto) when piped or scripted. The instruction is the final positional argument if it does not resolve to a file/module, or the --prompt flag.\n\nThe model id is '<provider>/<model>' as declared under 'provider' in opencode.jsonc — e.g. 'ollama/laguna-xs-2.1:q8_0'. The provider name is whatever key is used in the config, not necessarily 'ollama'. The default model is resolved via models.resolveDefault() (reads opencode.jsonc, prefers config.model, falls back to first-provider/first-model); the -m/--model flag overrides it. If the specified model is not found, models.validateModel() returns a descriptive error and the process exits with status 1. opencode run is synchronous (spawnSync) — local ollama models can take 5-15 minutes per invocation as the LLM reads files, reasons, and writes code. A long-running command is normal, not a failure; only an immediate error (connection refused, model not found) indicates the backend is unavailable.`,
+    usage:
+        'node scripts/implement.mjs <module-path>... [--prompt <instruction>] [instruction]',
+    args: [{ name: 'module-path', required: false }],
+    options: [
+        {
+            flag: '--prompt <text>',
+            description:
+                'instruction prompt for opencode (if omitted, the last positional arg that does not resolve to a file is used)'
+        },
+        {
+            flag: '-m, --model <id>',
+            description: "opencode model id in 'provider/model' format (overrides the default from opencode.json). Local ollama models are slow — allow 5-15 min per call, do not timeout"
+        }
+    ]
 };
 
 export { meta };
 
-export default new CLI('implement.mjs', async (opts, positional) => {
+/**
+ * Split positional args into module paths and an instruction prompt.
+ * Scans ALL positionals: any arg that does NOT resolve to a file or
+ * module via editor.resolveTargetArg is treated as the instruction.
+ *  - Exactly one non-resolving arg → instruction, the rest are module paths
+ *  - Multiple non-resolving args → returns { error } for main() to surface
+ *  - No non-resolving args → instruction is null (all positionals are modules)
+ * If --prompt is set, it always takes precedence and all positionals
+ * are treated as module paths.
+ */
+function splitArgs(positional, promptFlag) {
+    if (promptFlag) {
+        return { moduleArgs: positional, instruction: promptFlag };
+    }
+    if (positional.length === 0) {
+        return { moduleArgs: [], instruction: null };
+    }
+    const moduleArgs = [];
+    const nonResolving = [];
+    for (const arg of positional) {
+        if (editor.resolveTargetArg(arg)) {
+            moduleArgs.push(arg);
+        } else {
+            nonResolving.push(arg);
+        }
+    }
+    if (nonResolving.length === 0) {
+        return { moduleArgs, instruction: null };
+    }
+    if (nonResolving.length === 1) {
+        return { moduleArgs, instruction: nonResolving[0] };
+    }
+    return {
+        moduleArgs: positional,
+        instruction: null,
+        error: 'ambiguous: multiple non-file arguments found, use --prompt for the instruction'
+    };
+}
+
+async function main(opts, positional) {
+    const { moduleArgs, instruction, error } = splitArgs(positional, opts.prompt);
+    if (error) {
+        return exit(1, () => console.error(`implement: ${error}`));
+    }
+    const model = opts.model || models.resolveDefault();
+
     if (!cli.isInteractive()) {
-        const fileArgs = positional;
-        if (fileArgs.length === 0) {
+        if (moduleArgs.length === 0) {
             return exit(1, () =>
-                console.error('Non-interactive: pass file or directory arguments to implement.')
+                console.error(
+                    'implement: non-interactive mode requires module path arguments.'
+                )
             );
         }
-        const { entries, context } = await editor.resolveActiveFiles(fileArgs, {
-            message: 'implement'
-        });
-        if (entries.length === 0) return exit(1);
-
-        const model = await models.resolve(null);
-        const fileLabel =
-            entries.length === 1
-                ? entries[0].rel
-                : `${entries.length} files (${entries.map((e) => e.rel).join(', ')})`;
-        const instruction = `Implement the module in ${fileLabel}.\n\n--- active files context ---\n${context}`;
-        return runHeadless({ entries, context, model, instruction });
+        if (!instruction) {
+            return exit(1, () =>
+                console.error(
+                    'implement: non-interactive mode requires an instruction prompt ' +
+                        '(--prompt <text> or a trailing string arg).'
+                )
+            );
+        }
+        return runHeadless({ fileArgs: moduleArgs, model, instruction });
     }
 
-    return exit(new TUI('implement.mjs', async (opts, positional) => {
-        await runInteractive(positional);
+    return exit(new TUI('implement.mjs', async (o = opts, p = positional) => {
+        const fileArgs = moduleArgs.length > 0 ? moduleArgs : [];
+        const prompt = instruction || (await tui.input('Instruction for opencode:', {
+            initial: fileArgs.length === 1 ? `Implement the module in ${fileArgs[0]}` : ''
+        }));
+        if (!prompt || !prompt.trim()) {
+            return exit(1, () => console.error('implement: no instruction provided.'));
+        }
+        await runInteractive({ fileArgs, model, instruction: prompt.trim() });
     }, meta));
-}, meta).supportsDirectRunning(import.meta.url);
+}
+
+export default new CLI('implement.mjs', main, meta).supportsDirectRunning(import.meta.url);

@@ -23,6 +23,10 @@ and help the developer maintain a stack-like history of opened files (which serv
 so that as work is completed on the most current file, they can collapse the most recently opened editor files
 to maintain focus on linear history of changes done to a codebase.
 
+## Careful Handling
+
+The agent must never perform destructive operations on the code base. When detecting unexpected changes to the code state, it must accept them as made by the code owner's deliberate intent, unless otherwise informed. In all cases, where concurrent modifications are interfering with the agent's progress, the changes must be immediately opened in editor, added to version control (git add), and then considered to be read using the fileRead tool, in order to understand what other changes are currently being worked on.
+
 ## Usage
 
 When asked to open a file or a file path (e.g., "scripts/add.mjs", "lib/memo.mjs", or "Makefile"), execute:

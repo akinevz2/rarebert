@@ -16,6 +16,107 @@ Nothing else in the tree is a module. `opencode.json`, `Makefile`, `AGENTS.md`
 and the per-language library folders under `lib/{lang}/` are resources, not
 modules.
 
+## Design Language: CLI vs TUI Modules
+
+Every runnable module (files in `scripts/*.mjs`) should export a default
+instance of either the `CLI` class or the `TUI` class from `lib/module.mjs`.
+
+### The Correct Shape
+
+```js
+export default new CLI('foo.mjs', main, meta).supportsDirectRunning(import.meta.url);
+// or
+export default new TUI('foo.mjs', main, meta).supportsDirectRunning(import.meta.url);
+```
+
+The `.supportsDirectRunning(import.meta.url)` call is **required** for modules
+that can be run directly via `node scripts/foo.mjs` (as opposed to only through
+`node index.js foo`).
+
+### The `main` Callback
+
+The `main` argument to `CLI` or `TUI` is an async function with signature:
+
+```js
+async (opts, positional) => { ... }
+```
+
+Where:
+- `opts` is the parsed options object from Commander flags
+- `positional` is the array of positional arguments
+
+**Design Principle:** The `main` method should be as simple as possible.
+Ideally, declare it as a `CLI` (to support non-interactive environments), with
+its main method performing argument checks to decide which action to perform.
+
+### Elevation Pattern
+
+When user interaction is required, use the **elevation pattern**:
+
+1. **Design for CLI first** - Have a `CLI` main that checks arguments
+2. **Elevate to TUI** when needed by returning `exit(0, new TUI(...))`
+
+Elevation occurs when:
+a) There's no logical default action for the module
+b) Performing an operation that requires user confirmation
+c) The module's design is to interact with the user for menu-driven operations
+
+```js
+async function main(opts, positional) {
+    // Check arguments first - CLI-convertible pathways
+    if (opts.instruction) {
+        // Non-interactive path - perform directly
+        return exit(0);
+    }
+    
+    if (!cli.isInteractive()) {
+        return exit(1, () => console.error('Interactive mode required'));
+    }
+    
+    // Elevate to TUI for user interaction
+    return exit(0, new TUI('foo.mjs', async (opts, positional) => {
+        // Interactive workflow here
+    }, meta));
+}
+```
+
+**Note:** `TUI.execute()` already checks `isInteractive()` and fails gracefully,
+so the non-interactive check before elevation is optional but recommended for
+clearer error messages.
+
+### TUI vs CLI Decision Matrix
+
+Use `TUI` when:
+- Menu-driven selection is core to the workflow
+- Multiple branching paths require user input
+- Interactive configuration is the primary use case
+
+Use `CLI` (or elevate from `CLI`) when:
+- Arguments fully specify the operation
+- The module can work headlessly in CI/CD
+- A simple flag can control behavior (`--force`, `--yes`, etc.)
+
+**Example pattern** (from `scripts/install.mjs`):
+
+```js
+// CLI-convertible: --force allows non-interactive overwrite
+if (force || !isNonEmpty) {
+    return exit(await performInstall(prefix, binDir));
+}
+
+// Elevate to TUI for confirmation prompt
+return exit(0, new TUI('install.mjs', async () => {
+    const overwrite = await cli.confirm(...);
+    // ...
+}));
+```
+
+### Note on API Stability
+
+At the moment, only `exit()` and the main callback signature are finalized.
+The shapes of `run()`, `_wrap()`, `execute()`, `createCommand()`, and other
+Module methods may evolve as the codebase develops.
+
 ## Discovery
 
 All module discovery goes through `lib/projects.mjs`:

@@ -17,7 +17,7 @@ import {
     models,
     git,
     memo,
-    cli,
+    tui,
     listAllModules
 } from '../lib/git.mjs';
 
@@ -27,8 +27,8 @@ const meta = {
     usage: 'node index.js commit [model] [--verbose]',
     options: [
         {
-            flag: '--model <id>',
-            description: 'opencode model id (otherwise prompted from opencode.json)'
+            flag: '-m, --model <id>',
+            description: 'opencode model id (overrides the default from opencode.json)'
         },
         { flag: '-v, --verbose', description: 'Print the full opencode prompt before the summary' }
     ]
@@ -41,7 +41,7 @@ async function main(opts, positional) {
     // Validate a user-supplied model id against opencode.json early so
     // typos and unfamiliar usage produce a clear error before any
     // interactive prompts or git operations run.
-    const modelArg = positional[0];
+    const modelArg = opts.model;
     if (modelArg) {
         const known = models.list(models.readConfig());
         if (known.length > 0 && !known.some((m) => m.id === modelArg)) {
@@ -95,7 +95,7 @@ async function main(opts, positional) {
         });
     }
 
-    return exit(new TUI('commit.mjs', async (opts, positional) => {
+    return exit(new TUI('commit.mjs', async (o = opts, p = positional) => {
         const choice = await promptCommitChoice();
 
         if (choice === 'later') {
@@ -105,7 +105,7 @@ async function main(opts, positional) {
 
         if (await promptPreview()) {
             previewDiff();
-            if (!(await cli.confirm('Are you ready to commit?', false))) {
+            if (!(await tui.confirm('Are you ready to commit?', false))) {
                 git.git('status', [], { stdio: 'inherit' });
                 return exit(0, () => console.error('Aborted; staged files preserved.'));
             }
@@ -121,7 +121,7 @@ async function main(opts, positional) {
             return exit(0);
         }
 
-        const model = await models.resolve(modelArg);
+        const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
 
         if (choice === 'proceed') {
             if (await promptBail('Bail before running opencode summary?')) {
@@ -136,7 +136,7 @@ async function main(opts, positional) {
                 return exit(1, () => console.error('No summary produced; aborting.'));
             }
 
-            const looksGood = await cli.confirm('Looks good?', true);
+            const looksGood = await tui.confirm('Looks good?', true);
             if (looksGood) {
                 stageAndCommit(['-m', summary]);
                 return exit(0);

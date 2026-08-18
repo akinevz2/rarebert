@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
 import { exit } from '../lib/core.mjs';
-import { CLI, cli, AbortError, TUI } from '../lib/module.mjs';
+import { CLI, tui, AbortError, TUI } from '../lib/module.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
 import { rarebert } from '../lib/projects.mjs';
+import { languages } from '../lib/languages.mjs';
 import {
     projectChoices,
-    pickLanguage,
     ensureLanguage,
     promptModuleName,
     scaffoldSrcModule
@@ -20,8 +20,11 @@ const meta = {
     name: 'add',
     description:
         'Scaffold a new module: pick project, pick language, then git add, edit, and run opencode headlessly to implement',
-    usage: 'node index.js add [model]',
-    options: [{ flag: '--force', description: 'overwrite an installed language template' }]
+    usage: 'node index.js add [--model <id>] [--force]',
+    options: [
+        { flag: '-m, --model <id>', description: 'opencode model id (overrides the default from opencode.json)' },
+        { flag: '--force', description: 'overwrite an installed language template' }
+    ]
 };
 
 export { meta };
@@ -30,7 +33,7 @@ export default new CLI('add.mjs', async (opts, positional) => {
     return exit(new TUI('add.mjs', async (opts, positional) => {
     console.log('\n=== Rarebert Module Creator ===\n');
 
-    const proj = await cli.select('Select a project for the new module:', projectChoices(), {
+    const proj = await tui.select('Select a project for the new module:', projectChoices(), {
         nonInteractiveBehavior: 'fail',
         initial: 0
     });
@@ -40,7 +43,7 @@ export default new CLI('add.mjs', async (opts, positional) => {
     let lang;
     let directory;
     if (project.key === 'src') {
-        lang = await pickLanguage();
+        lang = await languages.choose();
         directory = project.rel;
     } else {
         lang = 'mjs';
@@ -103,8 +106,7 @@ export default new CLI('add.mjs', async (opts, positional) => {
         if (editorExit !== 0) return exit(editorExit);
     }
 
-    const modelArg = positional[0];
-    const model = await models.resolve(modelArg);
+    const model = opts.model ? await models.resolve(opts.model) : models.resolveDefault();
 
     const context = editor.loadContent(modulePath) || '';
     const instruction = [

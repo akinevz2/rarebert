@@ -5,13 +5,13 @@ import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
-import { cli, listAllModules, promptModule, TUI } from '../lib/module.mjs';
+import { tui, listAllModules, promptModule, TUI } from '../lib/module.mjs';
 
 const meta = {
     name: 'open',
     description: 'Open a module in $EDITOR then launch the opencode full TUI at the project root',
     usage: 'node index.js open [module] [--model <id>]',
-    options: [{ flag: '--model <id>', description: 'opencode model id' }]
+    options: [{ flag: '-m, --model <id>', description: 'opencode model id (overrides the default from opencode.json)' }]
 };
 
 export { meta };
@@ -19,8 +19,8 @@ export { meta };
 export default new TUI(
     'open.mjs',
     async (opts, positional) => {
-        const modelArg = opts.model || positional[1];
-        const model = modelArg ? await models.resolve(modelArg) : await models.resolve();
+        const modelArg = opts.model;
+        const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
 
         const modules = listAllModules();
         const moduleArg = positional[0];
@@ -31,7 +31,7 @@ export default new TUI(
             const editorChild = ide.spawnEditor(target.path);
 
             if (ide.isTerminalEditor() && editorChild) {
-                const launchAfter = await cli.confirm(
+                const launchAfter = await tui.confirm(
                     'Launch opencode after you close the editor?',
                     true
                 );

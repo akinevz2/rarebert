@@ -1,93 +1,161 @@
 ---
 name: delegate
-description: Subagent patterns for opencode run with local or cloud models.
+description: Orchestrates multi-stage refactors where the orchestrating agent holds the plan and subagents execute one step at a time via scripts/implement.mjs, which invokes the local LLM through opencode run. Use when planning or executing a multi-step code refactor in rarebert where the local ollama model should perform the actual file edits.
 ---
 
 # Delegate
 
 ## Purpose
 
-Launches `task` subagents that execute `opencode run` with a chosen model for file-editing work. The subagent runs the command and returns the literal output — it does NOT run verification commands (`node --check`, `grep`, etc.). Verification is the orchestrating agent's responsibility.
+Orchestrates a multi-stage refactor by splitting work between two roles:
+
+- **Orchestrating agent** — holds the plan, creates todos, spawns subagents one step at a time, verifies after each step, and steers when the LLM output diverges from the plan.
+- **Subagent** — runs a single `node scripts/implement.mjs <files> -m ollama/laguna-xs-2.1:q8_0 --prompt "<one step>"` command per todo, reports the raw output, and may perform minor syntax fixups. Does NOT perform large architectural edits directly.
+
+The local LLM (invoked through `implement.mjs` → `opencode run --auto`) does the actual code editing. This preserves cloud credits, uses local compute for implementation, and keeps the orchestrating agent's context free of large code blocks.
+
+## When to use
+
+- The user asks for a multi-step refactor, bugfix, or feature implementation in rarebert.
+- The task can be broken into discrete steps, each targeting specific files.
+- You want the local ollama model to perform the actual code edits.
+- The task size warrants todo tracking and stepwise verification.
+
+## When NOT to use
+
+- Simple single-edit tasks — do them directly.
+- Tasks requiring real-time debugging or interactive prompts (implement.mjs non-interactive mode has no TTY).
+- When the local ollama backend is confirmed unavailable (connection refused, model not found — an immediate error, not a long-running command).
+
+## The orchestrator-subagent contract
+
+### Orchestrating agent responsibilities
+
+1. **Plan** — read memos, analyze code, design the multi-step plan. Create todos via `todowrite`.
+2. **Dispatch** — for each todo, spawn a `task` subagent of type `general` with a prompt that instructs it to run a single `implement.mjs` invocation.
+3. **Verify** — after each subagent returns, run `node --check` on changed files, `git diff --name-only`, and check the output matches expectations.
+4. **Steer on divergence** — if the LLM's output diverges from the plan (different approach, missed files, extra changes), do NOT edit directly. Instead, add fixup todos that are also dispatched through `implement.mjs`. Only edit directly if the fixup is a trivial one-line syntax correction that the LLM repeatedly gets wrong.
+5. **Final verification** — after all todos complete, re-verify the entire set of changes with `node --check` on every touched file.
+
+### Subagent responsibilities
+
+1. **Run the command** — execute the exact `node scripts/implement.mjs <files> -m ollama/laguna-xs-2.1:q8_0 --prompt "<step instruction>"` command given in the prompt.
+2. **Report raw output** — return the literal stdout/stderr of the `implement.mjs` invocation. Do not summarize or interpret.
+3. **Minor fixups allowed** — if the LLM output has a trivial syntax error (missing semicolon, wrong import name, unused import), the subagent may fix it directly with the edit tool. These must be one-line corrections, not architectural changes.
+4. **No large direct edits** — the subagent must NOT rewrite functions, move code blocks, add new methods, or perform any change that alters program logic. All such changes go through `implement.mjs`.
+5. **Extend todos on drift** — if the `implement.mjs` output diverges significantly from the step instruction (wrong files changed, different approach taken, partial implementation), the subagent should report the divergence and suggest fixup steps. The orchestrating agent then adds these as new todos dispatched through `implement.mjs`.
 
 ## Workflow
 
-### Step 1 — Ask the user which model to use
+### Step 1 — Plan and create todos
 
-Before launching any subagent, ask the user which model to run with:
+The orchestrating agent reads the relevant memos, analyzes the codebase, and designs a multi-step plan. Each step must specify:
 
-- **Cloud**: `opencode/glm-5.2` — faster, higher quality reasoning, costs credits
-- **Local**: `ollama/laguna-xs-2.1:q8_0` — slower, free, runs on local hardware
+- **Files to edit** — the module paths passed as positional args to `implement.mjs`.
+- **Instruction** — a self-contained prompt for the local LLM describing what to do in this one step. Must include: what to change, where in the file, what NOT to change, and any code patterns to follow from neighboring files.
 
-Use the `question` tool. If the user has already specified a model in their request, skip this step.
+Create todos via `todowrite`.
 
-### Step 2 — Write the phase prompt to scratch
+### Step 2 — Write the step prompt to scratch
 
-Write the implementation prompt to `.opencode/system/phaseN-<name>.md` (or `prompt.md` for a single phase). The prompt must be:
-
-- **Self-contained**: each `opencode run` call is stateless. Include all context: file paths (relative to project root, e.g. `lib/core.mjs`), exact code blocks, constraints, and data-structure shapes.
-- **Explicit about constraints**: state what NOT to change, code style to follow, and what to preserve.
-- **Include exact code blocks**: provide the full code to insert, not descriptions.
-
-### Step 3 — Launch the subagent
-
-Launch a `task` subagent of type `general`. The subagent's ONLY job is to run the command and return its literal output. It must NOT run `node --check`, `grep`, or any other verification — it returns the raw `opencode run` result.
-
-Subagent prompt template:
+For each step, write the instruction to `.opencode/system/stepN.txt` so the subagent can pass it to `implement.mjs` via `--prompt`. This keeps the subagent prompt clean and avoids shell-escaping issues with long instructions.
 
 ```
-You are an implementation runner. Your job is to execute a single opencode run
-command and return its literal output. Do NOT run any other commands (no
-node --check, no grep, no git diff). Just run the command and report back the
-raw output.
-
-Run this command from /workspaces/development/personal/rarebert:
-
-opencode run "$(cat .opencode/system/<prompt-file>)" -m <model> --auto
-
-Use a 1440000ms timeout (24 minutes). Slower quantized models on large prompts
-can take 20+ minutes. If the command times out, report that it timed out and
-show whatever partial output was captured.
-
-Report back: the literal stdout/stderr of the opencode run command. Do not
-summarize or interpret — return the raw output.
+.opencode/system/step1.txt — "Add runOnboardNonInteractive method to lib/backend.mjs ..."
+.opencode/system/step2.txt — "Add --base-url, --model, --provider, --editor-type flags to scripts/onboard.mjs ..."
 ```
 
-### Step 4 — Verify yourself
+### Step 3 — Spawn the subagent for each step
 
-After the subagent returns, the orchestrating agent runs verification:
+Launch a `task` subagent of type `general`. The subagent prompt must:
+
+- Explicitly instruct: "Run this command: `node scripts/implement.mjs <files> -m ollama/laguna-xs-2.1:q8_0 --prompt \"$(cat .opencode/system/stepN.txt)\"`"
+- State: "Do NOT edit files directly. The implement.mjs command invokes the local LLM which performs the edits. You only run the command and report output."
+- State: "You MAY fix trivial syntax errors (missing semicolons, unused imports) directly. You must NOT perform architectural changes — report divergence and suggest fixup steps instead."
+- State: "Use NO timeout shorter than 1800s (30 min). A long-running command is normal for local ollama models. Do NOT assume the backend is unavailable if the command takes a long time."
+- Request: "Skip the stdout/stderr report if implement.mjs exited successfully (exit 0 and no error output) — simply confirm success. Only report the literal stdout/stderr when the command failed, diverged from the instruction, or produced warnings/diagnostics."
+
+### Step 4 — Verify after each step
+
+After the subagent returns:
 
 ```bash
 node --check <each-touched-file>
-grep -n "<expected-symbol>" <file-path>
 git diff --name-only
+git diff <touched-file>
 ```
 
-If verification fails, either fix manually or re-launch the subagent with a corrected prompt.
+Check that the changes match the step's instruction. If they don't, decide:
+- **Minor mismatch** (syntax, formatting, missed a line) → add a fixup todo, dispatch via `implement.mjs`.
+- **Major divergence** (different approach, wrong files) → add a corrective todo with a more specific instruction, dispatch via `implement.mjs`.
+- **Complete failure** (implement.mjs errored immediately) → check if the backend is truly down. If so, fall back to direct edits as a last resort.
 
-### Step 5 — Parallelize independent phases
+### Step 5 — Final verification
 
-Independent phases (no data dependency between them) can be launched in the same message as multiple `task` tool calls — they run concurrently. Dependent phases must be sequential: wait for the prior subagent, verify, then launch the next.
-
-## Command reference
+After all todos (including fixups) are complete:
 
 ```bash
-opencode run "$(cat <prompt-file>)" -m <provider/model-id> --auto
+node --check <all-modified-files>
+node index.js check    # if available
+git diff --stat
 ```
 
-- `--auto` — auto-approve permissions (required for non-interactive edits)
-- `-m <model>` — model id with provider prefix
-- Timeout: minimum 1440000ms (24 min) for local quantized models; cloud models are faster
+### Step 6 — Commit (if requested)
 
-## Models
+```bash
+make commit
+# or: node index.js commit
+```
 
-| Model | Provider | Use case |
-|-------|----------|----------|
-| `opencode/glm-5.2` | opencode (cloud) | Fast, high-quality reasoning; costs credits |
-| `ollama/laguna-xs-2.1:q8_0` | ollama (local) | Free, runs on local hardware; slower |
+## implement.mjs command reference
 
-## Key principles
+```bash
+node scripts/implement.mjs <module-path>... [--prompt <instruction>] [instruction] [-m <model>]
+```
 
-1. **Subagents only run the command** — they return literal output, no verification.
-2. **Orchestrating agent verifies** — run `node --check` + `grep` yourself after the subagent returns.
-3. **Self-contained prompts** — each `opencode run` call is stateless.
-4. **Ask the user first** — confirm cloud vs local model before launching.
+- **Module paths** — positional args that resolve to files/modules via `editor.resolveTargetArg`. Any positional that does NOT resolve is treated as the instruction (if `--prompt` is not set).
+- **`--prompt <text>`** — the instruction for the local LLM. Takes precedence over trailing-arg inference.
+- **`-m <model>`** — model id in `provider/model` format (e.g. `ollama/laguna-xs-2.1:q8_0`). Overrides the default from `opencode.jsonc`.
+- **No `--model` flag** — `implement.mjs` resolves the default via `models.resolveDefault()` (reads `opencode.jsonc`, prefers `config.model`, falls back to first-provider/first-model).
+- **Non-interactive mode** — when stdin is not a TTY, `implement.mjs` runs `opencode run --auto` headlessly (synchronous `spawnSync`).
+- **Interactive mode** — when stdin is a TTY, launches the opencode full TUI with the instruction as `--prompt`.
+
+## Timeout rules
+
+Local ollama models are SLOW. A single `implement.mjs` invocation can take 5-15 minutes as the LLM reads files, reasons, and writes code.
+
+- **Minimum timeout**: 1800s (30 min). Anything shorter will kill legitimate work.
+- **Preferred**: no timeout at all — let the command complete naturally.
+- **Never assume the backend is down from a long-running command.** Only an immediate error (connection refused, model not found, opencode crash) indicates a real failure.
+- If a command times out at 1800s, retry with no timeout. The model may have been processing a large file.
+
+## Divergence handling
+
+When the LLM's output does not match the step instruction:
+
+| Divergence type | Action |
+|---|---|
+| Trivial syntax error (missing semicolon, unused import) | Subagent fixes directly |
+| Missing a small change (one function, one flag) | Add fixup todo, dispatch via `implement.mjs` |
+| Wrong approach (different design than planned) | Add corrective todo with a more specific instruction referencing the exact code patterns to follow, dispatch via `implement.mjs` |
+| Partial implementation (some files done, others not) | Add continuation todo for the remaining files, dispatch via `implement.mjs` |
+| Complete failure (implement.mjs errored) | Check backend availability. If truly down, fall back to direct edits as last resort. |
+
+The key principle: **steer by adjusting the next instruction, not by editing directly.** The orchestrating agent's job is to reason about the plan and verify; the local LLM's job is to write the code.
+
+## Model resolution
+
+`implement.mjs` resolves the model in this order:
+1. `-m`/`--model` flag (highest priority)
+2. `models.resolveDefault()` — reads `opencode.jsonc`, prefers `config.model`, falls back to first-provider/first-model
+3. `models.lastChosenModel()` — checks the SQLite store for a previously chosen model
+
+The model id format is `<provider>/<model>` as declared in `opencode.jsonc` — e.g. `ollama/laguna-xs-2.1:q8_0`. The provider name is whatever key is used under `provider` in the config.
+
+If the specified model is not found, `models.validateModel()` returns a descriptive error and the process exits with status 1 before spawning opencode.
+
+## Relationship to other skills
+
+- **brainstorm** — uses cloud models for planning, then deploys implementation via delegate. The delegate skill described here is the implementation half of that workflow.
+- **operate-multi-stage-refactor** — the binding-snapshot + damage-detection lifecycle. Delegate handles the code-editing half; operate-multi-stage-refactor handles the verification + memo lifecycle.
+- **refactor-tui-conversion** — the TUI conversion procedure. Each conversion step is a delegate invocation.

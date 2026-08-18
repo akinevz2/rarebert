@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { CLI, TUI, cli } from '../lib/module.mjs';
+import { CLI, TUI, tui } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
@@ -25,8 +25,11 @@ import {
 const meta = {
     name: 'article',
     description: 'Manage the academic report: clone, build, edit a section, commit',
-    usage: 'node index.js article [--preview] [section] [model]',
-    options: [{ flag: '-p, --preview', description: 'Preview mode' }]
+    usage: 'node index.js article [--preview] [section] [--model <id>]',
+    options: [
+        { flag: '-p, --preview', description: 'Preview mode' },
+        { flag: '-m, --model <id>', description: 'opencode model id (overrides the default from opencode.json)' }
+    ]
 };
 
 export { meta };
@@ -34,7 +37,7 @@ export { meta };
 export default new CLI('article.mjs', async (opts, positional) => {
     const preview = opts.preview;
     const sectionArg = positional[0];
-    const modelArg = positional[1];
+    const modelArg = opts.model;
 
     ensureCloned();
     await assertHostCleanOrCommit();
@@ -53,7 +56,7 @@ export default new CLI('article.mjs', async (opts, positional) => {
             return exit(1);
         }
         const section = await promptSection(sections, sectionArg);
-        const model = await models.resolve(modelArg);
+        const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
         const status = await editSection(model, section.path, section.rel);
         await confirmCommit(`update ${section.rel}`);
         return exit(status, () => {
@@ -66,13 +69,13 @@ export default new CLI('article.mjs', async (opts, positional) => {
         return exit(1);
     }
 
-    return exit(new TUI('article.mjs', async (opts, positional) => {
-        const preview = opts.preview;
-        const sectionArg = positional[0];
-        const modelArg = positional[1];
+    return exit(new TUI('article.mjs', async (o = opts, p = positional) => {
+        const preview = o.preview;
+        const sectionArg = p[0];
+        const modelArg = o.model;
 
         while (true) {
-            const choice = await cli.select('Article mode', [
+            const choice = await tui.select('Article mode', [
                 { name: 'manage', message: 'Manage sections' },
                 { name: 'edit', message: 'Edit a section' },
                 { name: 'preamble', message: 'Edit the preamble' },
@@ -96,7 +99,7 @@ export default new CLI('article.mjs', async (opts, positional) => {
             }
             if (choice === 'preamble') {
                 assertCleanBeforeSwitch();
-                const model = await models.resolve(modelArg);
+                const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
                 await editPreamble(model);
                 continue;
             }
@@ -108,7 +111,7 @@ export default new CLI('article.mjs', async (opts, positional) => {
                     continue;
                 }
                 const section = await promptSection(sections, null);
-                const model = await models.resolve(modelArg);
+                const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
                 const status = await editSection(model, section.path, section.rel);
                 if (status !== 0) console.error(`edit session exited with status ${status}.`);
                 await confirmCommit(`update ${section.rel}`);

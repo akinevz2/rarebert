@@ -40,6 +40,8 @@ When possible, favor declarative approaches:
 3. **Immutable patterns**: Prefer creating new objects vs mutating existing ones
 4. **Side effect isolation**: Keep I/O operations clearly separated
 
+See `docs/modules.md` for the complete design language for CLI vs TUI modules and the elevation pattern.
+
 ### Git Operations via lib/git.mjs
 
 The `lib/git.mjs` module provides a whitelisted git interface:
@@ -75,10 +77,13 @@ Before commits, review the request history stored in `.last-module`:
 - **WS-RAREBOX (24GB)**: Can run large quantization models, most flexible
 - **WS-MINIFRIDGE (16GB)**: Good for mid-sized models, suitable for most tasks
 
-Use `--model PROVIDER/MODEL` to override default, e.g.:
+The canonical provider keys and baseURLs live in `opencode.jsonc` — read it
+before invoking `opencode run` (do not assume `localhost` or hardcode a host).
+The model id format is `<provider>/<model>` where `<provider>` is a key under
+`provider` in the config. Use `--model` to override the default, e.g.:
 
 ```
-opencode run "<prompt>" -m ws-rarebox/laguna-xs-2.1:q8_0
+opencode run "<prompt>" -m ollama/laguna-xs-2.1:q8_0
 ```
 
 ### Analyze command 
@@ -238,8 +243,6 @@ must be migrated.
 | File | Line | Current | Fix |
 |------|------|---------|-----|
 | `scripts/article.mjs` | 56 | `process.exit(1)` | `return exit(1, () => console.error(...))` |
-| `scripts/install.mjs` | 44 | `cli.fail('install failed')` | `return exit(1, () => console.error('install failed'))` and add `return exit(0)` at end (line 61) |
-| `scripts/install.mjs` | 61 | implicit `undefined` return | append `return exit(0)` |
 | `scripts/run.mjs` | 30, 42, 52, 58, 64 | bare `return;` after `runProcess(...)` | leave as-is — `runProcess` calls `process.exit(code)` itself; document this |
 
 `scripts/run.mjs` is a special case: `lib/run.mjs#runProcess` spawns a
@@ -276,20 +279,3 @@ and letting the script's `CLI` wrapper call `exit()`.
 then tackle `lib/article.mjs` (highest count, used by `scripts/article.mjs`),
 then the remaining `lib/` modules. Each migration should be followed by
 `make check` and a manual exercise of the affected command.
-
-### Tracked scratch files under `.opencode/system/`
-
-`.opencode/system/exit_analysis_summary.md` and
-`.opencode/system/modules_no_exit_memo.md` were committed in 45a9037
-despite `.gitignore` excluding `.opencode/system/`. They are still
-tracked. Remove them from the index with
-`git rm --cached .opencode/system/exit_analysis_summary.md .opencode/system/modules_no_exit_memo.md`
-so the gitignore rule takes effect; the files can stay on disk as
-local reference.
-
-### `run-opencode-cloud` agent directory
-
-`.opencode/agents/run-opencode-cloud/agent.md` is untracked and not in
-`.gitignore`. Either add `.opencode/agents/` to `.gitignore` (if it
-should remain local) or `git add` it (if it should ship with the repo).
-Decide and apply before the next push.
