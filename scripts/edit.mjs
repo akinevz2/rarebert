@@ -58,7 +58,7 @@ export default new TUI('edit.mjs', async (opts, positional) => {
     const model = opts.model ? await models.resolve(opts.model) : models.resolveDefault();
     const tui = ide.spawnTui(model, {
         cwd: rarebert.root,
-        prompt: `We're reviewing ${rel}`
+        prompt: `We're reviewing ${rel}. Load the open-in-editor skill and open ${rel} in the editor so you can see the current state of the file as you review.`
     });
     const status = tui.done ? await tui.done : tui.status;
     if (status !== 0) return exit(status);

@@ -29,9 +29,12 @@ const meta = {
 export { meta };
 
 /**
- * Split positional args into module paths and a trailing instruction.
- * The last positional arg is treated as the instruction prompt if it
- * does NOT resolve to a file or module via editor.resolveTargetArg.
+ * Split positional args into module paths and an instruction prompt.
+ * Scans ALL positionals: any arg that does NOT resolve to a file or
+ * module via editor.resolveTargetArg is treated as the instruction.
+ *  - Exactly one non-resolving arg → instruction, the rest are module paths
+ *  - Multiple non-resolving args → returns { error } for main() to surface
+ *  - No non-resolving args → instruction is null (all positionals are modules)
  * If --prompt is set, it always takes precedence and all positionals
  * are treated as module paths.
  */
@@ -42,19 +45,33 @@ function splitArgs(positional, promptFlag) {
     if (positional.length === 0) {
         return { moduleArgs: [], instruction: null };
     }
-    const last = positional[positional.length - 1];
-    const target = editor.resolveTargetArg(last);
-    if (target) {
-        return { moduleArgs: positional, instruction: null };
+    const moduleArgs = [];
+    const nonResolving = [];
+    for (const arg of positional) {
+        if (editor.resolveTargetArg(arg)) {
+            moduleArgs.push(arg);
+        } else {
+            nonResolving.push(arg);
+        }
+    }
+    if (nonResolving.length === 0) {
+        return { moduleArgs, instruction: null };
+    }
+    if (nonResolving.length === 1) {
+        return { moduleArgs, instruction: nonResolving[0] };
     }
     return {
-        moduleArgs: positional.slice(0, -1),
-        instruction: last
+        moduleArgs: positional,
+        instruction: null,
+        error: 'ambiguous: multiple non-file arguments found, use --prompt for the instruction'
     };
 }
 
 async function main(opts, positional) {
-    const { moduleArgs, instruction } = splitArgs(positional, opts.prompt);
+    const { moduleArgs, instruction, error } = splitArgs(positional, opts.prompt);
+    if (error) {
+        return exit(1, () => console.error(`implement: ${error}`));
+    }
     const model = opts.model || models.resolveDefault();
 
     if (!cli.isInteractive()) {
