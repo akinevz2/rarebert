@@ -86,6 +86,9 @@ describe('modules.test.mjs — every runnable scripts/ module', () => {
             if (broken.length) console.log(`  broken: ${broken.map((r) => r.name).join(', ')}`);
             // Document the correct cases explicitly.
             for (const r of sane) {
+                // reExecutes modules have exitCode null (they hand off to a
+                // submodule) — that's a valid sane exit, not a number.
+                if (r.reExecutes) continue;
                 assert.equal(typeof r.exitCode, 'number', `${r.name}: sane exit should have numeric exitCode`);
             }
             // Don't fail on broken — this is a recording, not an assertion yet.

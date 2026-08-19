@@ -90,7 +90,15 @@ Rules for compact prompts:
 
 Launch a `task` subagent of type `general`. The subagent prompt must:
 
-- Explicitly instruct: "Run this command: `node scripts/implement.mjs <files> -m ollama/laguna-xs-2.1:q8_0 --prompt \"$(cat .opencode/system/stepN.txt)\"`"
+- Explicitly instruct: "Run this command: `node scripts/implement.mjs <files> -m ollama/nemotron-3.5-lightning:latest --prompt-file .opencode/system/stepN.txt`"
+  - **CRITICAL**: Use `--prompt-file` (not `--prompt "$(cat ...)"`) so the
+    model reads its instructions from the file. The file's content is NOT
+    inlined into the initial prompt — the model is told the file path and
+    can re-read it as often as needed. This prevents the model's context
+    from being overshadowed by the instruction text competing with the
+    file contents it loads for context.
+  - If `implement.mjs` does not yet support `--prompt-file`, pass the path
+    as the instruction: `--prompt "Read and follow .opencode/system/stepN.txt — re-read it as often as needed."` and ensure the file exists at that path.
 - State: "Do NOT edit files directly. The implement.mjs command invokes the local LLM which performs the edits. You only run the command and report output."
 - State: "You MAY fix trivial syntax errors (missing semicolons, unused imports) directly. You must NOT perform architectural changes — report divergence and suggest fixup steps instead."
 - State: "Use NO timeout shorter than 1800s (30 min). A long-running command is normal for local ollama models. Do NOT assume the backend is unavailable if the command takes a long time."

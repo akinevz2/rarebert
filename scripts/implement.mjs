@@ -5,17 +5,23 @@ import { editor } from '../lib/editor.mjs';
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';
 import { runHeadless, runInteractive } from '../lib/implement.mjs';
+import fs from 'fs';
 
 const meta = {
     name: 'implement',
-    description: `Default refactor/bugfix workflow. Accept a list of module paths and an instruction prompt, then run opencode to implement the changes — interactively (launching the opencode TUI) when run from a terminal, or non-interactively (opencode run --auto) when piped or scripted. The instruction is the final positional argument if it does not resolve to a file/module, or the --prompt flag.\n\nThe model id is '<provider>/<model>' as declared under 'provider' in opencode.jsonc — e.g. 'ollama/laguna-xs-2.1:q8_0'. The provider name is whatever key is used in the config, not necessarily 'ollama'. The default model is resolved via models.resolveDefault() (reads opencode.jsonc, prefers config.model, falls back to first-provider/first-model); the -m/--model flag overrides it. If the specified model is not found, models.validateModel() returns a descriptive error and the process exits with status 1. opencode run is synchronous (spawnSync) — local ollama models can take 5-15 minutes per invocation as the LLM reads files, reasons, and writes code. A long-running command is normal, not a failure; only an immediate error (connection refused, model not found) indicates the backend is unavailable.`,
-    usage: 'node scripts/implement.mjs <module-path>... [--prompt <instruction>] [instruction]',
+    description: `Default refactor/bugfix workflow. Accept a list of module paths and an instruction prompt, then run opencode to implement the changes — interactively (launching the opencode TUI) when run from a terminal, or non-interactively (opencode run --auto) when piped or scripted. The instruction is the final positional argument if it does not resolve to a file/module, or the --prompt flag.\n\nThe model id is '<provider>/<model>' as declared under 'provider' in opencode.jsonc — e.g. 'ollama/laguna-xs-2.1:q8_0'. The provider name is whatever key is used under 'provider' in the config, not necessarily 'ollama'. The default model is resolved via models.resolveDefault() (reads opencode.jsonc, prefers config.model, falls back to first-provider/first-model); the -m/--model flag overrides it. If the specified model is not found, models.validateModel() returns a descriptive error and the process exits with status 1. opencode run is synchronous (spawnSync) — local ollama models can take 5-15 minutes per invocation as the LLM reads files, reasons, and writes code. A long-running command is normal, not a failure; only an immediate error (connection refused, model not found) indicates the backend is unavailable.`,
+    usage: 'node scripts/implement.mjs <module-path>... [--prompt <text> | --prompt-file <path>] [instruction]',
     args: [{ name: 'module-path', required: false }],
     options: [
         {
             flag: '--prompt <text>',
             description:
                 'instruction prompt for opencode (if omitted, the last positional arg that does not resolve to a file is used)'
+        },
+        {
+            flag: '--prompt-file <path>',
+            description:
+                'read instruction from a file (avoids overshadowing the model context with a large inline prompt; the model is pointed to the file and can re-read it)'
         },
         {
             flag: '-m, --model <id>',
@@ -67,10 +73,26 @@ function splitArgs(positional, promptFlag) {
 }
 
 async function main(opts, positional) {
-    const { moduleArgs, instruction, error } = splitArgs(positional, opts.prompt);
+    let instruction = null;
+    let promptFile = null;
+
+    if (opts.promptFile) {
+        if (!fs.existsSync(opts.promptFile)) {
+            return exit(1, () => console.error(`implement: --prompt-file not found: ${opts.promptFile}`));
+        }
+        promptFile = opts.promptFile;
+        // Minimal prompt: point the model to the instruction file without
+        // inlining its contents (avoids overshadowing the model's context
+        // with a large instruction competing with file contents it loads).
+        const fileLabel = positional.length > 0 ? positional.join(', ') : 'the specified files';
+        instruction = `we're refactoring ${fileLabel}. refactoring instructions have been stored in ${opts.promptFile}. Feel free to re-read the contents of ${opts.promptFile} but ignore adjacent files in system/ unless necessary.`;
+    }
+
+    const { moduleArgs, instruction: posInstruction, error } = splitArgs(positional, opts.prompt);
     if (error) {
         return exit(1, () => console.error(`implement: ${error}`));
     }
+    if (!instruction) instruction = posInstruction;
     const model = opts.model || models.resolveDefault();
 
     if (!cli.isInteractive()) {
@@ -83,7 +105,7 @@ async function main(opts, positional) {
             return exit(1, () =>
                 console.error(
                     'implement: non-interactive mode requires an instruction prompt ' +
-                        '(--prompt <text> or a trailing string arg).'
+                        '(--prompt <text>, --prompt-file <path>, or a trailing string arg).'
                 )
             );
         }

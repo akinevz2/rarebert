@@ -31,59 +31,48 @@ const META = {
 };
 
 async function main(args = ModuleArguments.prototype, positional) {
-    // Backwards-compat bridge: Runtime passes a single ModuleArguments as
-    // both params. `positional` is the same ModuleArguments instance.
     const ma = positional instanceof ModuleArguments ? positional : ModuleArguments.from(positional || [], args || {});
     const groups = groupArgs(ma);
     const nonFlag = ma.nonFlag();
     const modules = listAllModules();
+    const json = ma.bool('json');
 
     if (ma.has('--add')) {
-        return await cmdAdd(groups, modules);
+        return exit(0, () => cmdAdd(groups, modules));
     }
 
     if (ma.has('--commit')) {
-        return await cmdCommit(ma.bool('yes'), ma.bool('fresh'));
+        return exit(0, () => cmdCommit(ma.bool('yes'), ma.bool('fresh')));
     }
 
     if (ma.has('--log')) {
-        return await cmdLog(nonFlag);
+        return exit(0, () => cmdLog(nonFlag));
     }
 
     if (ma.has('--recall')) {
-        return await cmdRecall(nonFlag[0], nonFlag.slice(1));
+        return exit(0, () => cmdRecall(nonFlag[0], nonFlag.slice(1)));
     }
 
     if (ma.has('--drop')) {
-        const result = await cmdDrop(nonFlag[0], nonFlag[1], modules);
+        const mod = cmdDrop(nonFlag[0], nonFlag[1], modules);
         memo.clearBuffer();
-        return result;
+        return exit(0, () => mod);
     }
 
     if (ma.has('--forget')) {
-        return await cmdForget(nonFlag, modules);
+        return exit(0, () => cmdForget(nonFlag, modules));
     }
 
-    if (ma.has('--json')) {
-        const all = memo.loadAllMemos();
-        if (!all.length) {
-            return exit(1, 'no memos');
-        }
-        console.log(JSON.stringify(all, null, 2));
-        return exit(0);
-    }
-
+    // List-only: default DAG or --json
     if (nonFlag.length === 0) {
-        cmdPrintAll(true);
-    } else {
-        const resolved = resolveModuleSet(nonFlag, modules);
-        if (resolved.length === 0) {
-            console.error(`No modules matched: ${nonFlag.join(', ')}`);
-            return exit(1);
-        }
-        cmdPrintSet(resolved, true);
+        return exit(0, () => cmdPrintAll(true));
     }
-    return exit(0);
+    const resolved = resolveModuleSet(nonFlag, modules);
+    if (resolved.length === 0) {
+        console.error(`No modules matched: ${nonFlag.join(', ')}`);
+        return exit(1);
+    }
+    return exit(0, () => cmdPrintSet(resolved, true));
 }
 
 export default new CLI('memo.mjs', main, META).supportsDirectRunning(import.meta.url);
