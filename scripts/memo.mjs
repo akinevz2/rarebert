@@ -20,12 +20,13 @@ const META = {
     description:
         'Print or manage memos. Default (no flags): print memos — all, or scoped to file args. Mutating flags: --add, --drop, --forget, --commit, --recall, --log.',
     usage:
-        'node index.js memo [files...] [--add <path> <memo>...|--drop <path> [indices]|--forget <path>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
+        'node index.js memo [files...] [--add <path> <memo>...|--drop <path> [indices]|--forget <path>...|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]|--json',
     allowUnknownOption: true,
     options: [
         { flag: '--yes', description: 'Skip confirmation for --commit' },
         { flag: '--fresh', description: 'Clear working sidecars after --commit' },
-        { flag: '--verbose', description: 'Verbose output' }
+        { flag: '--verbose', description: 'Verbose output' },
+        { flag: '--json', description: 'Output memos as JSON instead of DAG format' }
     ]
 };
 
@@ -67,6 +68,15 @@ async function main(opts, positional) {
 
     if (has('--forget')) {
         cmdForget(nonFlag, modules);
+        return exit(0);
+    }
+
+    if (has('--json')) {
+        const all = memo.loadAllMemos();
+        if (!all.length) {
+            return exit(1, 'no memos');
+        }
+        console.log(JSON.stringify(all, null, 2));
         return exit(0);
     }
 
