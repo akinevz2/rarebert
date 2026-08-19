@@ -342,3 +342,41 @@ The delegate skill should warn about this failure mode and recommend:
 - Committing working changes before dispatching a subagent
 - Having the subagent run `git stash` only with explicit instruction
 - Falling back to direct edits when subagent dispatch fails repeatedly
+---
+
+## 15. Template system: support-template.json relocation
+
+**Status:** Not started. Memo on `lib/template.mjs`.
+
+Move `support-template.json` from project root into `lib/supports/` and update related methods in `lib/template.mjs` and any consumers. The template defines the scaffold structure for `createLangTemplate()`.
+
+---
+
+## 16. Language template generation: createLangTemplate()
+
+**Status:** Not started. Memo on `lib/languages.mjs` (formerly "rewrite opencodeGenerateTemplate").
+
+Replace `languages.mjs::opencodeGenerateTemplate()` with `createLangTemplate()` in `lib/template.mjs`. The new method should scaffold a `lang*.js` support module from `lib/support-template.json` (after relocation to `lib/supports/`) without calling opencode. This replaces the rigid opencode-based template generation with a direct scaffold.
+
+---
+
+## 17. Flag parsing: --flag=value, -fvalue, -f value, short aliases
+
+**Status:** Not started. 4 memos on `scripts/memo.mjs`.
+
+Extend `groupArgs()` in `lib/memo.mjs` to support:
+- `--flag=value` (prefix/equals syntax)
+- `-fvalue` (infix short flag syntax)
+- `-f value` (short flag with space)
+- Short flag aliases (e.g., `-a` for `--add`, `-c` for `--commit`) for action flags
+
+Current `groupArgs()` only recognizes `--flag` style long flags.
+
+---
+
+## 18. Test file: unused import of cmdDrop
+
+**Status:** Not started. Memo on `test/memo-cmd-shapes.test.mjs`.
+
+`cmdDrop` is imported from `../lib/memo.mjs` on line 3 but not referenced anywhere in the test file. Remove the import or use it in a test.
+
