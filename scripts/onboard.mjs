@@ -65,6 +65,7 @@ export default new CLI(
                     if (!projectOk) {
                         return exit(1);
                     }
+                    return exit(0);
                 },
                 meta
             )

@@ -65,6 +65,27 @@ For each step, write the instruction to `.opencode/system/stepN.txt` so the suba
 .opencode/system/step2.txt — "Add --base-url, --model, --provider, --editor-type flags to scripts/onboard.mjs ..."
 ```
 
+**Prompt size is critical.** Local non-SOTA models (laguna-xs, nemotron-lightning)
+stall or produce poor output when the `--prompt` content exceeds ~1 kB. A 5 kB
+prompt file will overload them. Keep every step prompt file **under 1 kB** and
+**at most two short sections**:
+
+1. **`## Goal`** — one or two sentences stating what the step achieves.
+2. **One follow-up section** (your choice: `## Changes`, `## Steps`, `## Bugs`,
+   etc.) — a compact bullet list of the specific edits. No prose paragraphs,
+   no code blocks longer than 3-4 lines, no "What NOT to change" walls of text.
+
+Rules for compact prompts:
+- Reference existing code by `file:line` — never paste whole functions.
+- Omit "What NOT to change" unless a specific, concrete footgun demands it
+  (one bullet max).
+- Skip verification instructions in the prompt file — verification is the
+  orchestrator's job, not the local model's.
+- Prefer many tiny steps over one big step. Split a 5 kB plan into 4-5
+  sub-1 kB steps and dispatch each separately.
+- If a step genuinely needs more context, that is a signal to use the
+  large-refactor model (`ollama/laguna-s-2.1:q4_K_M`) for that one step.
+
 ### Step 3 — Spawn the subagent for each step
 
 Launch a `task` subagent of type `general`. The subagent prompt must:
@@ -153,6 +174,24 @@ The key principle: **steer by adjusting the next instruction, not by editing dir
 The model id format is `<provider>/<model>` as declared in `opencode.jsonc` — e.g. `ollama/laguna-xs-2.1:q8_0`. The provider name is whatever key is used under `provider` in the config.
 
 If the specified model is not found, `models.validateModel()` returns a descriptive error and the process exits with status 1 before spawning opencode.
+
+## Model selection guidance
+
+Choose the local model by refactor size. Verify the exact model string with
+`opencode models` before first use in a session (model tags change between
+installs).
+
+| Refactor size | Recommended model | Notes |
+|---|---|---|
+| Small–medium (single module, focused edit) | `ollama/nemotron-3.5-lightning:latest` | Better performance and resource utilisation than `laguna-xs-2.1:q8_0` for directed refactors. Preferred default for delegate steps. |
+| Large (multi-file, architectural moves) | `ollama/laguna-s-2.1:q4_K_M` | Larger quantization model; verify availability via `opencode models` first (there is no bare `opencode/laguna-s-2.1` — the local tag is `ollama/laguna-s-2.1:q4_K_M`, the cloud free tier is `opencode/laguna-s-2.1-free`). |
+| Legacy fallback | `ollama/laguna-xs-2.1:q8_0` | The original delegate default. Works but slower/less efficient than nemotron for directed tasks. |
+
+**Context overload caveat:** long, dense step prompts can stall smaller local
+models (e.g. `laguna-xs-2.1`). If a delegate invocation hangs, retry with
+`ollama/nemotron-3.5-lightning:latest` and a trimmed, focused instruction
+before falling back to the cloud model. Keep step instructions self-contained
+but avoid pasting large code blocks — reference file:line locations instead.
 
 ## Relationship to other skills
 

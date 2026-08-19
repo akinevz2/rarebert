@@ -4,7 +4,7 @@ import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { listAllModules, CLI, resolveModuleSet } from '../lib/module.mjs';
 import { memo, printDagForSet } from '../lib/memo.mjs';
-import { YELLOW_STAR, YELLOW, BOLD, RESET } from './symbols.mjs';
+import { YELLOW_STAR, YELLOW, BOLD, RESET } from '../lib/symbols.mjs';
 import {
     runNodeCheck,
     buildBindingGraph,

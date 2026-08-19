@@ -22,12 +22,12 @@ export default new CLI(
         const rest = positional.slice(1);
 
         if (!moduleArg) {
-            if (!fs.existsSync(DEFAULT_MODULE)) {
-                console.error(`Default module not found: ${rel(DEFAULT_MODULE)}`);
+            const defaultMod = DEFAULT_MODULE();
+            if (!fs.existsSync(defaultMod)) {
+                console.error(`Default module not found: ${rel(defaultMod)}`);
                 return exit(1);
             }
-            runProcess('node', [DEFAULT_MODULE, ...rest]);
-            return;
+            return await runProcess('node', [defaultMod, ...rest]);
         }
 
         const ext = path.extname(moduleArg).toLowerCase();
@@ -38,8 +38,7 @@ export default new CLI(
                 console.error(`Python module not found: ${moduleArg}`);
                 return exit(1);
             }
-            runProcess('python3', [pyPath, ...rest]);
-            return;
+            return await runProcess('python3', [pyPath, ...rest]);
         }
 
         if (ext === '.js' || ext === '.mjs') {
@@ -48,20 +47,17 @@ export default new CLI(
                 console.error(`Module not found: ${moduleArg}`);
                 return exit(1);
             }
-            runProcess(process.execPath, [jsMod.path, ...rest]);
-            return;
+            return await runProcess(process.execPath, [jsMod.path, ...rest]);
         }
 
         const jsMod = findJsModule(moduleArg);
         if (jsMod) {
-            runProcess(process.execPath, [jsMod.path, ...rest]);
-            return;
+            return await runProcess(process.execPath, [jsMod.path, ...rest]);
         }
 
         const pyPath = findPyModule(moduleArg);
         if (pyPath) {
-            runProcess('python3', [pyPath, ...rest]);
-            return;
+            return await runProcess('python3', [pyPath, ...rest]);
         }
 
         console.error(`Module not found: ${moduleArg}`);

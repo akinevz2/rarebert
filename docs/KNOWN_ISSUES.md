@@ -380,3 +380,88 @@ Current `groupArgs()` only recognizes `--flag` style long flags.
 
 `cmdDrop` is imported from `../lib/memo.mjs` on line 3 but not referenced anywhere in the test file. Remove the import or use it in a test.
 
+---
+
+## 19. Runtime/exit/ExitSignal consolidation into lib/run.mjs — DONE
+
+**Status:** Completed 2026-08-19. Supersedes section 1.
+
+The Runtime/exit/ExitSignal system was moved from `lib/core.mjs` into
+`lib/run.mjs` (thematically the "running" module). `lib/core.mjs` re-exports
+the moved symbols so the 63 existing `from './core.mjs'` imports keep working.
+Two bugs that broke `make open` (silent exit 0) were fixed during the move:
+
+- `exit()` now treats a function as the first arg as the `onExit` callback
+  (`exit(async () => {...})` in `index.js:133`).
+- `ExitSignal.complete()` now uses a returned `ExitSignal` instead of dropping
+  it (checks `instanceof ExitSignal` before the `.execute()` Module-chaining
+  check).
+
+A circular import (`core.mjs → run.mjs → projects.mjs → core.mjs`) was
+resolved by making `SRC_DIR`/`DEFAULT_MODULE` lazy functions in `run.mjs`;
+`scripts/run.mjs` calls `DEFAULT_MODULE()` instead of using the value
+directly.
+
+`index.js:130` was fixed: `new Runtime(runModule)` passed the dispatcher
+*function* (no `.execute`), so Runtime could not loop. Now wrapped:
+`new Runtime({ execute: (args) => runModule(args[0], args.slice(1)) })`.
+
+All CLI/Module underscore methods (`_wrap`, `_flagString`, `_typeParser`,
+`_buildActionHandler`, `_parseArgv`, `_validateArgs`) were removed;
+`CLI.execute` delegates to `Runtime.createRunner` and the `cli` singleton /
+`Module` class delegate flag/type/command/help parsing to `Runtime.*` statics.
+
+**Verification:** 127 tests pass, 0 fail. `node index.js open` no longer
+exits 0 silently (it now runs and reports non-TTY correctly).
+
+---
+
+## 20. scripts/symbols.mjs relocated to lib/symbols.mjs — DONE
+
+**Status:** Completed 2026-08-19.
+
+`scripts/symbols.mjs` was a library (glyph/ANSI constants), not a runnable
+script. Moved to `lib/symbols.mjs`. Importers updated: `lib/module.mjs`,
+`lib/present.mjs`, `lib/memo.mjs` (`./symbols.mjs`), and `scripts/check.mjs`
+(`../lib/symbols.mjs`).
+
+---
+
+## 21. runtime.execute([]) return shape inconsistent across CLI modules
+
+**Status:** Open. Memos recorded on `test/modules.test.mjs` (one per CLI).
+
+`test/modules.test.mjs` records the current return shape of
+`await new Runtime(mod).execute([])` for every CLI module. Some return a
+number exitCode, some return `undefined`, some throw. The ASAP fix: every
+`Module.execute()` must return an ExitSignal (or throw), never `undefined`.
+Once fixed, flip the memo test from "record current behavior" to
+`assert.equal(typeof result, 'number')`.
+
+---
+
+## 22. delegate skill: compact prompt requirement + model guidance
+
+**Status:** Completed 2026-08-19.
+
+`delegate` SKILL.md updated with: (a) prompt files must be <1 kB, at most two
+sections (`## Goal` + one follow-up) — larger prompts stall non-SOTA local
+models; (b) model selection table — `ollama/nemotron-3.5-lightning:latest`
+for small-medium refactors, `ollama/laguna-s-2.1:q4_K_M` for large (verify
+via `opencode models`; no bare `opencode/laguna-s-2.1` exists).
+
+---
+
+## 23. Subagent dispatch repeatedly stalls/cancels
+
+**Status:** Recurring. Related to section 14.
+
+During this session, `task` subagents dispatched to run `implement.mjs`
+either cancelled immediately or returned empty results, and background
+invocations applied broken partial edits (deleted class bodies from
+`lib/core.mjs` without adding them to `lib/run.mjs`, plus a duplicate
+`DATA_DIR` block). Recovery required direct orchestrator edits. The
+delegate skill should document that when subagent dispatch fails
+repeatedly, the orchestrator should fall back to direct edits rather than
+retry indefinitely.
+

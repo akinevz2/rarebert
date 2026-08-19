@@ -70,8 +70,7 @@ async function runModule(ref, args = []) {
             );
         }
 
-        const runtime = new Runtime(exported);
-        return exit(await runtime.execute(args));
+        return await exported.execute(args);
     } catch (err) {
         console.error(err.message || err);
         return exit(err.message || String(err));
@@ -96,24 +95,49 @@ const meta = {
 };
 
 async function main(opts, positional) {
-    // --core redirects the `rarebert` singleton to the install prefix
-    // so all module discovery and the onboarding guard operate against
-    // rarebert's own modules rather than the CWD project.
+    cli.installSignalHandlers();
+
+    // opts should always be forwarded to the called module
+    // after parsing them using Commander.js library.
+
     if (opts.core) {
         rarebert.redirect(home.root);
     }
 
-    const cmd = positional[0];
-    const rest = positional.slice(1);
+    // Commander.js parsing for the command and its arguments
+    const program = cli.createCommand(meta);
+    program.allowUnknownOption(true);
+    program.allowExcessArguments(true);
 
-    if (!cmd || HELP_COMMANDS.has(cmd)) {
-        await listModules([cmd, ...rest].filter(Boolean));
+    try {
+        await program.parseAsync(['node', 'rarebert', ...positional]);
+    } catch (err) {
+        if (err?.code === 'commander.help') return exit(0);
+        return exit(err.message || String(err));
+    }
+
+    const parsedCmd = program.args[0];
+    const parsedArgs = program.args.slice(1);
+
+    if (!parsedCmd || HELP_COMMANDS.has(parsedCmd)) {
+        await listModules([program.args[0], ...program.args.slice(1)].filter(Boolean));
         return exit(0);
     }
 
-    await maybeOnboard(cmd);
+    await maybeOnboard(parsedCmd);
 
-    return exit(await runModule(cmd, rest));
+    // Runtime drives the Module re-execution loop. runModule resolves a ref
+    // (args[0]) to a Module and runs it with the remaining args; wrap it so
+    // Runtime.execute(args) -> runModule(args[0], args.slice(1)).
+    const runtime = new Runtime({
+        execute: (args) => runModule(args[0], args.slice(1))
+    });
+
+    // Preferred pattern: exit(async () => ...) to properly handle async result
+    return exit(async () => {
+        const code = await runtime.execute([parsedCmd, ...parsedArgs]);
+        return exit(code);
+    });
 }
 
 const module = new CLI('index.js', main, meta);
@@ -123,4 +147,5 @@ cli.installSignalHandlers();
 module.supportsDirectRunning(import.meta.url);
 
 export { main };
+
 export default module;

@@ -14,7 +14,7 @@ import { ExitSignal, exit } from '../lib/core.mjs';
 //   exit(ExitSignal)     → passthrough
 //
 // For success with a produced value, cmd*() should use:
-//   return exit(0, { onExit: () => console.log(producedValue) })
+//   return exit(0, { onExit: () => console.log(producedResult) })
 // or simply return exit(0) if the value was already printed via streaming.
 //
 // scripts/memo.mjs then forwards: `return await cmdX(args)` — the ExitSignal
@@ -100,7 +100,7 @@ describe('cmdLog returns ExitSignal', () => {
         const result = cmdLog([]);
         assert.ok(isExitSignal(result));
         if (exitCode(result) === 0) {
-            // producedValue is the shownEntries array, no onExit needed
+            // producedResult is the shownEntries array, no onExit needed
         }
     });
 });
@@ -188,48 +188,48 @@ describe('ExitSignal shape', () => {
         assert.equal(sig.producedValue, undefined);
     });
 
-    test('exit("error") produces ExitSignal with code 1 and producedValue as string', () => {
+    test('exit("error") produces ExitSignal with code 1 and producedResult as string', () => {
         const sig = exit('test error');
         assert.ok(sig instanceof ExitSignal);
         assert.equal(sig.exitCode, 1);
-        assert.equal(sig.producedValue, 'test error');
+        assert.equal(sig.producedResult, 'test error');
     });
 
-    test('exit(0, value) produces ExitSignal with code 0 and producedValue', () => {
+    test('exit(0, value) produces ExitSignal with code 0 and producedResult', () => {
         const produced = { entries: [{ date: '2026-01-01', subject: 'test' }] };
         const sig = exit(0, produced);
         assert.ok(sig instanceof ExitSignal);
         assert.equal(sig.exitCode, 0);
-        assert.equal(sig.producedValue, produced);
+        assert.equal(sig.producedResult, produced);
     });
 
-    test('exit(0, fn) sets onExit callback, producedValue undefined', () => {
+    test('exit(0, fn) sets onExit callback, producedResult undefined', () => {
         const sig = exit(0, () => {});
         assert.ok(sig instanceof ExitSignal);
         assert.equal(sig.exitCode, 0);
-        assert.equal(sig.producedValue, undefined);
+        assert.equal(sig.producedResult, undefined);
         assert.equal(typeof sig.onExit, 'function');
     });
 
-    test('exit(0, "success string") produces ExitSignal with code 0 and string producedValue', () => {
+    test('exit(0, "success string") produces ExitSignal with code 0 and string producedResult', () => {
         const sig = exit(0, 'operation succeeded');
         assert.ok(sig instanceof ExitSignal);
         assert.equal(sig.exitCode, 0);
-        assert.equal(sig.producedValue, 'operation succeeded');
+        assert.equal(sig.producedResult, 'operation succeeded');
     });
 
-    test('exit("failure string") produces ExitSignal with code 1 and string producedValue', () => {
+    test('exit("failure string") produces ExitSignal with code 1 and string producedResult', () => {
         const sig = exit('operation failed');
         assert.ok(sig instanceof ExitSignal);
         assert.equal(sig.exitCode, 1);
-        assert.equal(sig.producedValue, 'operation failed');
+        assert.equal(sig.producedResult, 'operation failed');
     });
 
-    test('complete() returns { exitCode, producedValue } when onExit is undefined', async () => {
+    test('complete() returns { exitCode, producedResult } when onExit is undefined', async () => {
         const sig = exit(0, { data: 1 });
         const result = await sig.complete();
         assert.equal(result.exitCode, 0);
-        assert.deepEqual(result.producedValue, { data: 1 });
+        assert.deepEqual(result.producedResult, { data: 1 });
     });
 
     test('complete() returns Module when onExit callback returns a Module-like object', async () => {
@@ -239,11 +239,11 @@ describe('ExitSignal shape', () => {
         assert.equal(result, fakeModule, 'complete() should return the Module from onExit');
     });
 
-    test('complete() returns { exitCode, producedValue } when onExit returns non-Module', async () => {
+    test('complete() returns { exitCode, producedResult } when onExit returns non-Module', async () => {
         const sig = exit(0, () => 42);
         const result = await sig.complete();
         assert.equal(result.exitCode, 0);
-        assert.equal(result.producedValue, undefined);
+        assert.equal(result.producedResult, undefined);
     });
 });
 

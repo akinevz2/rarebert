@@ -4,7 +4,7 @@
 //   constructor(module)             — accepts a Module instance
 //   async execute(args = [])        — calls module.execute(args), inspects the ExitSignal,
 //                                     calls complete() which may return a Module for re-execution (loops),
-//                                     displays producedValue, and returns exitCode (a number).
+//                                     displays producedResult, and returns exitCode (a number).
 //                                     Does NOT call process.exit().
 //
 class Runtime {
