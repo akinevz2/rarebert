@@ -41,34 +41,29 @@ async function main(opts, positional) {
     const has = (f) => actionFlagsPresent.includes(f);
 
     if (has('--add')) {
-        await cmdAdd(groups, modules);
-        return exit(0);
+        return await cmdAdd(groups, modules);
     }
 
     if (has('--commit')) {
-        await cmdCommit(opts.yes, opts.fresh);
-        return exit(0);
+        return await cmdCommit(opts.yes, opts.fresh);
     }
 
     if (has('--log')) {
-        cmdLog(nonFlag);
-        return exit(0);
+        return await cmdLog(nonFlag);
     }
 
     if (has('--recall')) {
-        cmdRecall(nonFlag[0], nonFlag.slice(1));
-        return exit(0);
+        return await cmdRecall(nonFlag[0], nonFlag.slice(1));
     }
 
     if (has('--drop')) {
-        await cmdDrop(nonFlag[0], nonFlag[1], modules);
+        const result = await cmdDrop(nonFlag[0], nonFlag[1], modules);
         memo.clearBuffer();
-        return exit(0);
+        return result;
     }
 
     if (has('--forget')) {
-        cmdForget(nonFlag, modules);
-        return exit(0);
+        return await cmdForget(nonFlag, modules);
     }
 
     if (has('--json')) {

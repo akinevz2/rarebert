@@ -70,10 +70,10 @@ async function runModule(ref, args = []) {
             );
         }
 
-        await exported.executeAndExit(args);
+        return await exported.execute(args);
     } catch (err) {
         console.error(err.message || err);
-        process.exit(1);
+        return exit(err.message || String(err));
     }
 }
 
@@ -108,7 +108,7 @@ async function main(opts, positional) {
 
     await maybeOnboard(cmd);
 
-    await runModule(cmd, rest);
+    return await runModule(cmd, rest);
 }
 
 const module = new CLI('index.js', main, meta);
