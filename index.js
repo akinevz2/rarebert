@@ -39,7 +39,7 @@ async function maybeOnboard(cmd) {
  * CLI/TUI). If it isn't, the dispatcher fails — every rarebert command
  * must be a runnable Module.
  */
-async function runModule(ref, args = []) {
+async function runModule(ref, _args = []) {
     const scripts = home.discoverModules();
 
     const isPathRef = ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
@@ -60,21 +60,16 @@ async function runModule(ref, args = []) {
         throw new Error('Module not found: ' + ref);
     }
 
-    try {
-        const mod = await import('file://' + home.absPath(script.path));
-        const exported = mod.default;
+    const mod = await import('file://' + home.absPath(script.path));
+    const exported = mod.default;
 
-        if (!(exported instanceof Module)) {
-            throw new Error(
-                `${script.path}: default export must be a Module instance, got ${exported?.constructor?.name ?? typeof exported}`
-            );
-        }
-
-        return await exported.execute(args);
-    } catch (err) {
-        console.error(err.message || err);
-        return exit(err.message || String(err));
+    if (!(exported instanceof Module)) {
+        throw new Error(
+            `${script.path}: default export must be a Module instance, got ${exported?.constructor?.name ?? typeof exported}`
+        );
     }
+
+    return exported;
 }
 
 const HELP_COMMANDS = new Set(['--help', '-h', 'help']);
@@ -126,18 +121,17 @@ async function main(opts, positional) {
 
     await maybeOnboard(parsedCmd);
 
-    // Runtime drives the Module re-execution loop. runModule resolves a ref
-    // (args[0]) to a Module and runs it with the remaining args; wrap it so
-    // Runtime.execute(args) -> runModule(args[0], args.slice(1)).
-    const runtime = new Runtime({
-        execute: (args) => runModule(args[0], args.slice(1))
-    });
-
-    // Preferred pattern: exit(async () => ...) to properly handle async result
-    return exit(async () => {
-        const code = await runtime.execute([parsedCmd, ...parsedArgs]);
-        return exit(code);
-    });
+    // Resolve the ref to a Module and hand it back to the Runtime for
+    // re-execution. exit(0, () => mod) makes complete() return the Module,
+    // so Runtime loops and invokes mod.runner with the SAME args (forwarded
+    // from this invocation), then drives guard/invoke/decide/cleanup itself.
+    try {
+        const mod = await runModule(parsedCmd, parsedArgs);
+        return exit(0, () => mod);
+    } catch (err) {
+        console.error(err.message || err);
+        return exit(err.message || String(err));
+    }
 }
 
 const module = new CLI('index.js', main, meta);

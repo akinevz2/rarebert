@@ -1,8 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Memo, Memory, memo, cmdAdd, cmdCommit, cmdLog, cmdRecall, cmdDrop, cmdForget, groupArgs } from '../lib/memo.mjs';
-import { Module, listAllModules } from '../lib/module.mjs';
-import { ExitSignal, exit } from '../lib/core.mjs';
+import { Module, CLI, listAllModules } from '../lib/module.mjs';
+import { ExitSignal, Runtime, exit } from '../lib/core.mjs';
 
 // ---------------------------------------------------------------------------
 // Contract: every cmd*() function must return an ExitSignal in every branch.
@@ -233,7 +233,7 @@ describe('ExitSignal shape', () => {
     });
 
     test('complete() returns Module when onExit callback returns a Module-like object', async () => {
-        const fakeModule = { execute: () => exit(0, 're-run result') };
+        const fakeModule = { meta: { name: 'sub' }, main: () => exit(0, 're-run result') };
         const sig = exit(0, () => fakeModule);
         const result = await sig.complete();
         assert.equal(result, fakeModule, 'complete() should return the Module from onExit');
@@ -248,40 +248,107 @@ describe('ExitSignal shape', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Module::exit() return chain — does NOT call process.exit()
+// Runtime lifecycle — assertSaneExit + execute guard/invoke/decide/cleanup.
+// Module::exit() was removed; Runtime owns the completion/decision logic.
+// Runtime IS the runner — it builds the Commander runner from module.meta +
+// module.main. A Module never holds a runner reference.
 // ---------------------------------------------------------------------------
 
-describe('Module::exit() returns exitCode, does not call process.exit()', () => {
+// Fake module factory: constructs a real CLI instance whose main simply
+// returns a known value through exit(). Extra fields (guard, cleanup) are
+// attached after construction so the test exercises the actual Module/CLI
+// code path while still allowing hook overrides.
+const fakeMod = (file, main, extra = {}) => {
+    const meta = { name: file, allowUnknownOption: true, ...extra.meta };
+    const { meta: _drop, ...hooks } = extra;
+    const mod = new CLI(file, main, meta);
+    Object.assign(mod, hooks);
+    return mod;
+};
 
-    test('Module::exit() returns a number (exitCode) for simple ExitSignal', async () => {
-        const mod = Object.create(Module.prototype);
-        mod.path = 'test.mjs';
-        const result = await mod.exit(exit(0, { data: 1 }));
-        assert.equal(typeof result, 'number', 'Module::exit() should return a number exitCode');
-        assert.equal(result, 0);
+describe('Runtime.assertSaneExit — the test-only runtime check interface', () => {
+
+    test('returns ok:true + exitCode for a main that returns exit(0, value)', async () => {
+        const mod = fakeMod('test.mjs', () => exit(0, { data: 1 }));
+        const r = await Runtime.assertSaneExit(mod, []);
+        assert.equal(r.ok, true);
+        assert.equal(r.exitCode, 0);
+        assert.deepEqual(r.producedResult, { data: 1 });
     });
 
-    test('Module::exit() returns 1 for error ExitSignal', async () => {
-        const mod = Object.create(Module.prototype);
-        mod.path = 'test.mjs';
-        const result = await mod.exit(exit('something went wrong'));
-        assert.equal(result, 1);
+    test('returns ok:true + exitCode 1 for an error ExitSignal', async () => {
+        const mod = fakeMod('test.mjs', () => exit('something went wrong'));
+        const r = await Runtime.assertSaneExit(mod, []);
+        assert.equal(r.ok, true);
+        assert.equal(r.exitCode, 1);
     });
 
-    test('Module::exit() returns a Module when onExit callback returns one', async () => {
-        const mod = Object.create(Module.prototype);
-        mod.path = 'test.mjs';
-        const fakeModule = { execute: () => exit(0) };
-        const sig = exit(0, () => fakeModule);
-        const result = await mod.exit(sig);
-        assert.equal(result, fakeModule, 'Module::exit() should return the Module for re-execution');
+    test('reports ok:false when module is not runnable (no main)', async () => {
+        const mod = { path: 'broken.mjs', meta: { name: 'broken.mjs' } };
+        const r = await Runtime.assertSaneExit(mod, []);
+        assert.equal(r.ok, false);
+        assert.match(r.error, /not runnable/);
     });
 
-    test('Module::exit() returns 1 for non-ExitSignal result', async () => {
-        const mod = Object.create(Module.prototype);
-        mod.path = 'test.mjs';
-        const result = await mod.exit({ not: 'an exit signal' });
-        assert.equal(result, 1);
+    test('reports reExecutes when complete() returns a runnable Module', async () => {
+        const sub = fakeMod('sub.mjs', () => exit(0));
+        const mod = fakeMod('test.mjs', () => exit(0, () => sub));
+        const r = await Runtime.assertSaneExit(mod, []);
+        assert.equal(r.ok, true);
+        assert.ok(r.reExecutes, 'reExecutes should be set (the sub module path)');
+        assert.match(String(r.reExecutes), /sub\.mjs$/);
+    });
+
+    test('reports threw:true when guard throws', async () => {
+        const mod = fakeMod('test.mjs', () => exit(0), {
+            async guard() { throw new Error('guard-boom'); }
+        });
+        const r = await Runtime.assertSaneExit(mod, []);
+        assert.equal(r.threw, true);
+        assert.equal(r.ok, false);
+        assert.match(r.error, /guard-boom/);
+    });
+});
+
+describe('Runtime.execute — lifecycle hooks (guard/invoke/decide/cleanup)', () => {
+
+    test('calls guard before main, cleanup after terminal result', async () => {
+        const calls = [];
+        const mod = fakeMod('test.mjs', () => { calls.push('main'); return exit(0); }, {
+            async guard(_a) { calls.push('guard'); },
+            async cleanup(_a) { calls.push('cleanup'); }
+        });
+        const code = await new Runtime(mod).execute([]);
+        assert.equal(code, 0);
+        assert.deepEqual(calls, ['guard', 'main', 'cleanup']);
+    });
+
+    test('skips cleanup when looping to a produced Module', async () => {
+        const calls = [];
+        const sub = fakeMod('sub.mjs', () => { calls.push('sub-main'); return exit(0); }, {
+            async cleanup(_a) { calls.push('sub-cleanup'); }
+        });
+        const mod = fakeMod('test.mjs', () => { calls.push('main'); return exit(0, () => sub); }, {
+            async guard(_a) { calls.push('guard'); },
+            async cleanup(_a) { calls.push('cleanup'); }
+        });
+        const code = await new Runtime(mod).execute([]);
+        assert.equal(code, 0);
+        assert.deepEqual(calls, ['guard', 'main', 'sub-main', 'sub-cleanup']);
+    });
+
+    test('forwards the SAME args to a produced Module (not reset to [])', async () => {
+        const seen = [];
+        const sub = fakeMod('sub.mjs', (args) => { seen.push([...args]); return exit(0); });
+        const mod = fakeMod('test.mjs', () => exit(0, () => sub));
+        await new Runtime(mod).execute(['--flag', 'operand']);
+        assert.deepEqual(seen[0], ['--flag', 'operand']);
+    });
+
+    test('returns 1 when module is not runnable (no main)', async () => {
+        const mod = { path: 'broken.mjs', meta: { name: 'broken.mjs' } };
+        const code = await new Runtime(mod).execute([]);
+        assert.equal(code, 1);
     });
 });
 

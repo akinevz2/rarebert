@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
-import { exit } from '../lib/core.mjs';
-import { store } from '../lib/core.mjs';
+import { exit, store } from '../lib/core.mjs';
 import {
     CLI,
     cli,
@@ -56,15 +55,15 @@ export { meta };
 export default new CLI(
     'analyze.mjs',
     async (opts = {}, positional = []) => {
-        const args = Array.isArray(positional) ? positional : [];
-        const verbose = !!opts.verbose;
-        const yes = !!opts.yes;
-        const document = !!opts.document;
-        const oneline = !!opts.oneline;
-        const showGraph = !!opts.graph;
-        const traceName = opts.trace || null;
-        const usageName = opts.usage || null;
-        const clearCache = !!opts.clearCache;
+        const verbose = positional.bool('verbose');
+        const yes = positional.bool('yes');
+        const document = positional.bool('document');
+        const oneline = positional.bool('oneline');
+        const showGraph = positional.bool('graph');
+        const traceName = positional.get('trace');
+        const usageName = positional.get('usage');
+        const clearCache = positional.bool('clearCache');
+        const args = positional.nonFlag();
 
         try {
             if (clearCache) {
@@ -89,7 +88,7 @@ export default new CLI(
             if (traceName) {
                 const traceParts = traceName.split('::');
                 const traceModule = traceParts[0].trim();
-                const traceBinding = traceParts.slice(1).join('::').trim();
+                const traceBindingName = traceParts.slice(1).join('::').trim();
 
                 if (!traceModule) {
                     console.error(
@@ -165,26 +164,17 @@ export default new CLI(
 
                 console.log(`\n${references.length} file:line reference(s) found.`);
 
-                if (yes) {
+                const memoize = yes
+                    ? true
+                    : cli.isInteractive()
+                      ? await tui.confirm('Memoize these references on the target module?', true)
+                      : false;
+                if (memoize) {
                     for (const ref of references) {
                         const content = `usage-ref: ${ref.file}:${ref.line} (${ref.kind}${ref.via ? ', via ' + ref.via : ''}) → ${usageName}`;
                         memo.remember(module.path, content);
                     }
                     console.log(`Memoized ${references.length} reference(s) on ${module.path}.`);
-                } else if (cli.isInteractive()) {
-                    const memoize = await tui.confirm(
-                        'Memoize these references on the target module?',
-                        true
-                    );
-                    if (memoize) {
-                        for (const ref of references) {
-                            const content = `usage-ref: ${ref.file}:${ref.line} (${ref.kind}${ref.via ? ', via ' + ref.via : ''}) → ${usageName}`;
-                            memo.remember(module.path, content);
-                        }
-                        console.log(
-                            `Memoized ${references.length} reference(s) on ${module.path}.`
-                        );
-                    }
                 }
 
                 return exit(0);

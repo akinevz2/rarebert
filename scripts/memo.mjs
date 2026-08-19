@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { CLI, listAllModules, resolveModuleSet } from '../lib/module.mjs';
-import { exit } from '../lib/core.mjs';
+import { exit, ModuleArguments } from '../lib/core.mjs';
 import {
     memo,
     groupArgs,
@@ -30,43 +30,41 @@ const META = {
     ]
 };
 
-async function main(opts, positional) {
-    const ACTION_FLAGS = new Set(['--add', '--commit', '--log', '--recall', '--drop', '--forget']);
-
-    const groups = groupArgs(positional);
-    const actionFlagsPresent = positional.filter((a) => ACTION_FLAGS.has(a));
-    const nonFlag = positional.filter((a) => (!a.startsWith('-') || /^-?\d+$/.test(a)) && a);
+async function main(args = ModuleArguments.prototype, positional) {
+    // Backwards-compat bridge: Runtime passes a single ModuleArguments as
+    // both params. `positional` is the same ModuleArguments instance.
+    const ma = positional instanceof ModuleArguments ? positional : ModuleArguments.from(positional || [], args || {});
+    const groups = groupArgs(ma);
+    const nonFlag = ma.nonFlag();
     const modules = listAllModules();
 
-    const has = (f) => actionFlagsPresent.includes(f);
-
-    if (has('--add')) {
+    if (ma.has('--add')) {
         return await cmdAdd(groups, modules);
     }
 
-    if (has('--commit')) {
-        return await cmdCommit(opts.yes, opts.fresh);
+    if (ma.has('--commit')) {
+        return await cmdCommit(ma.bool('yes'), ma.bool('fresh'));
     }
 
-    if (has('--log')) {
+    if (ma.has('--log')) {
         return await cmdLog(nonFlag);
     }
 
-    if (has('--recall')) {
+    if (ma.has('--recall')) {
         return await cmdRecall(nonFlag[0], nonFlag.slice(1));
     }
 
-    if (has('--drop')) {
+    if (ma.has('--drop')) {
         const result = await cmdDrop(nonFlag[0], nonFlag[1], modules);
         memo.clearBuffer();
         return result;
     }
 
-    if (has('--forget')) {
+    if (ma.has('--forget')) {
         return await cmdForget(nonFlag, modules);
     }
 
-    if (has('--json')) {
+    if (ma.has('--json')) {
         const all = memo.loadAllMemos();
         if (!all.length) {
             return exit(1, 'no memos');
@@ -75,9 +73,6 @@ async function main(opts, positional) {
         return exit(0);
     }
 
-    // Default: print memos as a DAG. No file args → whole-repo DAG
-    // (root-level paths bold, ancestors dim). File args → DAG scoped
-    // to those files + ancestors.
     if (nonFlag.length === 0) {
         cmdPrintAll(true);
     } else {
