@@ -4,7 +4,6 @@ import { CLI, listAllModules, resolveModuleSet } from '../lib/module.mjs';
 import { exit, ModuleArguments } from '../lib/core.mjs';
 import {
     memo,
-    groupArgs,
     cmdAdd,
     cmdCommit,
     cmdLog,
@@ -12,7 +11,9 @@ import {
     cmdDrop,
     cmdForget,
     cmdPrintAll,
-    cmdPrintSet
+    cmdPrintSet,
+    printDagForSet,
+    printFlatMemos
 } from '../lib/memo.mjs';
 
 const META = {
@@ -32,47 +33,86 @@ const META = {
 
 async function main(args = ModuleArguments.prototype, positional) {
     const ma = positional instanceof ModuleArguments ? positional : ModuleArguments.from(positional || [], args || {});
-    const groups = groupArgs(ma);
-    const nonFlag = ma.nonFlag();
-    const modules = listAllModules();
     const json = ma.bool('json');
+    const modules = listAllModules();
+
+    // Helper: invoke a cmd Module's main directly, get the ExitSignal, and
+    // format the producedResult based on --json. cmd returns raw data —
+    // exit(0, data) on success, exit('error') on failure. No --json check
+    // inside cmd functions; this is the single presentation decision point.
+    async function runCmd(cmdModule, cmdArgs) {
+        const sig = await cmdModule.main(cmdArgs, cmdArgs);
+        if (sig.exitCode !== 0) {
+            if (json) console.log(JSON.stringify({ ok: false, error: sig.producedResult }));
+            else console.error(sig.producedResult);
+            return exit(sig.exitCode);
+        }
+        if (json && sig.producedResult !== undefined) {
+            console.log(JSON.stringify(sig.producedResult, null, 2));
+        } else if (!json && sig.producedResult !== undefined) {
+            console.dir(sig.producedResult);
+        }
+        return exit(0);
+    }
 
     if (ma.has('--add')) {
-        return exit(0, () => cmdAdd(groups, modules));
+        return await runCmd(cmdAdd, ma);
     }
 
     if (ma.has('--commit')) {
-        return exit(0, () => cmdCommit(ma.bool('yes'), ma.bool('fresh')));
+        return await runCmd(cmdCommit, ma);
     }
 
     if (ma.has('--log')) {
-        return exit(0, () => cmdLog(nonFlag));
+        return await runCmd(cmdLog, ma);
     }
 
     if (ma.has('--recall')) {
-        return exit(0, () => cmdRecall(nonFlag[0], nonFlag.slice(1)));
+        return await runCmd(cmdRecall, ma);
     }
 
     if (ma.has('--drop')) {
-        const mod = cmdDrop(nonFlag[0], nonFlag[1], modules);
+        const sig = await runCmd(cmdDrop, ma);
         memo.clearBuffer();
-        return exit(0, () => mod);
+        return sig;
     }
 
     if (ma.has('--forget')) {
-        return exit(0, () => cmdForget(nonFlag, modules));
+        const sig = await cmdForget.main(ma, ma);
+        if (sig.exitCode !== 0) {
+            if (json) console.log(JSON.stringify({ ok: false, error: sig.producedResult }));
+            else console.error(sig.producedResult);
+            return exit(sig.exitCode);
+        }
+        if (json) {
+            console.log(JSON.stringify(sig.producedResult, null, 2));
+        } else {
+            // Human: print ✓ per module, then the data
+            for (const f of sig.producedResult.forgotten) {
+                if (f.content.length > 0) console.log(`\x1b[33m✓\x1b[0m Forgot all memos for ${f.module}`);
+                else console.log(`No memos were found on ${f.module}`);
+            }
+        }
+        return exit(0);
     }
 
-    // List-only: default DAG or --json
-    if (nonFlag.length === 0) {
-        return exit(0, () => cmdPrintAll(true));
+    // List-only: DAG (human) or JSON
+    if (ma.nonFlag().length === 0) {
+        if (json) return await runCmd(cmdPrintAll, ma);
+        printDagForSet(null);
+        return exit(0);
     }
-    const resolved = resolveModuleSet(nonFlag, modules);
+    const resolved = resolveModuleSet(ma.nonFlag(), modules);
     if (resolved.length === 0) {
-        console.error(`No modules matched: ${nonFlag.join(', ')}`);
+        console.error(`No modules matched: ${ma.nonFlag().join(', ')}`);
         return exit(1);
     }
-    return exit(0, () => cmdPrintSet(resolved, true));
+    if (json) {
+        const setArgs = ModuleArguments.from([], { resolvedSet: resolved });
+        return await runCmd(cmdPrintSet, setArgs);
+    }
+    printDagForSet(resolved);
+    return exit(0);
 }
 
 export default new CLI('memo.mjs', main, META).supportsDirectRunning(import.meta.url);

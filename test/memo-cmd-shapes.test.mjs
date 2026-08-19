@@ -1,65 +1,57 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Memo, Memory, memo, cmdAdd, cmdCommit, cmdLog, cmdRecall, cmdDrop, cmdForget, groupArgs } from '../lib/memo.mjs';
-import { Module, CLI, listAllModules } from '../lib/module.mjs';
+import { Module, CLI, TUI, listAllModules } from '../lib/module.mjs';
 import { ExitSignal, Runtime, exit } from '../lib/core.mjs';
+import { ModuleArguments } from '../lib/run.mjs';
 
 // ---------------------------------------------------------------------------
-// Contract: every cmd*() function returns a Module instance (CLI or TUI).
-// The Module is run through Runtime.assertSaneExit to verify it produces a
-// valid exit branch (exitCode, never undefined). See lib/run.mjs for the
-// lifecycle: guard → createRunner → complete → decide → cleanup.
+// Contract: every cmd*() is a Module instance (CLI or TUI singleton).
+// Args come from the ModuleArguments passed to main(). No factory params.
+// cmd main returns: exit(0, data) on success, exit('error') on failure.
+// No --json check in lib/memo.mjs — scripts/memo.mjs decides presentation.
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// cmd*() now return CLI/TUI Module instances (not ExitSignals directly).
-// Use Runtime.assertSaneExit to run them through the lifecycle and inspect
-// the report { ok, exitCode, threw, error, producedResult }.
-// ---------------------------------------------------------------------------
-
-async function runCmd(cmdModule, args = []) {
-    return Runtime.assertSaneExit(cmdModule, args);
+// Helper: build a ModuleArguments from a positional array + opts, then
+// call the cmd module's main directly and return the ExitSignal.
+async function callMain(cmdModule, positional = [], opts = {}) {
+    const args = ModuleArguments.from(positional, opts);
+    return await cmdModule.main(args, args);
 }
 
 // ---------------------------------------------------------------------------
 // cmdAdd
 // ---------------------------------------------------------------------------
 
-describe('cmdAdd returns CLI instance with correct exit codes', () => {
-    const modules = listAllModules();
-
-    test('returns CLI instance', () => {
-        const groups = groupArgs(['--add', './lib/core.mjs', 'test memo from unit test']);
-        const mod = cmdAdd(groups, modules);
-        assert.ok(mod instanceof Module, `cmdAdd must return Module, got ${mod?.constructor?.name}`);
+describe('cmdAdd is a CLI instance with correct exit codes', () => {
+    test('is a CLI instance', () => {
+        assert.ok(cmdAdd instanceof CLI, `cmdAdd must be CLI, got ${cmdAdd?.constructor?.name}`);
     });
 
-    test('sane exit (code 0) when adding a valid memo', async () => {
-        const groups = groupArgs(['--add', './lib/core.mjs', 'test memo from unit test']);
-        const r = await runCmd(cmdAdd(groups, modules));
-        assert.equal(r.ok, true, r.error);
-        assert.equal(r.exitCode, 0);
+    test('exit(0, data) when adding a valid memo', async () => {
+        const sig = await callMain(cmdAdd, ['--add', './lib/core.mjs', 'test memo from unit test'], {});
+        assert.ok(sig instanceof ExitSignal);
+        assert.equal(sig.exitCode, 0);
+        assert.ok(sig.producedResult.module, 'should have module path');
+        assert.ok(sig.producedResult.memo, 'should have memo content');
     });
 
-    test('sane exit (code 1) when module path is missing', async () => {
-        const groups = groupArgs(['--add']);
-        const r = await runCmd(cmdAdd(groups, modules));
-        assert.equal(r.ok, true, r.error);
-        assert.equal(r.exitCode, 1);
+    test("exit('error') when module path is missing", async () => {
+        const sig = await callMain(cmdAdd, ['--add'], {});
+        assert.equal(sig.exitCode, 1);
+        assert.match(sig.producedResult, /missing module path/);
     });
 
-    test('sane exit (code 1) when memo content is missing', async () => {
-        const groups = groupArgs(['--add', './lib/core.mjs']);
-        const r = await runCmd(cmdAdd(groups, modules));
-        assert.equal(r.ok, true, r.error);
-        assert.equal(r.exitCode, 1);
+    test("exit('error') when memo content is missing", async () => {
+        const sig = await callMain(cmdAdd, ['--add', './lib/core.mjs'], {});
+        assert.equal(sig.exitCode, 1);
+        assert.match(sig.producedResult, /missing memo content/);
     });
 
-    test('sane exit (code 1) when module not found', async () => {
-        const groups = groupArgs(['--add', './nonexistent.mjs', 'some memo']);
-        const r = await runCmd(cmdAdd(groups, modules));
-        assert.equal(r.ok, true, r.error);
-        assert.equal(r.exitCode, 1);
+    test("exit('error') when module not found", async () => {
+        const sig = await callMain(cmdAdd, ['--add', './nonexistent.mjs', 'some memo'], {});
+        assert.equal(sig.exitCode, 1);
+        assert.match(sig.producedResult, /module not found/);
     });
 });
 
@@ -67,16 +59,14 @@ describe('cmdAdd returns CLI instance with correct exit codes', () => {
 // cmdCommit
 // ---------------------------------------------------------------------------
 
-describe('cmdCommit returns CLI instance with correct exit codes', () => {
-    test('returns CLI instance', () => {
-        const mod = cmdCommit(true, false);
-        assert.ok(mod instanceof Module, `cmdCommit must return Module, got ${mod?.constructor?.name}`);
+describe('cmdCommit is a CLI instance', () => {
+    test('is a CLI instance', () => {
+        assert.ok(cmdCommit instanceof CLI);
     });
 
-    test('sane exit (code 0) on successful commit', async () => {
-        const r = await runCmd(cmdCommit(true, false));
-        assert.equal(r.ok, true, r.error);
-        assert.equal(r.exitCode, 0, 'successful commit should exit code 0');
+    test('exit(0) on successful commit with --yes', async () => {
+        const sig = await callMain(cmdCommit, [], { yes: true });
+        assert.equal(sig.exitCode, 0);
     });
 });
 
@@ -84,15 +74,14 @@ describe('cmdCommit returns CLI instance with correct exit codes', () => {
 // cmdLog
 // ---------------------------------------------------------------------------
 
-describe('cmdLog returns CLI instance', () => {
-    test('returns CLI instance', () => {
-        const mod = cmdLog([]);
-        assert.ok(mod instanceof Module, `cmdLog must return Module, got ${mod?.constructor?.name}`);
+describe('cmdLog is a CLI instance', () => {
+    test('is a CLI instance', () => {
+        assert.ok(cmdLog instanceof CLI);
     });
 
-    test('sane exit', async () => {
-        const r = await runCmd(cmdLog([]));
-        assert.equal(r.ok, true, r.error);
+    test('returns ExitSignal', async () => {
+        const sig = await callMain(cmdLog, [], {});
+        assert.ok(sig instanceof ExitSignal);
     });
 });
 
@@ -100,16 +89,15 @@ describe('cmdLog returns CLI instance', () => {
 // cmdRecall
 // ---------------------------------------------------------------------------
 
-describe('cmdRecall returns CLI instance', () => {
-    test('returns CLI instance', () => {
-        const mod = cmdRecall(null, []);
-        assert.ok(mod instanceof Module, `cmdRecall must return Module, got ${mod?.constructor?.name}`);
+describe('cmdRecall is a CLI instance', () => {
+    test('is a CLI instance', () => {
+        assert.ok(cmdRecall instanceof CLI);
     });
 
-    test('sane exit (code 1) when ref is missing', async () => {
-        const r = await runCmd(cmdRecall(null, []));
-        assert.equal(r.ok, true, r.error);
-        assert.equal(r.exitCode, 1, 'missing ref should exit code 1');
+    test("exit('error') when ref is missing", async () => {
+        const sig = await callMain(cmdRecall, [], {});
+        assert.equal(sig.exitCode, 1);
+        assert.match(sig.producedResult, /missing ref/);
     });
 });
 
@@ -117,59 +105,41 @@ describe('cmdRecall returns CLI instance', () => {
 // cmdForget
 // ---------------------------------------------------------------------------
 
-describe('cmdForget returns CLI instance with correct exit codes', () => {
-    const modules = listAllModules();
-
-    test('returns CLI instance', () => {
-        const mod = cmdForget([], modules);
-        assert.ok(mod instanceof Module, `cmdForget must return Module, got ${mod?.constructor?.name}`);
+describe('cmdForget is a CLI instance with correct exit codes', () => {
+    test('is a CLI instance', () => {
+        assert.ok(cmdForget instanceof CLI);
     });
 
-    test('sane exit (code 1) when no module args', async () => {
-        const r = await runCmd(cmdForget([], modules));
-        assert.equal(r.ok, true, r.error);
-        assert.equal(r.exitCode, 1);
+    test("exit('error') when no module args", async () => {
+        const sig = await callMain(cmdForget, [], {});
+        assert.equal(sig.exitCode, 1);
+        assert.match(sig.producedResult, /missing module argument/);
     });
 
-    test('sane exit (code 1) when module not found', async () => {
-        const r = await runCmd(cmdForget(['./nonexistent.mjs'], modules));
-        assert.equal(r.ok, true, r.error);
-        assert.equal(r.exitCode, 1);
+    test("exit('error') when module not found", async () => {
+        const sig = await callMain(cmdForget, ['./nonexistent.mjs'], {});
+        assert.equal(sig.exitCode, 1);
+        assert.match(sig.producedResult, /module not found/);
     });
 
-    test('sane exit when forgetting an existing module', async () => {
-        const r = await runCmd(cmdForget(['./lib/core.mjs'], modules));
-        assert.equal(r.ok, true, r.error);
+    test('exit(0, data) when forgetting an existing module', async () => {
+        memo.remember('lib/core.mjs', 'forget-shape-test');
+        const sig = await callMain(cmdForget, ['./lib/core.mjs'], {});
+        assert.equal(sig.exitCode, 0);
+        assert.ok(sig.producedResult.forgotten, 'should have forgotten array');
     });
 });
 
 // ---------------------------------------------------------------------------
-// Cross-cutting: every cmd*() returns a Module instance
+// Cross-cutting: every cmd*() is a Module instance
 // ---------------------------------------------------------------------------
 
-describe('every cmd*() returns a Module instance', () => {
-    const modules = listAllModules();
-
-    test('cmdAdd returns Module', () => {
-        const groups = groupArgs(['--add', './lib/core.mjs', 'cross-cutting test']);
-        assert.ok(cmdAdd(groups, modules) instanceof Module, `got ${typeof cmdAdd(groups, modules)}`);
-    });
-
-    test('cmdCommit returns Module', () => {
-        assert.ok(cmdCommit(true, false) instanceof Module);
-    });
-
-    test('cmdLog returns Module', () => {
-        assert.ok(cmdLog([]) instanceof Module);
-    });
-
-    test('cmdRecall returns Module', () => {
-        assert.ok(cmdRecall(null, []) instanceof Module);
-    });
-
-    test('cmdForget returns Module', () => {
-        assert.ok(cmdForget([], modules) instanceof Module);
-    });
+describe('every cmd*() is a Module instance', () => {
+    test('cmdAdd is Module', () => { assert.ok(cmdAdd instanceof Module); });
+    test('cmdCommit is Module', () => { assert.ok(cmdCommit instanceof Module); });
+    test('cmdLog is Module', () => { assert.ok(cmdLog instanceof Module); });
+    test('cmdRecall is Module', () => { assert.ok(cmdRecall instanceof Module); });
+    test('cmdForget is Module', () => { assert.ok(cmdForget instanceof Module); });
 });
 
 // ---------------------------------------------------------------------------
