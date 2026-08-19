@@ -5,7 +5,7 @@ import { rarebert, home } from './lib/projects.mjs';
 import { listModules } from './scripts/list.mjs';
 import { backend } from './lib/backend.mjs';
 import { Module, CLI, cli } from './lib/module.mjs';
-import { exit } from './lib/core.mjs';
+import { exit, Runtime } from './lib/core.mjs';
 
 const SKIP_ONBOARD = new Set([
     'onboard',
@@ -70,7 +70,8 @@ async function runModule(ref, args = []) {
             );
         }
 
-        return await exported.execute(args);
+        const runtime = new Runtime(exported);
+        return exit(await runtime.execute(args));
     } catch (err) {
         console.error(err.message || err);
         return exit(err.message || String(err));
@@ -108,7 +109,7 @@ async function main(opts, positional) {
 
     await maybeOnboard(cmd);
 
-    return await runModule(cmd, rest);
+    return exit(await runModule(cmd, rest));
 }
 
 const module = new CLI('index.js', main, meta);
