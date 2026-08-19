@@ -22,19 +22,23 @@ const meta = {
 
 export { meta, collectChanges, categorize, inventoryAddedModules };
 
-export default new CLI('upgrades.mjs', async (opts, positional) => {
-    const base = (opts && opts.base) || 'origin/main';
+export default new CLI(
+    'upgrades.mjs',
+    async (opts, positional) => {
+        const base = (opts && opts.base) || 'origin/main';
 
-    let rows;
-    try {
-        rows = collectChanges(base);
-    } catch (err) {
-        console.error(`upgrades: ${err.message}`);
-        return exit(1);
-    }
+        let rows;
+        try {
+            rows = collectChanges(base);
+        } catch (err) {
+            console.error(`upgrades: ${err.message}`);
+            return exit(1);
+        }
 
-    const buckets = categorize(rows);
-    const inventory = inventoryAddedModules(buckets.added, git.root);
-    printSummary(buckets, inventory, base);
-    return exit(0);
-}, meta).supportsDirectRunning(import.meta.url);
+        const buckets = categorize(rows);
+        const inventory = inventoryAddedModules(buckets.added, git.root);
+        printSummary(buckets, inventory, base);
+        return exit(0);
+    },
+    meta
+).supportsDirectRunning(import.meta.url);

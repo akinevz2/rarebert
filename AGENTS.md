@@ -86,7 +86,7 @@ The model id format is `<provider>/<model>` where `<provider>` is a key under
 opencode run "<prompt>" -m ollama/laguna-xs-2.1:q8_0
 ```
 
-### Analyze command 
+### Analyze command
 
 The `analyze` command (`scripts/analyze.mjs` → `lib/analyze.mjs` +
 `lib/introspect.mjs`) is the canonical source-map and dependency-tracing
@@ -96,6 +96,7 @@ define their own parsing semantics. Below are the operational details an
 agent should know before invoking it.
 
 **Modes (mutually exclusive, in dispatch order):**
+
 1. `--document` — opencode documentation pass (segment `main()`, document
    each block, optionally memoize). Requires a model; pass `--yes` to
    auto-memoize non-interactively.
@@ -123,6 +124,7 @@ at 200 lines and bails early if a new top-level statement begins before
 `from` is found. A 19-line `import { ... } from '...'` block parses correctly.
 
 **Tracing (`--trace`):** the `--trace` argument is a `::`-qualified path:
+
 - `name` — find first module exporting/declaring `name`.
 - `module::name` — resolve `name` in `module` (module may be a short name
   like `languages` → `lib/languages.mjs`, a basename, or full relPath).
@@ -142,6 +144,7 @@ report `[cycle]` issues. This is expected, not a regression — the
 cycle-detection prevents infinite recursion.
 
 **Language parser caveats:**
+
 - `lib/supports/lang*.js` files are ESM but have `.js` extensions, so
   `analyze` parses them with the CommonJS parser (`jsExtractBindings`),
   which looks for `require()` not `import`. These modules will show 0
@@ -158,7 +161,6 @@ cycle-detection prevents infinite recursion.
 declarations `meta`/`main`), then
 `node index.js analyze scripts/commit.mjs --trace scripts/commit.mjs::main::interactive`
 (expect `local const, scripts/commit.mjs:39`, 0 issues), then `make check`.
-
 
 ## Rarebert Specifications
 
@@ -225,6 +227,7 @@ This pattern supersedes `delegate` by using expensive cloud credits only
 for reasoning (planning), while cheaper local models handle implementation.
 
 **Key difference from delegate:**
+
 - Delegate: subagent → cloud model → implementation
 - Brainstorm: subagent → cloud model (for PLAN ONLY) → agent → local model (for implementation)
 
@@ -240,10 +243,10 @@ must be migrated.
 
 **`scripts/` layer — direct `process.exit()` / `cli.fail()` / bare `return;`:**
 
-| File | Line | Current | Fix |
-|------|------|---------|-----|
-| `scripts/article.mjs` | 56 | `process.exit(1)` | `return exit(1, () => console.error(...))` |
-| `scripts/run.mjs` | 30, 42, 52, 58, 64 | bare `return;` after `runProcess(...)` | leave as-is — `runProcess` calls `process.exit(code)` itself; document this |
+| File                  | Line               | Current                                | Fix                                                                         |
+| --------------------- | ------------------ | -------------------------------------- | --------------------------------------------------------------------------- |
+| `scripts/article.mjs` | 56                 | `process.exit(1)`                      | `return exit(1, () => console.error(...))`                                  |
+| `scripts/run.mjs`     | 30, 42, 52, 58, 64 | bare `return;` after `runProcess(...)` | leave as-is — `runProcess` calls `process.exit(code)` itself; document this |
 
 `scripts/run.mjs` is a special case: `lib/run.mjs#runProcess` spawns a
 child and calls `process.exit(code)` from the child's `'exit'` handler,
@@ -266,14 +269,14 @@ from scripts, so the script cannot intercept them. Migration requires
 changing library functions to return error codes/throw `AbortError`
 and letting the script's `CLI` wrapper call `exit()`.
 
-| File | Lines | Context |
-|------|-------|---------|
-| `lib/article.mjs` | 142, 152, 155, 169, 179, 183, 242, 249, 317, 332, 342, 355 | `assertReportClean`, `runMake`, `editSection`, `confirmCommit`, etc. — all call `process.exit(1)` on failure |
-| `lib/present.mjs` | 81, 141, 146 | presentation walker fatal paths |
-| `lib/opencode.mjs` | 57 | spawn failure |
-| `lib/ide.mjs` | 273 | editor launch failure |
-| `lib/backend.mjs` | 415 | non-interactive config failure |
-| `lib/server.mjs` | 133–135 | ping probe — intentional, leave |
+| File               | Lines                                                      | Context                                                                                                      |
+| ------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `lib/article.mjs`  | 142, 152, 155, 169, 179, 183, 242, 249, 317, 332, 342, 355 | `assertReportClean`, `runMake`, `editSection`, `confirmCommit`, etc. — all call `process.exit(1)` on failure |
+| `lib/present.mjs`  | 81, 141, 146                                               | presentation walker fatal paths                                                                              |
+| `lib/opencode.mjs` | 57                                                         | spawn failure                                                                                                |
+| `lib/ide.mjs`      | 273                                                        | editor launch failure                                                                                        |
+| `lib/backend.mjs`  | 415                                                        | non-interactive config failure                                                                               |
+| `lib/server.mjs`   | 133–135                                                    | ping probe — intentional, leave                                                                              |
 
 **Recommended order:** finish the `scripts/` layer first (mechanical),
 then tackle `lib/article.mjs` (highest count, used by `scripts/article.mjs`),

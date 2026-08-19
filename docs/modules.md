@@ -42,6 +42,7 @@ async (opts, positional) => { ... }
 ```
 
 Where:
+
 - `opts` is the parsed options object from Commander flags
 - `positional` is the array of positional arguments
 
@@ -68,15 +69,22 @@ async function main(opts, positional) {
         // Non-interactive path - perform directly
         return exit(0);
     }
-    
+
     if (!cli.isInteractive()) {
         return exit(1, () => console.error('Interactive mode required'));
     }
-    
+
     // Elevate to TUI for user interaction
-    return exit(0, new TUI('foo.mjs', async (opts, positional) => {
-        // Interactive workflow here
-    }, meta));
+    return exit(
+        0,
+        new TUI(
+            'foo.mjs',
+            async (opts, positional) => {
+                // Interactive workflow here
+            },
+            meta
+        )
+    );
 }
 ```
 
@@ -87,11 +95,13 @@ clearer error messages.
 ### TUI vs CLI Decision Matrix
 
 Use `TUI` when:
+
 - Menu-driven selection is core to the workflow
 - Multiple branching paths require user input
 - Interactive configuration is the primary use case
 
 Use `CLI` (or elevate from `CLI`) when:
+
 - Arguments fully specify the operation
 - The module can work headlessly in CI/CD
 - A simple flag can control behavior (`--force`, `--yes`, etc.)
@@ -175,6 +185,76 @@ Each module can own a memo sidecar at `<abs>.` (the absolute path plus a `.`
 suffix) written by `lib/memo.mjs`. Because modules are identified
 root-relative through the registry, memo files stay stable across the
 path-based interface.
+
+## Runtime
+
+`Runtime` (defined in `lib/core.mjs`) replaces the former single-shot
+`executeAndExit` pattern with a recursive execution loop. It is the
+core orchestrator that drives module execution, handles submodule
+escalation (the elevation pattern), and manages producedValue display.
+
+### What Runtime does
+
+- Orchestrates the `execute → complete → re-execute` loop until an
+  `ExitSignal` is resolved
+- Maps `exit()` call arguments to `ExitSignal(exitCode, producedValue, onExit)` fields
+- Displays `producedValue` via `console.dir()` (exit 0) or
+  `console.error()` (non-zero exit code)
+- When `onExit` returns a Module instance, re-executes that module
+  (the elevation pattern: `return exit(0, new TUI(...))`)
+
+### New entry point pattern
+
+```js
+// Instead of exported.executeAndExit(args):
+return await Runtime(module).execute(args);
+```
+
+The `Runtime(module)` constructor wraps a Module instance, and
+`.execute(args)` runs the recursive loop. This is the recommended
+way to run a module through the Runtime system.
+
+### Elevation pattern (still works)
+
+```js
+// Design for CLI first, elevate to TUI when needed:
+return exit(
+    0,
+    new TUI(
+        'foo.mjs',
+        async (opts, positional) => {
+            // interactive workflow
+        },
+        meta
+    )
+);
+```
+
+`exit(0, new TUI(...))` produces an `ExitSignal` with an `onExit`
+callback that returns the TUI Module. Runtime detects this and
+re-executes the TUI, creating the elevation workflow.
+
+### ExitSignal mapping table
+
+| `exit()` args        | `ExitSignal` fields                                              |
+| -------------------- | ---------------------------------------------------------------- |
+| `exit(code)`         | `exitCode = code, producedValue = undefined, onExit = undefined` |
+| `exit(code, onExit)` | `exitCode = code, producedValue = undefined, onExit = onExit`    |
+| `exit(code, val)`    | `exitCode = code, producedValue = val, onExit = undefined`       |
+| `exit(undefined)`    | `exitCode = 0, producedValue = undefined, onExit = undefined`    |
+| `exit(string)`       | `exitCode = 1, producedValue = string, onExit = undefined`       |
+
+### Module integration
+
+- `Module.exit(result)` — thin wrapper that calls `result.complete()`;
+  returns Module instance from `onExit` to trigger Runtime re-execution
+- `Module.execute(args)` — runs `this.runner || this.main` callback
+- `index.js runModule(ref, args)` — creates `new Runtime(exported)` and
+  calls `runtime.execute(args)`
+- `index.js main(opts, positional)` — calls `runModule(cmd, rest)` then
+  `exit()` on the result
+
+---
 
 ## Adding a module
 

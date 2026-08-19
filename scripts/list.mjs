@@ -19,8 +19,12 @@ const meta = {
 const listModules = (args) => home.listModules(args);
 export { meta, listModules };
 
-export default new CLI('list.mjs', async (opts, positional) => {
-    const args = Array.isArray(positional) ? positional : [];
-    await home.listModules(args);
-    return exit(0);
-}, meta).supportsDirectRunning(import.meta.url);
+export default new CLI(
+    'list.mjs',
+    async (opts, positional) => {
+        const args = Array.isArray(positional) ? positional : [];
+        await home.listModules(args);
+        return exit(0);
+    },
+    meta
+).supportsDirectRunning(import.meta.url);

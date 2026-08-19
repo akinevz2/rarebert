@@ -1,11 +1,13 @@
 # rarebert <3 opencode
 
-<img src="docs/assets/hero.svg" alt="rarebert &lt;3 opencode" width="100%" />
+> ⚠️ **Work in Progress** — This branch is a work in progress and should not be currently used.
+
+<img src="docs/assets/hero.svg" alt="rarebert <3 opencode" width="100%" />
 
 A self-modifying scripting environment for interactive, AI-driven
 development. Rarebert scaffolds modules, opens them in your editor side-by-side
 with [opencode], lets the model implement them, summarises the diff, and
-commits — then runs the result and remembers what happened.
+commits \u2014 then runs the result and remembers what happened.
 
 > Built around two pieces: a small **Node.js runtime** (`index.js` + `lib/`)
 > that orchestrates `$EDITOR`, `git`, and `opencode`, and a **memo subsystem**
@@ -136,6 +138,7 @@ canonical shape.
 ## Repository layout
 
 The project at /workspaces/development/personal/rarebert has this key structure:
+
 ```bash
 rarebert/
 ├── index.js                          # Entry point - dispatches commands
@@ -172,6 +175,7 @@ rarebert/
 ```
 
 Key patterns:
+
 - Every scripts/*.mjs exports a default new CLI('name.mjs', main, meta) instance
 - Interactive branches delegate via return exit(new TUI(name, main, meta))
 - Interactive branches delegate via return exit(new TUI(name, main, meta))

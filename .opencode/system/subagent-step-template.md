@@ -68,11 +68,13 @@ lib/module.mjs
 When passing this prompt to a subagent via `implement.mjs`, include these explicit instructions:
 
 ```
-Run this command: node scripts/implement.mjs <target-file> -m ollama/laguna-xs-2.1:q8_0 --prompt "$(cat .opencode/system/stepN.txt)"
+Run this command: node scripts/implement.mjs <target-file> -m ollama/<model> --auto --prompt "$(cat .opencode/system/stepN.txt)"
 
-Do NOT edit files directly. The implement.mjs command invokes the local LLM which performs the edits.
+Do NOT edit files directly. The implement.mjs command invokes the local LLM via `opencode run --auto` which performs the edits. You only run the command and report output.
 
 You MAY fix trivial syntax errors (missing semicolons, unused imports) directly. You must NOT perform architectural changes — report divergence and suggest fixup steps instead.
+
+If the implement.mjs output diverges from the instruction (wrong files changed, different approach taken, partial implementation), do NOT proceed to verification. Instead, retry the implement.mjs command with the same prompt. If the second attempt also diverges, report the divergence to the orchestrating agent and suggest fixup steps.
 
 Use NO timeout shorter than 1800s (30 min). A long-running command is normal for local ollama models. Do NOT assume the backend is unavailable if the command takes a long time.
 

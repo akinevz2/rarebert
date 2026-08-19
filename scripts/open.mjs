@@ -11,7 +11,12 @@ const meta = {
     name: 'open',
     description: 'Open a module in $EDITOR then launch the opencode full TUI at the project root',
     usage: 'node index.js open [module] [--model <id>]',
-    options: [{ flag: '-m, --model <id>', description: 'opencode model id (overrides the default from opencode.json)' }]
+    options: [
+        {
+            flag: '-m, --model <id>',
+            description: 'opencode model id (overrides the default from opencode.json)'
+        }
+    ]
 };
 
 export { meta };

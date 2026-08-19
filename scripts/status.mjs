@@ -24,25 +24,29 @@ const meta = {
 
 export { meta };
 
-export default new TUI('status.mjs', async (opts, positional) => {
-    if (opts.debug) {
-        printDebugListing();
+export default new TUI(
+    'status.mjs',
+    async (opts, positional) => {
+        if (opts.debug) {
+            printDebugListing();
+            return exit(0);
+        }
+
+        const stages = [
+            stageProjectDiscovery,
+            stageGitStatus,
+            stageGitDiff,
+            stageBranchRemote,
+            stageLaunchEdit
+        ];
+
+        for (const stage of stages) {
+            const result = await stage();
+            if (result === STAGE_EXIT) return exit(0);
+            if (typeof result === 'number') return exit(result);
+        }
+
         return exit(0);
-    }
-
-    const stages = [
-        stageProjectDiscovery,
-        stageGitStatus,
-        stageGitDiff,
-        stageBranchRemote,
-        stageLaunchEdit
-    ];
-
-    for (const stage of stages) {
-        const result = await stage();
-        if (result === STAGE_EXIT) return exit(0);
-        if (typeof result === 'number') return exit(result);
-    }
-
-    return exit(0);
-}, meta).supportsDirectRunning(import.meta.url);
+    },
+    meta
+).supportsDirectRunning(import.meta.url);

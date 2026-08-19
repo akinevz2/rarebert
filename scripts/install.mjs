@@ -13,7 +13,6 @@ const DEFAULT_PREFIX = path.join(os.homedir(), '.local', 'share', 'rarebert');
 const DEFAULT_BIN_DIR = path.join(os.homedir(), '.local', 'bin');
 const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-
 const meta = {
     name: 'install',
     description: `Install rarebert: npm prefix defaults to ${DEFAULT_PREFIX}, binary symlinked into ~/.local/bin`,
@@ -90,15 +89,24 @@ async function main(opts, positional) {
         return exit(code);
     }
 
-    return exit(new TUI('install.mjs', async () => {
-        if (isNonEmpty) {
-            const overwrite = await tui.confirm(`Prefix "${prefix}" is non-empty. Continue?`, false);
-            if (!overwrite) return exit(0, () => console.log('Not installed.'));
-        }
+    return exit(
+        new TUI(
+            'install.mjs',
+            async () => {
+                if (isNonEmpty) {
+                    const overwrite = await tui.confirm(
+                        `Prefix "${prefix}" is non-empty. Continue?`,
+                        false
+                    );
+                    if (!overwrite) return exit(0, () => console.log('Not installed.'));
+                }
 
-        const code = await performInstall(prefix, binDir);
-        return exit(code);
-    }, meta));
+                const code = await performInstall(prefix, binDir);
+                return exit(code);
+            },
+            meta
+        )
+    );
 }
 
 export { meta, performInstall };

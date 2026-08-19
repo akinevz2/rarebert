@@ -17,24 +17,32 @@ const meta = {
 
 export { meta };
 
-export default new CLI('diff.mjs', async (opts, positional) => {
-    const staged = opts.staged;
-    const stat = opts.stat;
-    const moduleArg = positional[0];
+export default new CLI(
+    'diff.mjs',
+    async (opts, positional) => {
+        const staged = opts.staged;
+        const stat = opts.stat;
+        const moduleArg = positional[0];
 
-    let pathspecs = [];
-    if (moduleArg) {
-        const target = await promptModule(listAllModules(), moduleArg, 'Select a module to diff');
-        pathspecs = [libs.relPath(target.path)];
-    }
+        let pathspecs = [];
+        if (moduleArg) {
+            const target = await promptModule(
+                listAllModules(),
+                moduleArg,
+                'Select a module to diff'
+            );
+            pathspecs = [libs.relPath(target.path)];
+        }
 
-    const diffArgs = [];
-    if (!staged) diffArgs.push('HEAD');
-    if (staged) diffArgs.push('--cached');
-    if (stat) diffArgs.push('--stat');
-    diffArgs.push(...pathspecs);
+        const diffArgs = [];
+        if (!staged) diffArgs.push('HEAD');
+        if (staged) diffArgs.push('--cached');
+        if (stat) diffArgs.push('--stat');
+        diffArgs.push(...pathspecs);
 
-    const usePager = process.stdin.isTTY === true && process.stdout.isTTY === true;
-    const status = showDiff(diffArgs, usePager);
-    return exit(status);
-}, meta).supportsDirectRunning(import.meta.url);
+        const usePager = process.stdin.isTTY === true && process.stdout.isTTY === true;
+        const status = showDiff(diffArgs, usePager);
+        return exit(status);
+    },
+    meta
+).supportsDirectRunning(import.meta.url);

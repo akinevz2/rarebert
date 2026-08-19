@@ -29,48 +29,58 @@ const meta = {
 
 export { meta };
 
-export default new CLI('trail.mjs', async (opts, positional) => {
-    if (!cli.isInteractive()) {
-        return cli.nonInteractive('trail requires an interactive terminal.');
-        return exit(1);
-    }
-
-    return exit(new TUI('trail.mjs', async (opts) => {
-        const limit = opts.limit;
-        const commits = readCommits(limit);
-        if (commits.length === 0) {
-            console.log('trail: no commits to display.');
-            return exit(0);
+export default new CLI(
+    'trail.mjs',
+    async (opts, positional) => {
+        if (!cli.isInteractive()) {
+            return cli.nonInteractive('trail requires an interactive terminal.');
+            return exit(1);
         }
 
-        const { choices, memoViews } = buildTrailChoices(commits);
+        return exit(
+            new TUI(
+                'trail.mjs',
+                async (opts) => {
+                    const limit = opts.limit;
+                    const commits = readCommits(limit);
+                    if (commits.length === 0) {
+                        console.log('trail: no commits to display.');
+                        return exit(0);
+                    }
 
-        while (true) {
-            let picked;
-            try {
-                picked = await promptTrail(choices);
-            } catch {
-                return exit(0);
-            }
+                    const { choices, memoViews } = buildTrailChoices(commits);
 
-            if (!picked) return exit(0);
+                    while (true) {
+                        let picked;
+                        try {
+                            picked = await promptTrail(choices);
+                        } catch {
+                            return exit(0);
+                        }
 
-            const commitMatch = picked.match(/^commit\((.+)\):$/);
-            if (commitMatch) {
-                showInPager(readFullMessage(commitMatch[1]) + '\n');
-                continue;
-            }
-            const fileMatch = picked.match(/^file\((.+)\):(.+):$/);
-            if (fileMatch) {
-                const [, filePath, sha] = fileMatch;
-                showInPager(fileDiff(sha, filePath) || '(no diff)');
-                continue;
-            }
-            if (picked.startsWith('memo-')) {
-                const view = memoViews.get(picked);
-                if (view) showInPager(formatMemo(view) + '\n');
-                continue;
-            }
-        }
-    }, meta));
-}, meta).supportsDirectRunning(import.meta.url);
+                        if (!picked) return exit(0);
+
+                        const commitMatch = picked.match(/^commit\((.+)\):$/);
+                        if (commitMatch) {
+                            showInPager(readFullMessage(commitMatch[1]) + '\n');
+                            continue;
+                        }
+                        const fileMatch = picked.match(/^file\((.+)\):(.+):$/);
+                        if (fileMatch) {
+                            const [, filePath, sha] = fileMatch;
+                            showInPager(fileDiff(sha, filePath) || '(no diff)');
+                            continue;
+                        }
+                        if (picked.startsWith('memo-')) {
+                            const view = memoViews.get(picked);
+                            if (view) showInPager(formatMemo(view) + '\n');
+                            continue;
+                        }
+                    }
+                },
+                meta
+            )
+        );
+    },
+    meta
+).supportsDirectRunning(import.meta.url);

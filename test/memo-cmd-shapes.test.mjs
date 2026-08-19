@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Memo, Memory, memo, cmdAdd, cmdCommit, cmdLog, cmdRecall, cmdDrop, cmdForget, groupArgs } from '../lib/memo.mjs';
-import { listAllModules } from '../lib/module.mjs';
+import { Module, listAllModules } from '../lib/module.mjs';
 import { ExitSignal, exit } from '../lib/core.mjs';
 
 // ---------------------------------------------------------------------------
@@ -252,7 +252,6 @@ describe('ExitSignal shape', () => {
 // ---------------------------------------------------------------------------
 
 describe('Module::exit() returns exitCode, does not call process.exit()', () => {
-    const { Module } = require('../lib/module.mjs');
 
     test('Module::exit() returns a number (exitCode) for simple ExitSignal', async () => {
         const mod = Object.create(Module.prototype);

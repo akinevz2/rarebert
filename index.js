@@ -87,7 +87,11 @@ const meta = {
     skipHelpIntercept: true,
     allowUnknownOption: true,
     options: [
-        { flag: '--core', description: 'operate against the rarebert install prefix instead of the current directory' }
+        {
+            flag: '--core',
+            description:
+                'operate against the rarebert install prefix instead of the current directory'
+        }
     ]
 };
 
