@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { exit } from '../lib/core.mjs';
-import { CLI, tui, AbortError, TUI } from '../lib/module.mjs';
+import { CLI, tui, TUI } from '../lib/module.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
@@ -65,7 +65,7 @@ export default new CLI(
 
                     const ext = `.${lang}`;
                     const name = await promptModuleName(lang);
-                    if (!name || !name.trim()) throw new AbortError();
+                    if (!name || !name.trim()) return exit('Aborted');
                     const normalizedName = rarebert.normalizeModuleName(name, [ext]);
 
                     console.log(`\nGenerating ${lang} module skeleton in ${directory}/...`);
