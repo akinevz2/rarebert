@@ -42,6 +42,25 @@ When possible, favor declarative approaches:
 
 See `docs/modules.md` for the complete design language for CLI vs TUI modules and the elevation pattern.
 
+### OpenAI-Compatible Server (`src/server/`)
+
+The OpenAI-compatible HTTP server with programmable routing middleware
+lives in `src/server/` (TypeScript). It is **separate from
+`lib/server.mjs`**, which only manages the opencode process lifecycle
+and is outdated for HTTP server purposes.
+
+**Runtime**: `npx tsx index.js server` (or `npm run server`).
+No build step — `.ts` files are imported directly via `tsx`.
+
+**Key constraint**: `src/` code may **not** import from `lib/`. The
+server implementation is self-contained (uses `node:http`,
+`node:sqlite`, global `fetch`). Only `scripts/server.mjs` uses
+`lib/module.mjs` for the CLI runner infrastructure.
+
+See `docs/server-architecture.md` for the full architecture and
+`docs/middleware.md` for the middleware framework and bash-command
+short-circuit design.
+
 ### Git Operations via lib/git.mjs
 
 The `lib/git.mjs` module provides a whitelisted git interface:

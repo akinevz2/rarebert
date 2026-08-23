@@ -7,11 +7,14 @@
     },
     "scripts": {
         "list": "node index.js",
-        "reload": "node index.js reload",
         "memo": "node index.js memo",
-        "forgetMemo": "FORGET=true node index.js memo",
-        "format": "prettier --write lib/ scripts/ index.js *.json *.md",
-        "format:check": "prettier --check lib/ scripts/ index.js *.json *.md"
+        "reload": "node index.js reload",
+        "server": "tsx index.js server",
+        "opencode": "npx opencode-ai@latest",
+        "format": "prettier --write lib/ scripts/ src/**/*.ts index.js *.json *.md",
+        "format:check": "prettier --check lib/ scripts/ src/**/*.ts index.js *.json *.md",
+        "build": "tsc",
+        "check": "tsc --noEmit"
     },
     "dependencies": {
         "commander": "^15.0.0",
@@ -19,6 +22,9 @@
         "opencode-ai": "^1.18.12"
     },
     "devDependencies": {
-        "prettier": "^3.9.6"
+        "@types/node": "^22.0.0",
+        "prettier": "^3.9.6",
+        "tsx": "^4.23.12",
+        "typescript": "^5.0.0"
     }
 }
