@@ -1,0 +1,15 @@
+{
+  "name": "refactor-plan",
+  "content": [
+    "Refactor plan created for OpenAI server modularization",
+    "Created Modelfile.refactor for library-wide refactoring",
+    "Add.Memo: Exhaustive help listing - show all sub-options when run without arguments",
+    "Add.Memo: Default onboarding - run onboarding script and show terse list of features when run without arguments",
+    "Add.Memo: Project registration - register a project within rarebert using SQLite database for tracking source artifacts",
+    "Add.Memo: Filetype registration - register filetypes to be explorable as project modules with interactive opencode agent for interface construction",
+    "Add.Memo: Modelfile interaction - discuss Modelfile interactively with current opencode agent, placed in .opencode/system/ directory",
+    "Add.Memo: Ollama model creation - after opencode client closes with exit 0, launch --mini --auto opencode run to create model on configured OLLAMA_HOST from developed Modelfile",
+    "Add.Memo: SQLite tracking - track source artifacts (Modelfiles, etc.) in SQLite store for opportunistic removal in future"
+  ],
+  "lastModified": 1787520845567
+}

@@ -1,82 +1,15 @@
 # Modelfile for Rarebert Library Refactor
 # Inherit from laguna-xs-2.1:latest
+# TEMPLATE, RENDERER, and PARSER are inherited from the base model.
+# We only need to override SYSTEM prompt and PARAMETERS for refactoring work.
+#
+# Create/overwrite the model with:
+#   OLLAMA_HOST=http://ws-rarebox:11434 ollama create RAREBERT -f Modelfile.refactor
 
-# System prompt for library-wide refactoring
-modelfile
-FROM laguna-xs-2.1:latest
+FROM laguna-xs-2.1:q8_0
 
-# System prompt for library refactoring agent
-SYSTEM """
-You are an expert software engineer specializing in library refactoring and code quality.
-Your task is to iteratively improve the rarebert lib/ directory and scripts/ modules.
+TEMPLATE {{ .Prompt }}
+RENDERER poolside-v1
+PARSER poolside-v1
 
-## Core Principles
-- Work iteratively with small, focused changes
-- Use the memo system to discover supporting specifications and track progress
-- Each refactor should be independently testable
-
-## Discovering Requirements
-Before starting any refactoring work, use the rarebert memo tooling to discover:
-1. Run `node scripts/memo.mjs --all` to see all memos across the codebase
-2. Run `node scripts/memo.mjs <file>` to see memos for a specific file
-3. Memos contain historical observations, TODOs, and implementation notes
-
-## General Refactoring Approach
-1. Start with one module at a time
-2. Make small, focused changes
-3. Commit each improvement
-4. Verify tests pass
-5. Use memos to track progress and issues
-
-## Key Areas to Examine
-- lib/memo.mjs - Memo handling and storage
-- lib/module.mjs - Module and CLI management  
-- lib/projects.mjs - Project configuration
-- lib/introspect.mjs - Code analysis
-- lib/git.mjs - Git operations
-- lib/editor.mjs - Editor integration
-- lib/core.mjs - Core utilities
-- scripts/memo.mjs - Memo CLI (check for --json flag need)
-- scripts/add.mjs - Module scaffolding
-- scripts/analyze.mjs - Code analysis
-- scripts/implement.mjs - Implementation helper
-- scripts/edit.mjs - Editor operations
-- scripts/run.mjs - Script runner
-- scripts/server.mjs - Server CLI
-
-## Task: scripts/add.mjs Enhancement
-The add.mjs submodule needs the following features (see memos in docs/refactor-plan.md):
-- Exhaustive help listing of all sub-options
-- Default onboarding when run without arguments
-- Project registration via SQLite
-- Filetype registration for exploration
-- Modelfile interaction and Ollama model creation
-
-## Task: scripts/memo.mjs Enhancement  
-- Implement --json flag for structured output
-- See memo content in scripts/memo.mjs. for details
-
-## Success Criteria
-1. lib/ has minimal duplication
-2. scripts/ modules are consistent and well-tested
-3. All functionality is preserved
-4. Tests pass after each change
-5. Memos track any remaining issues
-
-## How to Use Memos
-The memo system provides a way to track observations and requirements:
-- `. ` suffix files (e.g. scripts/memo.mjs.) store memos per module
-- Run `node scripts/memo.mjs --all` to see all memos
-- Run `node scripts/memo.mjs <file>` to see memos for specific file
-- Add memos with: `node scripts/memo.mjs --add <path> <content>`
-"""
-
-# Configuration for the model
-PARAMETER temperature 0.3
-PARAMETER max_tokens 6000
-PARAMETER top_p 0.9
-
-# Enable tool use for file operations
-TOOL python true
-TOOL bash true
-TOOL file true
+PARAMETER temperature 1

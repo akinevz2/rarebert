@@ -19,7 +19,7 @@ const meta = {
     name: 'analyze',
     description:
         'Analyze a module: print a condensed source map (imports, declarations with 1-step resolution, exports). Accepts one or multiple modules. Pass --trace <module::name> to walk the full dependency chain. Pass --usage <module::name> to launch a TUI showing all project-wide references to that binding. Pass --document for an opencode documentation pass.',
-    usage: 'node index.js analyze [module...] [--trace <name>] [--usage <name>] [--graph] [--oneline] [--document] [--yes] [-v] [--clear-cache]',
+    usage: 'node index.js analyze [module...] [--trace <name>] [--usage <name>] [--graph] [--oneline] [--document] [--json] [--yes] [-v] [--clear-cache]',
     args: [{ name: 'module', required: false }],
     options: [
         { flag: '--trace <name>', description: 'Trace a binding chain (module::name or just name)' },
@@ -27,6 +27,7 @@ const meta = {
         { flag: '--graph', description: 'Print the resolved import graph' },
         { flag: '--oneline', description: 'Condensed one-line summary per module' },
         { flag: '--document', description: 'Run opencode documentation pass (segment, document, memoize)' },
+        { flag: '--json', description: 'Output analysis in JSON format' },
         { flag: '--clear-cache', description: 'Clear the introspect tool cache' },
         { flag: '-v, --verbose', description: 'Verbose output' },
         { flag: '-y, --yes', description: 'Skip confirmation prompts' }
@@ -45,6 +46,7 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
     const traceName = opts.trace || null;
     const usageName = opts.usage || null;
     const clearCache = !!opts.clearCache;
+    const asJson = !!opts.json;
 
     try {
         if (clearCache) {
@@ -75,7 +77,7 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
                 return exit(1);
             }
 
-            return await runTrace([traceModule], traceName);
+            return await runTrace([traceModule], traceName, asJson);
         }
 
         if (usageName) {
@@ -157,10 +159,10 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
         const moduleArgs = args.length > 0 ? args : null;
 
         if (showGraph) {
-            return await runGraph(moduleArgs);
+            return await runGraph(moduleArgs, asJson);
         }
 
-        return await runSummary(moduleArgs, { oneline });
+        return await runSummary(moduleArgs, { oneline, json: asJson });
     } catch (err) {
         console.error('Error:', err.message);
         return exit(1);
@@ -194,27 +196,61 @@ async function resolveModuleList(moduleArgs) {
     return resolved;
 }
 
-async function runSummary(moduleArgs, { oneline }) {
+async function runSummary(moduleArgs, { oneline, json }) {
     const modules = await resolveModuleList(moduleArgs);
     if (!modules) return exit(1);
 
-    for (const mod of modules) {
-        const file = await introspectFile(mod.abs);
+    if (json) {
+        const results = [];
+        for (const mod of modules) {
+            const file = await introspectFile(mod.abs);
 
-        const oneStepResults = {};
-        const graph = { files: new Map([[file.relPath, file]]) };
-        for (const decl of file.declarations) {
-            oneStepResults[decl.name] = await resolveOneStep(decl, file, graph);
+            const oneStepResults = {};
+            const graph = { files: new Map([[file.relPath, file]]) };
+            for (const decl of file.declarations) {
+                oneStepResults[decl.name] = await resolveOneStep(decl, file, graph);
+            }
+
+            results.push({
+                module: mod.path,
+                file: file.relPath,
+                imports: file.imports.map((i) => ({
+                    path: i.path,
+                    type: i.type
+                })),
+                declarations: file.declarations.map((d) => ({
+                    name: d.name,
+                    type: d.type,
+                    line: d.line
+                })),
+                exports: file.exports.map((e) => ({
+                    name: e.name,
+                    line: e.line
+                })),
+                oneStepResolution: oneStepResults
+            });
         }
-
-        console.log(formatFileSummary(file, { oneline, oneStepResults }));
+        console.log(JSON.stringify(results, null, 2));
         console.log();
+    } else {
+        for (const mod of modules) {
+            const file = await introspectFile(mod.abs);
+
+            const oneStepResults = {};
+            const graph = { files: new Map([[file.relPath, file]]) };
+            for (const decl of file.declarations) {
+                oneStepResults[decl.name] = await resolveOneStep(decl, file, graph);
+            }
+
+            console.log(formatFileSummary(file, { oneline, oneStepResults }));
+            console.log();
+        }
     }
 
     return exit(0);
 }
 
-async function runTrace(moduleArgs, traceName) {
+async function runTrace(moduleArgs, traceName, asJson = false) {
     const modules = await resolveModuleList(moduleArgs);
     if (!modules) return exit(1);
 
@@ -222,7 +258,12 @@ async function runTrace(moduleArgs, traceName) {
     const graph = await buildGraph(seeds, { codebaseScope: true });
 
     const result = await traceBinding(graph, traceName);
-    console.log(formatTrace(result));
+
+    if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+    } else {
+        console.log(formatTrace(result));
+    }
 
     if (result.issues && result.issues.length > 0) {
         console.error(`\n${result.issues.length} issue(s) found in trace chain`);
@@ -232,20 +273,44 @@ async function runTrace(moduleArgs, traceName) {
     return exit(0);
 }
 
-async function runGraph(moduleArgs) {
+async function runGraph(moduleArgs, asJson = false) {
     const modules = await resolveModuleList(moduleArgs);
     if (!modules) return exit(1);
 
     const seeds = modules.map((m) => m.path);
     const graph = await buildGraph(seeds, { codebaseScope: false });
 
-    console.log(`\nResolved import graph (${graph.modules.size} modules):\n`);
-    for (const [relPath, mod] of graph.modules) {
-        const file = graph.files.get(relPath);
-        const impCount = file ? file.imports.length : 0;
-        const expCount = file ? file.exports.length : 0;
-        const declCount = file ? file.declarations.length : 0;
-        console.log(`  ${relPath}  (${impCount} imports, ${declCount} declarations, ${expCount} exports)`);
+    if (asJson) {
+        const result = {
+            modules: [],
+            files: {}
+        };
+        for (const [relPath, mod] of graph.modules) {
+            const file = graph.files.get(relPath);
+            result.modules.push({
+                path: relPath,
+                imports: file ? file.imports.length : 0,
+                declarations: file ? file.declarations.length : 0,
+                exports: file ? file.exports.length : 0
+            });
+            if (file) {
+                result.files[relPath] = {
+                    imports: file.imports,
+                    declarations: file.declarations,
+                    exports: file.exports
+                };
+            }
+        }
+        console.log(JSON.stringify(result, null, 2));
+    } else {
+        console.log(`\nResolved import graph (${graph.modules.size} modules):\n`);
+        for (const [relPath, mod] of graph.modules) {
+            const file = graph.files.get(relPath);
+            const impCount = file ? file.imports.length : 0;
+            const expCount = file ? file.exports.length : 0;
+            const declCount = file ? file.declarations.length : 0;
+            console.log(`  ${relPath}  (${impCount} imports, ${declCount} declarations, ${expCount} exports)`);
+        }
     }
     console.log();
 
