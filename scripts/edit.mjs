@@ -89,7 +89,44 @@ export default new TUI(
             if (reviewChild) await ide.awaitChild(reviewChild);
         }
 
-        return exit(await git.commitFlow(rel));
+        // Interactive post-edit commit flow (moved from lib/git.mjs —
+        // Interface construction lives in scripts/; lib/git.mjs keeps only
+        // the data methods: statusPorcelain, previewDiffFor, git).
+        async function commitFlow(rel) {
+            if (git.statusPorcelain([rel]).length === 0) {
+                console.log(`no changes to ${rel}.`);
+                return 0;
+            }
+
+            const action = await iface.select(`changes to ${rel}; how do you want to proceed?`, [
+                { name: 'diff', message: 'Show the diff and commit' },
+                { name: 'commit', message: 'Commit changes' },
+                { name: 'discard', message: 'Discard opencode changes (git restore)' },
+                { name: 'shell', message: 'Return to the shell' }
+            ]);
+
+            if (action === 'diff') {
+                git.previewDiffFor(rel);
+                return 0;
+            }
+            if (action === 'commit') {
+                const commit = git.git('commit');
+                return commit.status ?? 0;
+            }
+            if (action === 'discard') {
+                const ok = await iface.confirm(
+                    `Discard changes to ${rel}? This is destructive.`,
+                    false
+                );
+                if (!ok) return 0;
+                git.git('restore', ['--', rel], { stdio: 'inherit' });
+                console.log(`restored ${rel} to HEAD.`);
+                return 0;
+            }
+            return 0;
+        }
+
+        return exit(await commitFlow(rel));
     },
     meta
 ).supportsDirectRunning(import.meta.url);

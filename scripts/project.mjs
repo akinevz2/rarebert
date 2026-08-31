@@ -3,6 +3,7 @@
 import { CLI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { languages } from '../lib/languages.mjs';
+import { chooseLanguage, installFromArgs } from './languages.mjs';
 
 const meta = {
     name: 'project',
@@ -22,11 +23,11 @@ export default new CLI(
             return exit(0);
         }
         if (sub === 'install') {
-            await languages.installFromArgs(opts, positional.slice(1));
+            await installFromArgs(opts, positional.slice(1));
             return exit(0);
         }
         if (sub === 'choose') {
-            const lang = await languages.choose();
+            const lang = await chooseLanguage();
             console.log(lang);
             return exit(0);
         }

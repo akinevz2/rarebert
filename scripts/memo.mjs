@@ -1,20 +1,28 @@
 #!/usr/bin/env node
 
-import { CLI, listAllModules, resolveModuleSet } from '../lib/module.mjs';
-import { exit } from '../lib/core.mjs';
+import {
+    CLI,
+    listAllModules,
+    resolveModuleSet,
+    cli,
+    Interface,
+    resolveModule
+} from '../lib/module.mjs';
+import { exit, AbortError } from '../lib/core.mjs';
+import { BOLD, RESET } from '../lib/symbols.mjs';
 import {
     memo,
     groupArgs,
     cmdAdd,
-    cmdCommit,
     cmdLog,
     cmdRecall,
-    cmdDrop,
     cmdForget,
     cmdForgetOldest,
     cmdOldest,
     cmdPrintAll,
-    cmdPrintSet
+    cmdPrintSet,
+    parseIndices,
+    applyDrop
 } from '../lib/memo.mjs';
 
 const META = {
@@ -46,7 +54,7 @@ const ACTIONS = [
     },
     {
         flag: '--commit',
-        run: ({ opts }) => cmdCommit(opts.yes, opts.fresh)
+        run: ({ opts }) => runCommit(opts)
     },
     {
         flag: '--log',
@@ -59,7 +67,7 @@ const ACTIONS = [
     {
         flag: '--drop',
         clearBuffer: true,
-        run: async ({ nonFlag, modules }) => cmdDrop(nonFlag[0], nonFlag[1], modules)
+        run: ({ nonFlag, modules }) => runDrop(nonFlag[0], nonFlag[1], modules)
     },
     {
         flag: '--forget',
@@ -74,6 +82,126 @@ const ACTIONS = [
         run: () => cmdOldest()
     }
 ];
+
+// ---------------------------------------------------------------------------
+// --commit / --drop orchestration — moved here from lib/memo.mjs as part of
+// the lib-purity inversion: Interface construction lives in scripts/, while
+// lib/memo.mjs keeps only data transformations (memo.commitMemos,
+// memo.loadMemos, parseIndices, applyDrop).
+// ---------------------------------------------------------------------------
+
+async function runCommit(opts) {
+    if (!opts.yes) {
+        // The memo CLI can run non-interactively (make flows, CI) — guard
+        // before constructing the Interface.
+        if (!cli.isInteractive()) {
+            throw new AbortError(
+                'memo --commit: confirmation required; pass --yes for non-interactive runs.',
+                1
+            );
+        }
+        const iface = Interface.createInterface('memo');
+        const ok = await iface.confirm('Commit memos to git notes?');
+        if (!ok) {
+            console.log('Aborted; memos not committed.');
+            return;
+        }
+    }
+    if (!memo.commitMemos({ label: 'memo snapshot', fresh: opts.fresh })) {
+        console.log('No memos to commit.');
+    }
+}
+
+async function runDrop(moduleArg, indicesArg, modules) {
+    if (!moduleArg) {
+        throw new AbortError("A memo'd module must be specified for --drop.", 1);
+    }
+
+    // Resolve by name/path locally — no prompting when a module arg is given.
+    const resolved = resolveModule(moduleArg, modules);
+    if (!resolved) {
+        throw new AbortError(`Module not found: ${moduleArg}`, 1);
+    }
+
+    const allMemos = memo.loadMemos(resolved.rel).flatMap((m) => m.content);
+    if (!allMemos.length) {
+        console.log('No memos found for this module.');
+        return;
+    }
+
+    if (process.stdin.isTTY !== true) {
+        if (!indicesArg) {
+            throw new AbortError(
+                `Error: missing indices argument for non-interactive --drop:\n` +
+                    `Non-interactive mode cannot prompt for memo selection.\n` +
+                    `  Pass comma-separated indices (1 for first, -1 for last): --drop ${moduleArg} 1,3,-1\n` +
+                    `  Or to remove all memos for this module, use: --forget ${moduleArg}`,
+                1
+            );
+        }
+        const indices = parseIndices(indicesArg, allMemos.length);
+        if (!indices) return;
+        applyDrop(
+            resolved,
+            indices.map((i) => allMemos[i])
+        );
+        return;
+    }
+
+    let selected;
+    // Interactive path only — the non-interactive branch above has already
+    // returned, so Interface construction is safe here.
+    const iface = Interface.createInterface('memo');
+    if (indicesArg) {
+        const indices = parseIndices(indicesArg, allMemos.length);
+        if (!indices) return;
+        selected = indices.map((i) => allMemos[i]);
+
+        console.log(`\n${BOLD}Memos to drop from ${resolved.rel}:${RESET}`);
+        for (const [i, content] of selected.entries()) {
+            console.log(`  ${indicesArg.split(',')[i]?.trim() || i + 1}. ${content}`);
+        }
+        console.log();
+        const confirmed = await iface.select('Proceed?', [
+            { name: 'drop', message: 'Drop the listed memos' },
+            { name: 'cancel', message: 'Cancel' }
+        ]);
+        if (confirmed === 'cancel') {
+            console.log('Aborted; no memos dropped.');
+            return;
+        }
+    } else {
+        selected = await multiSelectMemos(resolved);
+    }
+
+    if (!selected.length) {
+        console.log('No memos selected; nothing dropped.');
+        return;
+    }
+    applyDrop(resolved, selected);
+}
+
+async function multiSelectMemos(resolved) {
+    const memos = memo.loadMemos(resolved.rel).flatMap((m) => m.content);
+    if (!memos.length) return [];
+
+    const { default: Enquirer } = await import('enquirer');
+    const prompt = new Enquirer.MultiSelect({
+        name: 'memos',
+        message: `Select memos to drop:`,
+        choices: memos.map((content, idx) => ({
+            name: idx.toString(),
+            message: content,
+            value: content
+        }))
+    });
+    try {
+        const result = await prompt.run();
+        return result.map((idx) => memos[parseInt(idx, 10)]);
+    } catch {
+        throw new AbortError();
+    }
+}
 
 async function main(opts, positional) {
     const groups = groupArgs(positional);

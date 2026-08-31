@@ -43,6 +43,35 @@ async function runHeadless({ fileArgs, model, instruction }) {
 }
 
 /**
+ * Interactive model selection — the script-layer home of the prompt that
+ * used to live in lib/models.mjs#prompt (Interface inversion: lib/ never
+ * constructs an Interface). Builds the choices from the opencode config
+ * via models.modelChoices(), preferring the last-chosen store model as
+ * the flagged default, and falls back to the config default when no
+ * models are configured. Persists the selection via models.persistDefault.
+ */
+async function selectModel() {
+    const config = models.readConfig();
+    const fallback = models.defaultModel();
+    const preferred = models.lastChosenModel() || fallback;
+    if (preferred && config.model !== preferred) {
+        config.model = preferred;
+    }
+    const list = models.list(config);
+    if (list.length === 0) {
+        console.log(`No models found in opencode config; using fallback: ${fallback}`);
+        return fallback;
+    }
+    const { choices, defaultIndex } = models.modelChoices(list);
+    const iface = Interface.createInterface('implement');
+    const modelId = await iface.select('Select a model to implement with', choices, {
+        initial: defaultIndex
+    });
+    models.persistDefault(modelId);
+    return modelId;
+}
+
+/**
  * Interactive implementation: launch `opencode <project>` as a full TUI
  * with the local default model. The instruction is passed via --prompt.
  * If a running opencode server exists, attach to it with --auto instead
@@ -217,7 +246,16 @@ async function main(opts, positional) {
         return exit(`implement: ${error}`);
     }
     if (!instruction) instruction = posInstruction;
-    const model = opts.model || models.resolveDefault();
+
+    // Model resolution: explicit -m/--model wins; otherwise the interactive
+    // path offers the model selection prompt (moved here from lib/models.mjs
+    // per the lib-purity directive), and the non-interactive path uses the
+    // canonical prompt-free default.
+    let model = opts.model;
+    if (!model && cli.isInteractive() && process.stdin.isTTY === true) {
+        model = await selectModel();
+    }
+    if (!model) model = models.resolveDefault();
 
     if (!cli.isInteractive()) {
         if (moduleArgs.length === 0) {
