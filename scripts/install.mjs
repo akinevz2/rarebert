@@ -5,8 +5,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { home } from '../lib/projects.mjs';
-import { CLI, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { CLI, TUI, Interface } from '../lib/module.mjs';
 import { backend } from '../lib/backend.mjs';
 import { exit } from '../lib/core.mjs';
 
@@ -94,8 +93,9 @@ async function main(opts, positional) {
         new TUI(
             'install.mjs',
             async () => {
+                const iface = Interface.createInterface('install');
                 if (isNonEmpty) {
-                    const overwrite = await tui.confirm(
+                    const overwrite = await iface.confirm(
                         `Prefix "${prefix}" is non-empty. Continue?`,
                         false
                     );

@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { listAllModules, promptModule, resolveModule, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { Interface, listAllModules, promptModule, resolveModule, TUI } from '../lib/module.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
@@ -28,6 +27,7 @@ export { meta };
 export default new TUI(
     'edit.mjs',
     async (opts, positional) => {
+        const iface = Interface.createInterface('edit');
         const modules = listAllModules();
         if (modules.length === 0) {
             return exit(1, () => console.error('No modules found.'));
@@ -62,11 +62,11 @@ export default new TUI(
         const before = new Set(git.statusPorcelain().map((row) => row.path));
 
         const model = opts.model ? await models.resolve(opts.model) : models.resolveDefault();
-        const tui = ide.spawnTui(model, {
+        const opencodeTui = ide.spawnTui(model, {
             cwd: rarebert.root,
             prompt: `We're reviewing ${rel}. Load the open-in-editor skill and open ${rel} in the editor so you can see the current state of the file as you review.`
         });
-        const status = tui.done ? await tui.done : tui.status;
+        const status = opencodeTui.done ? await opencodeTui.done : opencodeTui.status;
         if (status !== 0) return exit(status);
 
         const after = git.statusPorcelain();
@@ -74,10 +74,10 @@ export default new TUI(
 
         let reviewFiles = [];
         if (touched.length === 1) {
-            const review = await tui.confirm(`Review ${touched[0]}?`, false);
+            const review = await iface.confirm(`Review ${touched[0]}?`, false);
             if (review) reviewFiles = touched;
         } else if (touched.length > 1) {
-            const review = await tui.confirm(
+            const review = await iface.confirm(
                 `Review ${touched.length} changed files in $EDITOR?`,
                 false
             );

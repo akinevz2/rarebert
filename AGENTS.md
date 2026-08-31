@@ -65,6 +65,87 @@ Convention — **one key memo + simple references**:
 - Diagnostic memos (`unused-import:`, `broken-import:`, ...) are
   transient: drop them once the underlying issue is fixed.
 
+## Module authoring specification
+
+Authoritative spec for every runnable module in `scripts/` (and for TUI/flow
+submodules). A fresh-context implementer should read this top to bottom
+before implementing a scaffolded module — the `make add` boilerplate
+references these rules inline. Where older sections below conflict, this
+section wins.
+
+### Module shapes and the export contract
+
+- **CLI** (default): `export default new CLI('<name>.mjs', main, meta);` —
+  plus `module.supportsDirectRunning(import.meta.url);` and `export { meta };`
+- **TUI**: same shape with `new TUI(...)` — full-screen interactive modules
+- **Flows**: a main may return `exit(Interface.createInterface('<name>')
+  .stage(a).stage(b))` — stages are themselves TUI submodules
+
+### meta contract (data-driven; Commander owns parsing)
+
+- `name` / `description` / `usage` — rendered into `--help`
+- `options` — declared flags; Commander parses them (`_typeParser` supports
+  int / float / array / choices)
+- `args` — positional declarations `[{ name, required, description }]`,
+  compiled to `program.argument('<name>' / '[name]')`. **Commander owns
+  required-argument checking** — never hand-validate positionals
+
+### main callback contract
+
+- Signature `async function main(opts, positional)`. `opts` is an assured
+  **`Arguments` instance** (lib/module.mjs): an Array subclass of the
+  positionals with the parsed Commander opts merged (`args.debug` works),
+  plus `.command` (the Commander Command), `.opts`, `.has(flag)` (raw
+  argv), `.help()`. `positional` is the plain array (legacy convenience)
+- Return `exit(...)` — **never call `process.exit()` directly**:
+  - `exit(0)` success · `exit(n)` fail with code n
+  - `exit('explanation')` fail, message printed to stderr
+  - `exit(err)` Error kind (`AbortError` → 130)
+  - `exit(flow)` submodule kind — runs an Interface/TUI flow to completion
+- The Runtime (`lib/runtime.mjs`) owns process termination; a main only
+  returns signals
+
+### Interactive work
+
+- Gate: `runInteractively(fn)` bails with a `nonInteractive` ExitSignal
+  when stdin is not a TTY — never construct Enquirer prompts unguarded
+- TUI instances: `tui.confirm / input / select` member methods (enquirer
+  loads lazily via `TUI.createInterface()`; `--help` bypasses the gate)
+- Flows: `Interface.createInterface(name).stage(...)`; prompt factories
+  `iface.confirm / input / select / query` produce thenable runnables —
+  "return value" (`await`) or "return exit" (`exit(runnable)`)
+- Effectful no-value steps in chains are plain function stages
+  (`flow.stage(() => console.log(...))`) — there is deliberately no print
+  factory
+
+### Flows (TUI → TUI chains)
+
+- Stage protocol dispatched by `exit()` kind: `exit(0)` advances;
+  `exit('explanation')` / `exit(n)` terminate; plain values advance and
+  chain as `prev`
+- Stages are TUI submodules — see `scripts/status.mjs` for the reference
+  implementation
+
+### Console streams
+
+- `console.log` — program output, progress echoes, success markers
+- `console.error` — errors, warnings, abort/die messages
+- `console.dir` — structured object dumps
+
+### Signals & abort
+
+- `AbortError` is the canonical abort signal from prompts (ctrl-c/escape)
+- Do not install `SIGINT`/`SIGHUP`/`SIGTERM` handlers or call
+  `process.exit(130)` outside `lib/module.mjs` / `lib/core.mjs`
+
+### lib/ conventions
+
+- One class per lib/ module (or one class + a few consuming methods); no
+  standalone singleton objects in the export surface
+- Import from the barrel: `import { Git } from '../lib/index.mjs'`
+- No single-consumer couples: code used by exactly one scripts/ module
+  lives in that script, not in lib/
+
 ## Implementation Guidelines (for opencode sessions)
 
 ### Procedural Design & Sequential Structure in main()

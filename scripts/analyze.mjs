@@ -3,8 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { exit, store } from '../lib/core.mjs';
-import { CLI, cli, listAllModules, resolveModule, promptModuleChoices, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { CLI, cli, Interface, listAllModules, resolveModule, promptModuleChoices, TUI } from '../lib/module.mjs';
 import { memo } from '../lib/memo.mjs';
 import { models } from '../lib/models.mjs';
 import { ide } from '../lib/ide.mjs';
@@ -18,10 +17,6 @@ import {
     formatTrace,
     resolveOneStep
 } from '../lib/introspect.mjs';
-
-// Prompt helpers ride on a TUI class instance created at runtime — there is
-// no shared tui singleton (see the TUI class in lib/module.mjs).
-const analyzeTui = new TUI('analyze.mjs');
 
 // REQUEST: runDocumentationPass loads and caches opencode output. On ctrl-c:
 // - Allow current opencode call to finish
@@ -308,7 +303,8 @@ async function runDocumentationPass(relPath, content, ext, { verbose, yes, model
         memoize();
         memoized = true;
     } else if (interactive) {
-        const confirmed = await analyzeTui.confirm(
+        const iface = Interface.createInterface('analyze');
+        const confirmed = await iface.confirm(
             `Memoize ${blockCount} block(s) of documentation to ${relPath}?`,
             false
         );
@@ -345,11 +341,17 @@ async function load(moduleRef, options = {}) {
             console.error('analyze: no modules found.');
             return exit(1);
         }
+        if (!cli.isInteractive()) {
+            return exit(1, () =>
+                console.error('analyze: selecting a module requires an interactive terminal.')
+            );
+        }
+        const iface = Interface.createInterface('analyze');
         const choices = modules.map((m) => ({
             name: m.path,
             message: m.path
         }));
-        const selection = await analyzeTui.select('Select a module to analyze:', choices, {
+        const selection = await iface.select('Select a module to analyze:', choices, {
             nonInteractiveBehavior: 'fail'
         });
         resolved = resolveModule(selection, modules);
@@ -405,7 +407,8 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
     try {
         if (clearCache) {
             return exit(new TUI('analyze.mjs', async () => {
-                const confirmed = await tui.confirm(
+                const iface = Interface.createInterface('analyze');
+                const confirmed = await iface.confirm(
                     'Clear the introspect tool cache? This will reset all module binding analyses.',
                     false
                 );
@@ -491,7 +494,8 @@ export default new CLI('analyze.mjs', async (opts = {}, positional = []) => {
                 }
                 console.log(`Memoized ${references.length} reference(s) on ${module.path}.`);
             } else if (cli.isInteractive()) {
-                const memoize = await tui.confirm('Memoize these references on the target module?', true);
+                const iface = Interface.createInterface('analyze');
+                const memoize = await iface.confirm('Memoize these references on the target module?', true);
                 if (memoize) {
                     for (const ref of references) {
                         const content = `usage-ref: ${ref.file}:${ref.line} (${ref.kind}${ref.via ? ', via ' + ref.via : ''}) → ${usageName}`;

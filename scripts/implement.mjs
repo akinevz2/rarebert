@@ -2,8 +2,7 @@
 
 import path from 'path';
 import { spawn } from 'child_process';
-import { cli, CLI, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { cli, CLI, TUI, Interface } from '../lib/module.mjs';
 import { editor } from '../lib/editor.mjs';
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';
@@ -11,10 +10,6 @@ import { server } from '../lib/server.mjs';
 import { rarebert } from '../lib/projects.mjs';
 import { ide } from '../lib/ide.mjs';
 import fs from 'fs';
-
-// Prompt helpers ride on a TUI class instance created at runtime — there is
-// no shared tui singleton (see the TUI class in lib/module.mjs).
-const implTui = new TUI('implement.mjs');
 
 function relCwdFor(absCwd) {
     if (absCwd === rarebert.root) return './';
@@ -55,6 +50,7 @@ async function runHeadless({ fileArgs, model, instruction }) {
  * $EDITOR and a testing bash for the user to verify the changes.
  */
 async function runInteractive({ fileArgs, model, instruction }) {
+    const iface = Interface.createInterface('implement');
     const { entries, context } = await editor.resolveActiveFiles(fileArgs, {
         message: 'Select a module to implement'
     });
@@ -80,7 +76,7 @@ async function runInteractive({ fileArgs, model, instruction }) {
             auto: true
         });
         if (status !== 0) {
-            if (!(await implTui.confirm('Retry prompt?', true)))
+            if (!(await iface.confirm('Retry prompt?', true)))
                 return exit(status, () =>
                     console.error(`implement: opencode run exited with status ${status}`)
                 );
@@ -98,7 +94,7 @@ async function runInteractive({ fileArgs, model, instruction }) {
             prompt: instruction
         });
         if (status !== 0) {
-            if (!(await implTui.confirm('Retry prompt?', true)))
+            if (!(await iface.confirm('Retry prompt?', true)))
                 return exit(status, () =>
                     console.error(`implement: opencode TUI exited with status ${status}`)
                 );
@@ -244,10 +240,11 @@ async function main(opts, positional) {
         new TUI(
             'implement.mjs',
             async (o = opts, p = positional) => {
+                const iface = Interface.createInterface('implement');
                 const fileArgs = moduleArgs.length > 0 ? moduleArgs : [];
                 const prompt =
                     instruction ||
-                    (await tui.input('Instruction for opencode:', {
+                    (await iface.input('Instruction for opencode:', {
                         initial:
                             fileArgs.length === 1 ? `Implement the module in ${fileArgs[0]}` : ''
                     }));

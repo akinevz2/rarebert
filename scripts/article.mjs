@@ -4,8 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { CLI, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { CLI, Interface, TUI } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { libs } from '../lib/libs.mjs';
@@ -695,9 +694,10 @@ export default new CLI(
                     const preview = o.preview;
                     const sectionArg = p[0];
                     const modelArg = o.model;
+                    const iface = Interface.createInterface('article');
 
                     while (true) {
-                        const choice = await tui.select('Article mode', [
+                        const choice = await iface.select('Article mode', [
                             { name: 'manage', message: 'Manage sections' },
                             { name: 'edit', message: 'Edit a section' },
                             { name: 'preamble', message: 'Edit the preamble' },

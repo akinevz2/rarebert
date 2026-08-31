@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-import { CLI, TUI, listAllModules } from '../lib/module.mjs';
+import { CLI, TUI, Interface, listAllModules } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
-import { tui } from '../lib/tui.mjs';
 import { models } from '../lib/models.mjs';
 import { memo } from '../lib/memo.mjs';
 import {
@@ -98,6 +97,7 @@ async function main(opts, positional) {
         new TUI(
             'commit.mjs',
             async (o = opts, p = positional) => {
+                const iface = Interface.createInterface('commit');
                 const choice = await promptCommitChoice();
 
                 if (choice === 'later') {
@@ -107,7 +107,7 @@ async function main(opts, positional) {
 
                 if (await promptPreview()) {
                     previewDiff();
-                    if (!(await tui.confirm('Are you ready to commit?', false))) {
+                    if (!(await iface.confirm('Are you ready to commit?', false))) {
                         git.git('status', [], { stdio: 'inherit' });
                         return exit(0, () => console.error('Aborted; staged files preserved.'));
                     }
@@ -140,7 +140,7 @@ async function main(opts, positional) {
                         return exit(1, () => console.error('No summary produced; aborting.'));
                     }
 
-                    const looksGood = await tui.confirm('Looks good?', true);
+                    const looksGood = await iface.confirm('Looks good?', true);
                     if (looksGood) {
                         stageAndCommit(['-m', summary]);
                         return exit(0);

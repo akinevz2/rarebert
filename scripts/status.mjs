@@ -5,7 +5,6 @@ import path from 'path';
 import { exit } from '../lib/core.mjs';
 import { Interface, TUI, cli } from '../lib/module.mjs';
 import { rarebert, home } from '../lib/projects.mjs';
-import { tui } from '../lib/tui.mjs';
 import { git } from '../lib/git.mjs';
 
 const meta = {
@@ -25,8 +24,12 @@ export { meta };
 // the flow with an explanation, or exit(n) to terminate with code n —
 // dispatched by exit()'s argument kind.
 
+// The stage TUIs only run inside the interactive flow, so a single shared
+// Interface is safe to construct at module scope for all prompt call sites.
+const iface = Interface.createInterface('status');
+
 async function promptContinue() {
-    const choice = await tui.select('Continue?', [
+    const choice = await iface.select('Continue?', [
         { name: 'continue', message: 'Continue to next stage' },
         { name: 'exit', message: 'Exit to shell' }
     ]);
@@ -103,7 +106,7 @@ const stageLaunchEdit = new TUI(
             return exit('exit');
         }
 
-        const launch = await tui.select('Launch the edit submodule?', [
+        const launch = await iface.select('Launch the edit submodule?', [
             { name: 'edit', message: 'Yes — select a module and edit' },
             { name: 'exit', message: 'No — exit to shell' }
         ]);

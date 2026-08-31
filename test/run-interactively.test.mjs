@@ -1,8 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { exit, ExitSignal, EXIT_FAIL } from '../lib/core.mjs';
-import { runInteractively, cli, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { runInteractively, cli, TUI, Interface } from '../lib/module.mjs';
 import * as moduleNS from '../lib/module.mjs';
 
 // Regression tests for the runInteractively gate: closure-producing,
@@ -18,20 +20,35 @@ const nonInteractiveCtx = {
     nonInteractive: (m) => exit('non-interactive: ' + m)
 };
 
-describe('tui instance spec', () => {
+describe('module export spec', () => {
     test('lib/module.mjs exports class definitions only — no lowercase tui object', () => {
         assert.ok(!('tui' in moduleNS), 'module.mjs must not export a tui binding');
     });
 
-    test('shared tui is a real TUI class instance carrying the member methods', () => {
-        assert.ok(tui instanceof TUI);
-        for (const method of ['confirm', 'input', 'select', 'runInteractively', 'isInteractive', 'nonInteractive']) {
-            assert.equal(typeof tui[method], 'function', `tui.${method} should be a member method`);
+    test('TUI member prompt methods exist (confirm/input/select/runInteractively)', () => {
+        for (const method of [
+            'confirm',
+            'input',
+            'select',
+            'runInteractively',
+            'isInteractive',
+            'nonInteractive'
+        ]) {
+            assert.equal(
+                typeof TUI.prototype[method],
+                'function',
+                `TUI.${method} should be a member method`
+            );
         }
     });
 
-    test('tui shares the cli abort registry', () => {
-        assert.equal(tui.abortCallbacks, cli.abortCallbacks);
+    test('lib/tui.mjs is gone — the shared singleton was replaced by Interface factories', () => {
+        assert.equal(
+            fs.existsSync(
+                path.join(fileURLToPath(new URL('../', import.meta.url)), 'lib', 'tui.mjs')
+            ),
+            false
+        );
     });
 });
 
@@ -81,44 +98,18 @@ describe('runInteractively', () => {
         assert.equal(await run(3, 4), 12);
     });
 
-    // Real singleton paths — deterministic only when the test runner's
-    // stdin is not a TTY (the default for `node --test`).
+    // Interface prompt factories — the replacement for the former tui
+    // singleton. In a non-interactive runtime the Interface constructor
+    // guard bails, so construction itself yields the ExitSignal (the
+    // lenient tui-object fallbacks are gone by design; explicit
+    // cli.isInteractive() guards now own that decision at call sites).
     test(
-        'tui.confirm falls back to the initial value when non-interactive',
+        'Interface.confirm construction bails with a nonInteractive ExitSignal',
         { skip: cli.isInteractive() },
         async () => {
-            assert.equal(await tui.confirm('proceed?', true), true);
-            assert.equal(await tui.confirm('proceed?', false), false);
-        }
-    );
-
-    test(
-        'tui.input bails with a nonInteractive ExitSignal by default',
-        { skip: cli.isInteractive() },
-        async () => {
-            const result = await tui.input('name?', { initial: 'def' });
+            const result = Interface.createInterface('test');
             assert.ok(result instanceof ExitSignal);
             assert.equal(result.code, EXIT_FAIL);
-        }
-    );
-
-    test(
-        'tui.select bails with a nonInteractive ExitSignal by default',
-        { skip: cli.isInteractive() },
-        async () => {
-            const result = await tui.select('pick?', ['a', 'b']);
-            assert.ok(result instanceof ExitSignal);
-        }
-    );
-
-    test(
-        'tui.select returns the initial choice with nonInteractiveBehavior "default"',
-        { skip: cli.isInteractive() },
-        async () => {
-            const result = await tui.select('pick?', ['a', 'b'], {
-                nonInteractiveBehavior: 'default'
-            });
-            assert.equal(result, 'a');
         }
     );
 });

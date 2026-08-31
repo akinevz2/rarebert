@@ -5,8 +5,7 @@ import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
-import { listAllModules, promptModule, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { listAllModules, promptModule, TUI, Interface } from '../lib/module.mjs';
 
 const meta = {
     name: 'open',
@@ -25,6 +24,7 @@ export { meta };
 export default new TUI(
     'open.mjs',
     async (opts, positional) => {
+        const iface = Interface.createInterface('open');
         const modelArg = opts.model;
         const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
 
@@ -37,13 +37,13 @@ export default new TUI(
             const editorChild = ide.spawnEditor(target.path);
 
             if (ide.isTerminalEditor() && editorChild) {
-                const launchAfter = await tui.confirm(
+                const launchAfter = await iface.confirm(
                     'Launch opencode after you close the editor?',
                     true
                 );
                 await ide.awaitChild(editorChild);
                 if (!launchAfter) {
-                    return exit(0, () => console.log('open: skipped TUI launch per user choice.'));
+                    return exit(() => console.log('open: skipped TUI launch per user choice.'));
                 }
             }
         }

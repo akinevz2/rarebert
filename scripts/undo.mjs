@@ -4,8 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { CLI, cli, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { CLI, cli, TUI, Interface } from '../lib/module.mjs';
 import { editor } from '../lib/editor.mjs';
 
 const meta = {
@@ -57,7 +56,8 @@ export default new CLI(
             new TUI(
                 'undo.mjs',
                 async () => {
-                    const confirmed = await tui.confirm(
+                    const iface = Interface.createInterface('undo');
+                    const confirmed = await iface.confirm(
                         `Remove module '${rel}' and clear .last-module marker?`,
                         false
                     );

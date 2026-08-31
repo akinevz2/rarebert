@@ -4,8 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { exit } from '../lib/core.mjs';
-import { cli, CLI, TUI } from '../lib/module.mjs';
-import { tui } from '../lib/tui.mjs';
+import { cli, CLI, TUI, Interface } from '../lib/module.mjs';
 import { home } from '../lib/projects.mjs';
 import { Git } from '../lib/git.mjs';
 import { languages } from '../lib/languages.mjs';
@@ -197,7 +196,8 @@ export default new CLI(
             new TUI(
                 'update.mjs',
                 async (opts, positional) => {
-                    const choice = await tui.select('What would you like to update?', [
+                    const iface = Interface.createInterface('update');
+                    const choice = await iface.select('What would you like to update?', [
                         { name: 'self', message: 'rarebert itself — fetch + merge origin' },
                         {
                             name: 'language',
@@ -207,7 +207,7 @@ export default new CLI(
 
                     if (choice === 'self') return updateSelf();
 
-                    const langInput = await tui.input('Language to add (e.g. ts, rb, go):', {
+                    const langInput = await iface.input('Language to add (e.g. ts, rb, go):', {
                         validate: (v) => (v.trim() ? true : 'Language is required')
                     });
                     return updateLanguage(langInput, { force: !!opts.force, model: opts.model });

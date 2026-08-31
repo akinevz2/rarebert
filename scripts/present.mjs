@@ -25,10 +25,9 @@ import fs from 'fs';
 import path from 'path';
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';
-import { CLI, cli, TUI } from '../lib/module.mjs';
+import { CLI, cli, TUI, Interface } from '../lib/module.mjs';
 import { git } from '../lib/git.mjs';
 import { rarebert } from '../lib/projects.mjs';
-import { tui } from '../lib/tui.mjs';
 import { ide } from '../lib/ide.mjs';
 import { DIAMOND, GREEN_TICK } from '../lib/symbols.mjs';
 
@@ -168,7 +167,8 @@ async function promptInstruction() {
         console.error('Non-interactive; pass --instruction <text> to provide an instruction.');
         return cli.nonInteractive('cannot prompt for instruction.');
     }
-    const instruction = await tui.input('What should opencode explain?', { initial: '' });
+    const iface = Interface.createInterface('present');
+    const instruction = await iface.input('What should opencode explain?', { initial: '' });
     return instruction.trim() || null;
 }
 
