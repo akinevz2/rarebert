@@ -13,20 +13,24 @@ const meta = {
 
 export { meta };
 
-export default new CLI('project.mjs', async (opts, positional) => {
-    const sub = positional[0];
-    if (!sub || sub === 'list' || sub === '--list') {
-        languages.show({ label: 'project' });
-        return exit(0);
-    }
-    if (sub === 'install') {
-        await languages.installFromArgs(opts, positional.slice(1));
-        return exit(0);
-    }
-    if (sub === 'choose') {
-        const lang = await languages.choose();
-        console.log(lang);
-        return exit(0);
-    }
-    return exit(1, () => console.error(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`));
-}, meta).supportsDirectRunning(import.meta.url);
+export default new CLI(
+    'project.mjs',
+    async (opts, positional) => {
+        const sub = positional[0];
+        if (!sub || sub === 'list' || sub === '--list') {
+            languages.show({ label: 'project' });
+            return exit(0);
+        }
+        if (sub === 'install') {
+            await languages.installFromArgs(opts, positional.slice(1));
+            return exit(0);
+        }
+        if (sub === 'choose') {
+            const lang = await languages.choose();
+            console.log(lang);
+            return exit(0);
+        }
+        return exit(1, () => console.error(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`));
+    },
+    meta
+).supportsDirectRunning(import.meta.url);

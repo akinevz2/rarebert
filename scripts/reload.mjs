@@ -14,23 +14,27 @@ const meta = {
 
 export { meta };
 
-export default new CLI('reload.mjs', async (opts, positional) => {
-    if (opts.forget) {
-        editor.clearLastModule();
-    }
+export default new CLI(
+    'reload.mjs',
+    async (opts, positional) => {
+        if (opts.forget) {
+            editor.clearLastModule();
+        }
 
-    const result = refreshMakefile();
-    console.log(
-        `discover scripts/ -> ${result.scriptCount} found: ${result.scripts.map((s) => s.name).join(', ') || '(none)'}`
-    );
-
-    if (result.written) {
+        const result = refreshMakefile();
         console.log(
-            `refresh ${result.rel} (${result.scriptCount} script targets + ${result.extraCount} extras)`
+            `discover scripts/ -> ${result.scriptCount} found: ${result.scripts.map((s) => s.name).join(', ') || '(none)'}`
         );
-    } else {
-        console.log(`up-to-date ${result.rel} (no changes)`);
-    }
-    console.log(`done: ${result.scriptCount} module(s)`);
-    return exit(0);
-}, meta).supportsDirectRunning(import.meta.url);
+
+        if (result.written) {
+            console.log(
+                `refresh ${result.rel} (${result.scriptCount} script targets + ${result.extraCount} extras)`
+            );
+        } else {
+            console.log(`up-to-date ${result.rel} (no changes)`);
+        }
+        console.log(`done: ${result.scriptCount} module(s)`);
+        return exit(0);
+    },
+    meta
+).supportsDirectRunning(import.meta.url);

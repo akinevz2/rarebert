@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
-import { CLI, TUI } from '../lib/module.mjs';
+import { CLI, TUI, listAllModules } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
+import { tui } from '../lib/tui.mjs';
+import { models } from '../lib/models.mjs';
+import { memo } from '../lib/memo.mjs';
 import {
     promptCommitChoice,
     promptPreview,
@@ -14,11 +17,7 @@ import {
     editSummaryInEditor,
     stageAndCommit,
     DEFAULT_PROMPT_FIRST_LINE,
-    models,
-    git,
-    memo,
-    tui,
-    listAllModules
+    git
 } from '../lib/git.mjs';
 
 const meta = {
@@ -95,59 +94,67 @@ async function main(opts, positional) {
         });
     }
 
-    return exit(new TUI('commit.mjs', async (o = opts, p = positional) => {
-        const choice = await promptCommitChoice();
+    return exit(
+        new TUI(
+            'commit.mjs',
+            async (o = opts, p = positional) => {
+                const choice = await promptCommitChoice();
 
-        if (choice === 'later') {
-            git.git('status');
-            return exit(0);
-        }
+                if (choice === 'later') {
+                    git.git('status');
+                    return exit(0);
+                }
 
-        if (await promptPreview()) {
-            previewDiff();
-            if (!(await tui.confirm('Are you ready to commit?', false))) {
-                git.git('status', [], { stdio: 'inherit' });
-                return exit(0, () => console.error('Aborted; staged files preserved.'));
-            }
-        }
+                if (await promptPreview()) {
+                    previewDiff();
+                    if (!(await tui.confirm('Are you ready to commit?', false))) {
+                        git.git('status', [], { stdio: 'inherit' });
+                        return exit(0, () => console.error('Aborted; staged files preserved.'));
+                    }
+                }
 
-        if (choice === 'raw') {
-            if (await promptBail('Bail before writing a commit message by hand?')) {
-                bailCommit('declined raw commit');
-            }
-            const commitArgs = await editSummaryInEditor('');
-            if (!commitArgs) return exit(0);
-            stageAndCommit(commitArgs);
-            return exit(0);
-        }
+                if (choice === 'raw') {
+                    if (await promptBail('Bail before writing a commit message by hand?')) {
+                        bailCommit('declined raw commit');
+                    }
+                    const commitArgs = await editSummaryInEditor('');
+                    if (!commitArgs) return exit(0);
+                    stageAndCommit(commitArgs);
+                    return exit(0);
+                }
 
-        const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
+                const model = modelArg ? await models.resolve(modelArg) : models.resolveDefault();
 
-        if (choice === 'proceed') {
-            if (await promptBail('Bail before running opencode summary?')) {
-                bailCommit('declined opencode summary');
-            }
+                if (choice === 'proceed') {
+                    if (await promptBail('Bail before running opencode summary?')) {
+                        bailCommit('declined opencode summary');
+                    }
 
-            const modify = await promptModifyPrompt();
-            const firstLine = modify ? await promptPromptFirstLine() : DEFAULT_PROMPT_FIRST_LINE;
-            const summary = summariseAndShow(model, changelist, firstLine, verbose);
+                    const modify = await promptModifyPrompt();
+                    const firstLine = modify
+                        ? await promptPromptFirstLine()
+                        : DEFAULT_PROMPT_FIRST_LINE;
+                    const summary = summariseAndShow(model, changelist, firstLine, verbose);
 
-            if (!summary) {
-                return exit(1, () => console.error('No summary produced; aborting.'));
-            }
+                    if (!summary) {
+                        return exit(1, () => console.error('No summary produced; aborting.'));
+                    }
 
-            const looksGood = await tui.confirm('Looks good?', true);
-            if (looksGood) {
-                stageAndCommit(['-m', summary]);
-                return exit(0);
-            }
+                    const looksGood = await tui.confirm('Looks good?', true);
+                    if (looksGood) {
+                        stageAndCommit(['-m', summary]);
+                        return exit(0);
+                    }
 
-            const commitArgs = await editSummaryInEditor(summary);
-            if (!commitArgs) return exit(0);
-            stageAndCommit(commitArgs);
-            return exit(0);
-        }
-    }, meta));
+                    const commitArgs = await editSummaryInEditor(summary);
+                    if (!commitArgs) return exit(0);
+                    stageAndCommit(commitArgs);
+                    return exit(0);
+                }
+            },
+            meta
+        )
+    );
 }
 
 export default new CLI('commit.mjs', main, meta).supportsDirectRunning(import.meta.url);

@@ -49,3 +49,4 @@ opencode.jsonc
 
 # SQLite database (per-project onboarding registry, lives in the install prefix)
 rarebert.db
+!.opencode/system/subagent-step-template.md

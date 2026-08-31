@@ -6,61 +6,86 @@ import { listModules } from './scripts/list.mjs';
 import { backend } from './lib/backend.mjs';
 import { Module, CLI, cli } from './lib/module.mjs';
 import { exit } from './lib/core.mjs';
+import { run } from './lib/runtime.mjs';
 
-const SKIP_ONBOARD = new Set([
-    'onboard',
-    'reload',
-    'help',
-    'h',
-    '--help',
-    '-h',
-    'list',
-    '--lib',
-    '--src',
-    '--scripts',
-    '--script'
-]);
+// ---------------------------------------------------------------------------
+// Dispatcher — data-driven configuration.
+//
+// Every decision the dispatcher makes is table-driven: which commands are
+// exempt from the onboarding guard, which bare invocations resolve to the
+// module listing, and which flag redirects discovery to the install prefix.
+// Adding behaviour means adding data here, not branches in the flow.
+// ---------------------------------------------------------------------------
 
-async function maybeOnboard(cmd) {
-    if (cmd && SKIP_ONBOARD.has(cmd)) return;
-    try {
-        const normalized = rarebert.normalizeModuleName(path.basename(cmd, path.extname(cmd)));
-        if (SKIP_ONBOARD.has(normalized)) return;
-    } catch {
-        /* not a valid module name; fall through to onboarding */
+const DISPATCH_CONFIG = {
+    coreFlag: '--core',
+    helpCommands: new Set(['--help', '-h', 'help']),
+    skipOnboard: new Set([
+        'onboard',
+        'reload',
+        'check',
+        'help',
+        'h',
+        '--help',
+        '-h',
+        'list',
+        '--lib',
+        '--src',
+        '--scripts',
+        '--script'
+    ])
+};
+
+// ---------------------------------------------------------------------------
+// Dispatcher — the composition root.
+//
+// Procedural flow with early returns: dispatch() reads as a flat sequence
+// of guards, each returning the moment a decision is made. All behaviour
+// comes from DISPATCH_CONFIG; all module running funnels through the
+// Runtime (lib/runtime.mjs) — the dispatcher never terminates the process
+// itself, it only returns ExitSignals.
+// ---------------------------------------------------------------------------
+
+class Dispatcher {
+    constructor(config = DISPATCH_CONFIG) {
+        this.config = config;
     }
-    await backend.ensureAll();
-}
 
-/**
- * Resolve a scripts/ module by name or path, import it, and run it.
- *
- * The default export must be an instance of Module (or a subclass like
- * CLI/TUI). If it isn't, the dispatcher fails — every rarebert command
- * must be a runnable Module.
- */
-async function runModule(ref, args = []) {
-    const scripts = home.discoverModules();
+    /** Bare/help invocations list modules instead of running one. */
+    isListing(cmd) {
+        return !cmd || this.config.helpCommands.has(cmd);
+    }
 
-    const isPathRef = ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
-
-    let script;
-    if (isPathRef) {
-        const rel = home.relPath(path.resolve(home.root, ref));
-        script = scripts.find((s) => s.path === rel || s.path === ref);
-        if (!script && path.resolve(home.root, ref)) {
-            script = { name: path.basename(ref, path.extname(ref)), path: rel };
+    /** Whether a command is exempt from the onboarding guard. */
+    skipsOnboard(cmd) {
+        if (!cmd || this.config.skipOnboard.has(cmd)) return true;
+        try {
+            const normalized = rarebert.normalizeModuleName(path.basename(cmd, path.extname(cmd)));
+            return this.config.skipOnboard.has(normalized);
+        } catch {
+            return false; // not a valid module name — fall through to onboarding
         }
-    } else {
-        const name = home.normalizeModuleName(ref);
-        script = scripts.find((s) => home.normalizeModuleName(s.name) === name);
     }
 
-    if (!script) {
-        throw new Error('Module not found: ' + ref);
+    /** Onboarding guard: ensure config + project registration. */
+    async onboardIfNeeded(cmd) {
+        if (this.skipsOnboard(cmd)) return;
+        await backend.ensureAll();
     }
 
-    try {
+    /**
+     * Resolve a scripts/ module reference by name or path.
+     * Returns a { name, path } descriptor, or null when unresolvable.
+     * Path references always resolve (the file may not exist yet — the
+     * import step reports that); name references must match a discovered
+     * module.
+     */
+    resolve(ref) {
+        return home.resolveModuleRef(ref);
+    }
+
+    /** Import the script file and enforce the Module contract. */
+    async load(script) {
         const mod = await import('file://' + home.absPath(script.path));
         const exported = mod.default;
 
@@ -69,15 +94,52 @@ async function runModule(ref, args = []) {
                 `${script.path}: default export must be a Module instance, got ${exported?.constructor?.name ?? typeof exported}`
             );
         }
+        return exported;
+    }
 
-        await exported.executeAndExit(args);
-    } catch (err) {
-        console.error(err.message || err);
-        process.exit(1);
+    /**
+     * Run one command end-to-end. Procedural, early-return flow:
+     *   core redirect → listing → onboarding guard → resolve → load → run.
+     * Returns ExitSignals for every failure kind; the Runtime owns
+     * process termination for the success path.
+     */
+    async dispatch(opts = {}, positional = []) {
+        // --core redirects the `rarebert` singleton to the install prefix
+        // so all module discovery and the onboarding guard operate against
+        // rarebert's own modules rather than the CWD project.
+        if (opts.core) {
+            rarebert.redirect(home.root);
+        }
+
+        const cmd = positional[0];
+        const rest = positional.slice(1);
+
+        // Bare / help invocation → module listing.
+        if (this.isListing(cmd)) {
+            await listModules([cmd, ...rest].filter(Boolean));
+            return exit(0);
+        }
+
+        // Onboarding guard — exempt commands skip it entirely.
+        await this.onboardIfNeeded(cmd);
+
+        // Resolve → load → run.
+        const script = this.resolve(cmd);
+        if (!script) return exit(new Error(`Module not found: ${cmd}`));
+
+        try {
+            const exported = await this.load(script);
+            await run(exported, rest);
+        } catch (err) {
+            // Error kind — bubble through the dispatcher's own exit()
+            // machinery (abort callbacks, AbortError → 130) instead of a
+            // raw process.exit().
+            return exit(err);
+        }
     }
 }
 
-const HELP_COMMANDS = new Set(['--help', '-h', 'help']);
+const dispatcher = new Dispatcher();
 
 const meta = {
     name: 'rarebert',
@@ -86,29 +148,19 @@ const meta = {
     skipHelpIntercept: true,
     allowUnknownOption: true,
     options: [
-        { flag: '--core', description: 'operate against the rarebert install prefix instead of the current directory' }
+        {
+            flag: '--core',
+            description:
+                'operate against the rarebert install prefix instead of the current directory'
+        }
     ]
 };
 
 async function main(opts, positional) {
-    // --core redirects the `rarebert` singleton to the install prefix
-    // so all module discovery and the onboarding guard operate against
-    // rarebert's own modules rather than the CWD project.
-    if (opts.core) {
-        rarebert.redirect(home.root);
-    }
-
-    const cmd = positional[0];
-    const rest = positional.slice(1);
-
-    if (!cmd || HELP_COMMANDS.has(cmd)) {
-        await listModules([cmd, ...rest].filter(Boolean));
-        return exit(0);
-    }
-
-    await maybeOnboard(cmd);
-
-    await runModule(cmd, rest);
+    // Return the module's ExitSignal (including the Error kind from a
+    // failed dispatch) so it completes through this module's own
+    // exit() machinery.
+    return dispatcher.dispatch(opts, positional);
 }
 
 const module = new CLI('index.js', main, meta);
@@ -117,5 +169,5 @@ cli.installSignalHandlers();
 
 module.supportsDirectRunning(import.meta.url);
 
-export { main };
+export { main, Dispatcher };
 export default module;

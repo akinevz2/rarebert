@@ -5,13 +5,19 @@ import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
-import { tui, listAllModules, promptModule, TUI } from '../lib/module.mjs';
+import { listAllModules, promptModule, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 
 const meta = {
     name: 'open',
     description: 'Open a module in $EDITOR then launch the opencode full TUI at the project root',
     usage: 'node index.js open [module] [--model <id>]',
-    options: [{ flag: '-m, --model <id>', description: 'opencode model id (overrides the default from opencode.json)' }]
+    options: [
+        {
+            flag: '-m, --model <id>',
+            description: 'opencode model id (overrides the default from opencode.json)'
+        }
+    ]
 };
 
 export { meta };

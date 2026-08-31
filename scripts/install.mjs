@@ -5,14 +5,14 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { home } from '../lib/projects.mjs';
-import { CLI, tui, TUI } from '../lib/module.mjs';
+import { CLI, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 import { backend } from '../lib/backend.mjs';
 import { exit } from '../lib/core.mjs';
 
 const DEFAULT_PREFIX = path.join(os.homedir(), '.local', 'share', 'rarebert');
 const DEFAULT_BIN_DIR = path.join(os.homedir(), '.local', 'bin');
 const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-
 
 const meta = {
     name: 'install',
@@ -90,15 +90,24 @@ async function main(opts, positional) {
         return exit(code);
     }
 
-    return exit(new TUI('install.mjs', async () => {
-        if (isNonEmpty) {
-            const overwrite = await tui.confirm(`Prefix "${prefix}" is non-empty. Continue?`, false);
-            if (!overwrite) return exit(0, () => console.log('Not installed.'));
-        }
+    return exit(
+        new TUI(
+            'install.mjs',
+            async () => {
+                if (isNonEmpty) {
+                    const overwrite = await tui.confirm(
+                        `Prefix "${prefix}" is non-empty. Continue?`,
+                        false
+                    );
+                    if (!overwrite) return exit(0, () => console.log('Not installed.'));
+                }
 
-        const code = await performInstall(prefix, binDir);
-        return exit(code);
-    }, meta));
+                const code = await performInstall(prefix, binDir);
+                return exit(code);
+            },
+            meta
+        )
+    );
 }
 
 export { meta, performInstall };

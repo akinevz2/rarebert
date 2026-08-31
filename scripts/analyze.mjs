@@ -2,7 +2,8 @@
 
 import { exit } from '../lib/core.mjs';
 import { store } from '../lib/core.mjs';
-import { CLI, cli, tui, listAllModules, resolveModule, promptModuleChoices, TUI } from '../lib/module.mjs';
+import { CLI, cli, listAllModules, resolveModule, promptModuleChoices, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 import { memo } from '../lib/memo.mjs';
 import { load } from '../lib/analyze.mjs';
 import {
