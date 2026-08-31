@@ -99,7 +99,7 @@ async function main(opts, positional) {
                         `Prefix "${prefix}" is non-empty. Continue?`,
                         false
                     );
-                    if (!overwrite) return exit(0, () => console.log('Not installed.'));
+                    if (!overwrite) return exit(0, { onExit: () => console.log('Not installed.') });
                 }
 
                 const code = await performInstall(prefix, binDir);

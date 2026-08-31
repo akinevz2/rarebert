@@ -28,7 +28,7 @@ function relCwdFor(absCwd) {
 async function runHeadless({ fileArgs, model, instruction }) {
     const { entries } = await editor.resolveActiveFiles(fileArgs, { message: 'implement' });
     if (entries.length === 0) {
-        return exit(1, () => console.error('implement: no files resolved from arguments.'));
+        return exit('implement: no files resolved from arguments.');
     }
 
     const prompt = `${instruction}\n\nTarget modules: ${entries.map((e) => e.rel).join(', ')}`;
@@ -202,7 +202,7 @@ async function main(opts, positional) {
 
     if (opts.promptFile) {
         if (!fs.existsSync(opts.promptFile)) {
-            return exit(1, () => console.error(`implement: --prompt-file not found: ${opts.promptFile}`));
+            return exit(`implement: --prompt-file not found: ${opts.promptFile}`);
         }
         promptFile = opts.promptFile;
         // Minimal prompt: point the model to the instruction file without
@@ -214,23 +214,19 @@ async function main(opts, positional) {
 
     const { moduleArgs, instruction: posInstruction, error } = splitArgs(positional, opts.prompt);
     if (error) {
-        return exit(1, () => console.error(`implement: ${error}`));
+        return exit(`implement: ${error}`);
     }
     if (!instruction) instruction = posInstruction;
     const model = opts.model || models.resolveDefault();
 
     if (!cli.isInteractive()) {
         if (moduleArgs.length === 0) {
-            return exit(1, () =>
-                console.error('implement: non-interactive mode requires module path arguments.')
-            );
+            return exit('implement: non-interactive mode requires module path arguments.');
         }
         if (!instruction) {
-            return exit(1, () =>
-                console.error(
-                    'implement: non-interactive mode requires an instruction prompt ' +
-                        '(--prompt <text>, --prompt-file <path>, or a trailing string arg).'
-                )
+            return exit(
+                'implement: non-interactive mode requires an instruction prompt ' +
+                    '(--prompt <text>, --prompt-file <path>, or a trailing string arg).'
             );
         }
         return runHeadless({ fileArgs: moduleArgs, model, instruction });
@@ -249,7 +245,7 @@ async function main(opts, positional) {
                             fileArgs.length === 1 ? `Implement the module in ${fileArgs[0]}` : ''
                     }));
                 if (!prompt || !prompt.trim()) {
-                    return exit(1, () => console.error('implement: no instruction provided.'));
+                    return exit('implement: no instruction provided.');
                 }
                 await runInteractive({ fileArgs, model, instruction: prompt.trim() });
             },

@@ -300,14 +300,14 @@ async function runPresent(opts, positional) {
             ? String(opts.instruction).trim()
             : await promptInstruction();
         if (!instruction) {
-            return exit(1, () => console.error('present: no instruction provided'));
+            return exit('present: no instruction provided');
         }
         presentation = await buildPresentation(instruction, model, opts);
     }
 
     if (!presentation) return exit(1);
 
-    return exit(0, () => walkSlides(presentation));
+    return exit(() => walkSlides(presentation));
 }
 
 export default new CLI(
@@ -318,10 +318,8 @@ export default new CLI(
         }
 
         if (!cli.isInteractive()) {
-            return exit(1, () =>
-                console.error(
-                    'present: --instruction or --file required for non-interactive mode, or run from a TTY.'
-                )
+            return exit(
+                'present: --instruction or --file required for non-interactive mode, or run from a TTY.'
             );
         }
 

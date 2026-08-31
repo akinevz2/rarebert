@@ -30,7 +30,7 @@ export default new CLI(
             console.log(lang);
             return exit(0);
         }
-        return exit(1, () => console.error(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`));
+        return exit(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
     },
     meta
 ).supportsDirectRunning(import.meta.url);

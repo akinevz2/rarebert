@@ -45,10 +45,8 @@ export default new CLI(
         }
 
         if (!cli.isInteractive()) {
-            return exit(1, () =>
-                console.error(
-                    'Non-interactive mode: the undo command requires confirmation. Use --yes to skip.'
-                )
+            return exit(
+                'Non-interactive mode: the undo command requires confirmation. Use --yes to skip.'
             );
         }
 

@@ -100,4 +100,12 @@ describe('ExitSignal kinds', () => {
         assert.equal(await exit().complete(), 0);
         assert.equal(await exit(null).complete(), 0);
     });
+
+    test('antipattern guard — exit(n, fn) / exit(n, runnable) fail fast instead of silently dropping', () => {
+        assert.throws(() => exit(1, () => console.error('x')), TypeError);
+        assert.throws(() => exit(0, { execute: async () => 1 }), TypeError);
+        // The documented forms keep working:
+        assert.doesNotThrow(() => exit(1, { onExit: () => {} }));
+        assert.doesNotThrow(() => exit(() => 1));
+    });
 });

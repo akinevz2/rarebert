@@ -43,13 +43,11 @@ async function main(opts, positional) {
     if (modelArg) {
         const known = models.list(models.readConfig());
         if (known.length > 0 && !known.some((m) => m.id === modelArg)) {
-            return exit(1, () => {
-                console.error(
-                    `commit: unknown model "${modelArg}".\n` +
-                        `Available models:\n` +
-                        known.map((m) => `  ${m.id}${m.isDefault ? ' (default)' : ''}`).join('\n')
-                );
-            });
+            return exit(
+                `commit: unknown model "${modelArg}".\n` +
+                    `Available models:\n` +
+                    known.map((m) => `  ${m.id}${m.isDefault ? ' (default)' : ''}`).join('\n')
+            );
         }
     }
     const status = git.git('status', ['--porcelain']);
@@ -75,7 +73,7 @@ async function main(opts, positional) {
     ].join('\n');
 
     if (!status.stdout.trim()) {
-        return exit(0, () => console.log('Nothing to commit: working tree clean.'));
+        return exit(0, { onExit: () => console.log('Nothing to commit: working tree clean.') });
     }
 
     // Non-interactive mode (stdin is not a TTY, e.g. piped or CI): the
@@ -85,12 +83,10 @@ async function main(opts, positional) {
     // and ask the caller to run from a TTY. This prevents the previous
     // bug where piping (| head) would hang waiting for opencode.
     if (!interactive) {
-        return exit(1, () => {
-            console.error(
-                'commit: interactive mode required (stdin is not a TTY).\n' +
-                    'Run `node index.js commit` from a terminal, or use plain git for scripted commits.'
-            );
-        });
+        return exit(
+            'commit: interactive mode required (stdin is not a TTY).\n' +
+                'Run `node index.js commit` from a terminal, or use plain git for scripted commits.'
+        );
     }
 
     return exit(
@@ -109,7 +105,9 @@ async function main(opts, positional) {
                     previewDiff();
                     if (!(await iface.confirm('Are you ready to commit?', false))) {
                         git.git('status', [], { stdio: 'inherit' });
-                        return exit(0, () => console.error('Aborted; staged files preserved.'));
+                        return exit(0, {
+                            onExit: () => console.error('Aborted; staged files preserved.')
+                        });
                     }
                 }
 
@@ -137,7 +135,7 @@ async function main(opts, positional) {
                     const summary = summariseAndShow(model, changelist, firstLine, verbose);
 
                     if (!summary) {
-                        return exit(1, () => console.error('No summary produced; aborting.'));
+                        return exit('No summary produced; aborting.');
                     }
 
                     const looksGood = await iface.confirm('Looks good?', true);

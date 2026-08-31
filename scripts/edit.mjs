@@ -30,7 +30,7 @@ export default new TUI(
         const iface = Interface.createInterface('edit');
         const modules = listAllModules();
         if (modules.length === 0) {
-            return exit(1, () => console.error('No modules found.'));
+            return exit('No modules found.');
         }
 
         const moduleArg = positional[0];
@@ -39,7 +39,7 @@ export default new TUI(
         if (moduleArg) {
             const resolved = resolveModule(moduleArg, modules);
             if (!resolved) {
-                return exit(1, () => console.error(`Module not found: ${moduleArg}`));
+                return exit(`Module not found: ${moduleArg}`);
             }
             target = resolved.module;
         } else {
@@ -48,7 +48,7 @@ export default new TUI(
         const rel = target.path;
 
         if (!fs.existsSync(target.abs)) {
-            return exit(1, () => console.error(`Module file not found: ${rel}`));
+            return exit(`Module file not found: ${rel}`);
         }
 
         editor.writeLastModule(rel);

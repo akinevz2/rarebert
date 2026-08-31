@@ -25,7 +25,7 @@ export default new CLI(
             await languages.installFromArgs(opts, positional.slice(1));
             return exit(0);
         }
-        return exit(1, () => console.error(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`));
+        return exit(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
     },
     meta
 ).supportsDirectRunning(import.meta.url);
