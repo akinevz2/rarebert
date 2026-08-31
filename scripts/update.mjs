@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { exit } from '../lib/core.mjs';
-import { cli, tui, CLI, TUI } from '../lib/module.mjs';
+import { cli, CLI, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 import { updateSelf, updateLanguage } from '../lib/update.mjs';
 
 const meta = {

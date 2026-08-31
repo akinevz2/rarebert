@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
-import { CLI, TUI } from '../lib/module.mjs';
+import { CLI, TUI, listAllModules } from '../lib/module.mjs';
 import { exit } from '../lib/core.mjs';
+import { tui } from '../lib/tui.mjs';
+import { models } from '../lib/models.mjs';
+import { memo } from '../lib/memo.mjs';
 import {
     promptCommitChoice,
     promptPreview,
@@ -14,11 +17,7 @@ import {
     editSummaryInEditor,
     stageAndCommit,
     DEFAULT_PROMPT_FIRST_LINE,
-    models,
-    git,
-    memo,
-    tui,
-    listAllModules
+    git
 } from '../lib/git.mjs';
 
 const meta = {

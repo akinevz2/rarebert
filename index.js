@@ -5,74 +5,141 @@ import { rarebert, home } from './lib/projects.mjs';
 import { listModules } from './scripts/list.mjs';
 import { backend } from './lib/backend.mjs';
 import { Module, CLI, cli } from './lib/module.mjs';
-import { exit, Runtime } from './lib/core.mjs';
+import { exit } from './lib/core.mjs';
+import { run } from './lib/runtime.mjs';
 
-const SKIP_ONBOARD = new Set([
-    'onboard',
-    'reload',
-    'help',
-    'h',
-    '--help',
-    '-h',
-    'list',
-    '--lib',
-    '--src',
-    '--scripts',
-    '--script'
-]);
+// ---------------------------------------------------------------------------
+// Dispatcher — data-driven configuration.
+//
+// Every decision the dispatcher makes is table-driven: which commands are
+// exempt from the onboarding guard, which bare invocations resolve to the
+// module listing, and which flag redirects discovery to the install prefix.
+// Adding behaviour means adding data here, not branches in the flow.
+// ---------------------------------------------------------------------------
 
-async function maybeOnboard(cmd) {
-    if (cmd && SKIP_ONBOARD.has(cmd)) return;
-    try {
-        const normalized = rarebert.normalizeModuleName(path.basename(cmd, path.extname(cmd)));
-        if (SKIP_ONBOARD.has(normalized)) return;
-    } catch {
-        /* not a valid module name; fall through to onboarding */
+const DISPATCH_CONFIG = {
+    coreFlag: '--core',
+    helpCommands: new Set(['--help', '-h', 'help']),
+    skipOnboard: new Set([
+        'onboard',
+        'reload',
+        'check',
+        'help',
+        'h',
+        '--help',
+        '-h',
+        'list',
+        '--lib',
+        '--src',
+        '--scripts',
+        '--script'
+    ])
+};
+
+// ---------------------------------------------------------------------------
+// Dispatcher — the composition root.
+//
+// Procedural flow with early returns: dispatch() reads as a flat sequence
+// of guards, each returning the moment a decision is made. All behaviour
+// comes from DISPATCH_CONFIG; all module running funnels through the
+// Runtime (lib/runtime.mjs) — the dispatcher never terminates the process
+// itself, it only returns ExitSignals.
+// ---------------------------------------------------------------------------
+
+class Dispatcher {
+    constructor(config = DISPATCH_CONFIG) {
+        this.config = config;
     }
-    await backend.ensureAll();
-}
 
-/**
- * Resolve a scripts/ module by name or path, import it, and run it.
- *
- * The default export must be an instance of Module (or a subclass like
- * CLI/TUI). If it isn't, the dispatcher fails — every rarebert command
- * must be a runnable Module.
- */
-async function runModule(ref, _args = []) {
-    const scripts = home.discoverModules();
+    /** Bare/help invocations list modules instead of running one. */
+    isListing(cmd) {
+        return !cmd || this.config.helpCommands.has(cmd);
+    }
 
-    const isPathRef = ref.includes('/') || ref.includes(path.sep) || ref.startsWith('./');
-
-    let script;
-    if (isPathRef) {
-        const rel = home.relPath(path.resolve(home.root, ref));
-        script = scripts.find((s) => s.path === rel || s.path === ref);
-        if (!script && path.resolve(home.root, ref)) {
-            script = { name: path.basename(ref, path.extname(ref)), path: rel };
+    /** Whether a command is exempt from the onboarding guard. */
+    skipsOnboard(cmd) {
+        if (!cmd || this.config.skipOnboard.has(cmd)) return true;
+        try {
+            const normalized = rarebert.normalizeModuleName(path.basename(cmd, path.extname(cmd)));
+            return this.config.skipOnboard.has(normalized);
+        } catch {
+            return false; // not a valid module name — fall through to onboarding
         }
-    } else {
-        const name = home.normalizeModuleName(ref);
-        script = scripts.find((s) => home.normalizeModuleName(s.name) === name);
     }
 
-    if (!script) {
-        throw new Error('Module not found: ' + ref);
+    /** Onboarding guard: ensure config + project registration. */
+    async onboardIfNeeded(cmd) {
+        if (this.skipsOnboard(cmd)) return;
+        await backend.ensureAll();
     }
 
-    const mod = await import('file://' + home.absPath(script.path));
-    const exported = mod.default;
-
-    if (!(exported instanceof Module)) {
-        throw new Error(
-            `${script.path}: default export must be a Module instance, got ${exported?.constructor?.name ?? typeof exported}`
-        );
+    /**
+     * Resolve a scripts/ module reference by name or path.
+     * Returns a { name, path } descriptor, or null when unresolvable.
+     * Path references always resolve (the file may not exist yet — the
+     * import step reports that); name references must match a discovered
+     * module.
+     */
+    resolve(ref) {
+        return home.resolveModuleRef(ref);
     }
 
-    return exported;
+    /** Import the script file and enforce the Module contract. */
+    async load(script) {
+        const mod = await import('file://' + home.absPath(script.path));
+        const exported = mod.default;
+
+        if (!(exported instanceof Module)) {
+            throw new Error(
+                `${script.path}: default export must be a Module instance, got ${exported?.constructor?.name ?? typeof exported}`
+            );
+        }
+        return exported;
+    }
+
+    /**
+     * Run one command end-to-end. Procedural, early-return flow:
+     *   core redirect → listing → onboarding guard → resolve → load → run.
+     * Returns ExitSignals for every failure kind; the Runtime owns
+     * process termination for the success path.
+     */
+    async dispatch(opts = {}, positional = []) {
+        // --core redirects the `rarebert` singleton to the install prefix
+        // so all module discovery and the onboarding guard operate against
+        // rarebert's own modules rather than the CWD project.
+        if (opts.core) {
+            rarebert.redirect(home.root);
+        }
+
+        const cmd = positional[0];
+        const rest = positional.slice(1);
+
+        // Bare / help invocation → module listing.
+        if (this.isListing(cmd)) {
+            await listModules([cmd, ...rest].filter(Boolean));
+            return exit(0);
+        }
+
+        // Onboarding guard — exempt commands skip it entirely.
+        await this.onboardIfNeeded(cmd);
+
+        // Resolve → load → run.
+        const script = this.resolve(cmd);
+        if (!script) return exit(new Error(`Module not found: ${cmd}`));
+
+        try {
+            const exported = await this.load(script);
+            await run(exported, rest);
+        } catch (err) {
+            // Error kind — bubble through the dispatcher's own exit()
+            // machinery (abort callbacks, AbortError → 130) instead of a
+            // raw process.exit().
+            return exit(err);
+        }
+    }
 }
 
-const HELP_COMMANDS = new Set(['--help', '-h', 'help']);
+const dispatcher = new Dispatcher();
 
 const meta = {
     name: 'rarebert',
@@ -90,48 +157,10 @@ const meta = {
 };
 
 async function main(opts, positional) {
-    cli.installSignalHandlers();
-
-    // opts should always be forwarded to the called module
-    // after parsing them using Commander.js library.
-
-    if (opts.core) {
-        rarebert.redirect(home.root);
-    }
-
-    // Commander.js parsing for the command and its arguments
-    const program = cli.createCommand(meta);
-    program.allowUnknownOption(true);
-    program.allowExcessArguments(true);
-
-    try {
-        await program.parseAsync(['node', 'rarebert', ...positional]);
-    } catch (err) {
-        if (err?.code === 'commander.help') return exit(0);
-        return exit(err.message || String(err));
-    }
-
-    const parsedCmd = program.args[0];
-    const parsedArgs = program.args.slice(1);
-
-    if (!parsedCmd || HELP_COMMANDS.has(parsedCmd)) {
-        await listModules([program.args[0], ...program.args.slice(1)].filter(Boolean));
-        return exit(0);
-    }
-
-    await maybeOnboard(parsedCmd);
-
-    // Resolve the ref to a Module and hand it back to the Runtime for
-    // re-execution. exit(0, () => mod) makes complete() return the Module,
-    // so Runtime loops and invokes mod.runner with the SAME args (forwarded
-    // from this invocation), then drives guard/invoke/decide/cleanup itself.
-    try {
-        const mod = await runModule(parsedCmd, parsedArgs);
-        return exit(0, () => mod);
-    } catch (err) {
-        console.error(err.message || err);
-        return exit(err.message || String(err));
-    }
+    // Return the module's ExitSignal (including the Error kind from a
+    // failed dispatch) so it completes through this module's own
+    // exit() machinery.
+    return dispatcher.dispatch(opts, positional);
 }
 
 const module = new CLI('index.js', main, meta);
@@ -140,6 +169,5 @@ cli.installSignalHandlers();
 
 module.supportsDirectRunning(import.meta.url);
 
-export { main };
-
+export { main, Dispatcher };
 export default module;

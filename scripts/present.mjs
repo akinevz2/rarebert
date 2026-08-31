@@ -73,7 +73,6 @@ export default new CLI(
         }
 
         return exit(
-            0,
             new TUI(
                 'present.mjs',
                 async (opts, positional) => {

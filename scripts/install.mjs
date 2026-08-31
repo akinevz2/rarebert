@@ -5,7 +5,8 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { home } from '../lib/projects.mjs';
-import { CLI, tui, TUI } from '../lib/module.mjs';
+import { CLI, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 import { backend } from '../lib/backend.mjs';
 import { exit } from '../lib/core.mjs';
 

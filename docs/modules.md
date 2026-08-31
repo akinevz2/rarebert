@@ -179,6 +179,29 @@ Modules are loaded as regular source files:
 `node index.js <name>` resolves a module by name or path through
 `discoverModules()` and calls its exported `main()`.
 
+## The Generated Makefile
+
+The root `Makefile` is a **generated artifact** — it is never written to
+directly. It is produced by the project itself:
+
+- `make reload` (→ `scripts/reload.mjs` → `lib/makefile.mjs#refreshMakefile`)
+  regenerates the file from two inputs:
+    1. **Discovery** — every module found in `scripts/` becomes one
+       `node index.js <name>` target, wired into `.PHONY`.
+    2. **The template** — `EXTRA_TARGETS` in `lib/makefile.mjs` holds the
+       non-module targets (`deps`, `test`) that discovery cannot derive.
+- The file is a _pure index_: no logic, no variables, no hand-maintained
+  recipes. Anything not expressible as `node index.js <name>` or a one-line
+  extra target belongs in a lib/ module, not in the Makefile.
+
+**Rule: do not edit the Makefile by hand.** Any hand-added target or tweak
+is silently dropped the next time `make reload` runs. To add or change a
+target:
+
+1. scaffold a `scripts/<name>.mjs` module (it gets a target automatically), or
+2. add an entry to `EXTRA_TARGETS` in `lib/makefile.mjs`, then
+3. run `make reload` and commit the regenerated file.
+
 ## Memos
 
 Each module can own a memo sidecar at `<abs>.` (the absolute path plus a `.`
