@@ -5,7 +5,8 @@ import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
-import { tui, listAllModules, promptModule, TUI } from '../lib/module.mjs';
+import { listAllModules, promptModule, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 
 const meta = {
     name: 'open',

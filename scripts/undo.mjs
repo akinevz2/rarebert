@@ -4,7 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { CLI, cli, tui, TUI } from '../lib/module.mjs';
+import { CLI, cli, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 import { editor } from '../lib/editor.mjs';
 
 const meta = {
@@ -29,36 +30,46 @@ async function performUndo(rel, absPath) {
     return exit(0);
 }
 
-export default new CLI('undo.mjs', async (opts, positional) => {
-    const rel = editor.readLastModule();
-    if (!rel) {
-        console.error('Nothing to undo. No .last-module marker found.');
-        return exit(1);
-    }
+export default new CLI(
+    'undo.mjs',
+    async (opts, positional) => {
+        const rel = editor.readLastModule();
+        if (!rel) {
+            console.error('Nothing to undo. No .last-module marker found.');
+            return exit(1);
+        }
 
-    const absPath = path.isAbsolute(rel) ? rel : path.join(rarebert.root, rel);
+        const absPath = path.isAbsolute(rel) ? rel : path.join(rarebert.root, rel);
 
-    if (opts.yes) {
-        return performUndo(rel, absPath);
-    }
+        if (opts.yes) {
+            return performUndo(rel, absPath);
+        }
 
-    if (!cli.isInteractive()) {
-        return exit(1, () =>
-            console.error(
-                'Non-interactive mode: the undo command requires confirmation. Use --yes to skip.'
+        if (!cli.isInteractive()) {
+            return exit(1, () =>
+                console.error(
+                    'Non-interactive mode: the undo command requires confirmation. Use --yes to skip.'
+                )
+            );
+        }
+
+        return exit(
+            new TUI(
+                'undo.mjs',
+                async () => {
+                    const confirmed = await tui.confirm(
+                        `Remove module '${rel}' and clear .last-module marker?`,
+                        false
+                    );
+                    if (!confirmed) {
+                        console.error('Aborted.');
+                        return exit(0);
+                    }
+                    return performUndo(rel, absPath);
+                },
+                meta
             )
         );
-    }
-
-    return exit(0, new TUI('undo.mjs', async () => {
-        const confirmed = await tui.confirm(
-            `Remove module '${rel}' and clear .last-module marker?`,
-            false
-        );
-        if (!confirmed) {
-            console.error('Aborted.');
-            return exit(0);
-        }
-        return performUndo(rel, absPath);
-    }, meta));
-}, meta).supportsDirectRunning(import.meta.url);
+    },
+    meta
+).supportsDirectRunning(import.meta.url);

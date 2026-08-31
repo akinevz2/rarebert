@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { cli, tui, CLI, TUI } from '../lib/module.mjs';
+import { cli, CLI, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 import { editor } from '../lib/editor.mjs';
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';

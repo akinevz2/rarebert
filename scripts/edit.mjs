@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { listAllModules, promptModule, resolveModule, TUI, tui } from '../lib/module.mjs';
+import { listAllModules, promptModule, resolveModule, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';

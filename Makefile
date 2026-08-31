@@ -2,10 +2,7 @@
 
 .DEFAULT_GOAL := list
 
-.PHONY: list add analyze article check commit diff edit implement install languages list memo onboard open present project refactor reload run status symbols trail undo update upgrades deps
-
-list:
-	node index.js
+.PHONY: list add analyze article check commit diff edit fix implement install languages list memo onboard open present project refactor reload run status symbols trail undo update upgrades deps test
 
 
 add:
@@ -28,6 +25,9 @@ diff:
 
 edit:
 	node index.js edit
+
+fix:
+	node index.js fix
 
 implement:
 	node index.js implement
@@ -85,3 +85,6 @@ upgrades:
 
 deps:
 	npm install
+
+test:
+	node --test

@@ -4,7 +4,7 @@ import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { listAllModules, CLI, resolveModuleSet } from '../lib/module.mjs';
 import { memo, printDagForSet } from '../lib/memo.mjs';
-import { YELLOW_STAR, YELLOW, BOLD, RESET } from './symbols.mjs';
+import { YELLOW_STAR, YELLOW, BOLD, RESET } from '../lib/symbols.mjs';
 import {
     runNodeCheck,
     buildBindingGraph,
@@ -19,8 +19,7 @@ const meta = {
     name: 'check',
     description:
         'Run `node --check` and verify cross-module binding integrity. Memos are skipped by default; use --memos to print the memo DAG, or --all to run syntax + integrity + memos together. With no file args, checks all modules. With file args, scopes syntax + integrity to the specified files and their import trees. Opt-in: --struct dumps exports/imports, --trace NAME walks the binding graph, --json emits machine-readable output.',
-    usage:
-        'node index.js check [files...] [--struct] [--trace <name> [--json]] [--skip-integrity] [--memos] [--all]',
+    usage: 'node index.js check [files...] [--struct] [--trace <name> [--json]] [--skip-integrity] [--memos] [--all]',
     args: [{ name: 'files', required: false }],
     options: [
         { flag: '--struct', description: 'print the full exports/imports table per module' },

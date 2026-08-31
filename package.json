@@ -6,6 +6,7 @@
         "rarebert": "./index.js"
     },
     "scripts": {
+        "test": "node --test",
         "list": "node index.js",
         "reload": "node index.js reload",
         "memo": "node index.js memo",

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { exit } from '../lib/core.mjs';
-import { CLI, tui, AbortError, TUI } from '../lib/module.mjs';
+import { CLI, AbortError, TUI } from '../lib/module.mjs';
+import { tui } from '../lib/tui.mjs';
 import { libs } from '../lib/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
