@@ -21,7 +21,8 @@ const SUPPORT_TEMPLATE_PATH = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     '..',
     'lib',
-    'support-template.json'
+    'supports',
+    'template.json'
 );
 
 function labelForExt(ext) {
@@ -164,7 +165,7 @@ const meta = {
     ]
 };
 
-export { meta };
+export { meta, updateSelf, updateLanguage, loadSupportTemplate, labelForExt };
 
 export default new CLI(
     'update.mjs',

@@ -10,9 +10,11 @@ import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
 import { git } from '../lib/git.mjs';
 import { models } from '../lib/models.mjs';
-import { rarebert } from '../lib/projects.mjs';
+import { rarebert, home } from '../lib/projects.mjs';
 import { languages } from '../lib/languages.mjs';
+import { backend } from '../lib/backend.mjs';
 import { chooseLanguage } from './languages.mjs';
+import { loadSupportTemplate } from './update.mjs';
 
 // REQUEST: projectChoices, ensureLanguage, promptModuleName, scaffoldSrcModule are used by scripts/add.mjs.
 // On ctrl-c during interactive selection:
@@ -109,11 +111,130 @@ const meta = {
             flag: '-m, --model <id>',
             description: 'opencode model id (overrides the default from opencode.json)'
         },
-        { flag: '--force', description: 'overwrite an installed language template' }
+        { flag: '--force', description: 'overwrite an installed language template' },
+        {
+            flag: '-l, --language <lang>',
+            description:
+                'create a language support module (lib/supports/lang<ext>.js): scaffold → editor → one-shot opencode implement → interactive opencode amend'
+        }
     ]
 };
 
 export { meta };
+
+// ---------------------------------------------------------------------------
+// add --language "<lang>" — the language-support workflow:
+//   1. create lib/supports/lang<ext>.js from lib/supports/template.json
+//   2. open it in the editor for review
+//   3. one-shot opencode implement of the parser stubs
+//   4. validate (loadLanguage + parser smoke — the "tests")
+//   5. interactive opencode session to correct/amend until validation passes
+// ---------------------------------------------------------------------------
+
+async function validateLanguageSupport(name, rel) {
+    languages.instanceCache.delete(name);
+    const checks = [];
+    let ok = true;
+    try {
+        const lang = await languages.loadLanguage(name);
+        checks.push(`✓ loads as a Language instance (.${name})`);
+        const sample = `// sample\nimport x from 'y';\n\nfunction main() {\n    return 1;\n}\n`;
+        const imports = lang.parseImports(sample);
+        checks.push(
+            `✓ parseImports → ${Array.isArray(imports) ? `${imports.length} result(s)` : 'non-array'}`
+        );
+        lang.extractMainFunction(sample);
+        checks.push('✓ extractMainFunction ran');
+        lang.extractPublicMembers(sample);
+        checks.push('✓ extractPublicMembers ran');
+        lang.extractBindings(sample);
+        checks.push('✓ extractBindings ran');
+    } catch (err) {
+        ok = false;
+        checks.push(`✗ ${err.message}`);
+    }
+    return { ok, summary: `Validation report for ${rel}:\n  ${checks.join('\n  ')}` };
+}
+
+async function languageSupportWorkflow(langArg, opts) {
+    const name = languages.parseExt(langArg).toLowerCase();
+
+    // Preconditions: onboard (opencode.jsonc) first, then add (folders).
+    if (!backend.isConfigured()) {
+        return exit('add --language: onboard first (make onboard) to create opencode.jsonc.');
+    }
+    if (languages.isSupported(name) && !opts.force) {
+        return exit(
+            `add --language: "${name}" already has a support module (use --force to overwrite).`
+        );
+    }
+
+    const iface = Interface.createInterface('add');
+    const model = opts.model ? await models.resolve(opts.model) : models.resolveDefault();
+
+    // Step 1 — create the supports/ file from lib/supports/template.json.
+    const langIdent = name.charAt(0).toUpperCase() + name.slice(1);
+    const jsPath = languages.jsSupportPathFor(name);
+    const content = loadSupportTemplate({ LANG: langIdent, EXT: name, LANG_LABEL: langIdent });
+    fs.mkdirSync(path.dirname(jsPath), { recursive: true });
+    fs.writeFileSync(jsPath, content);
+    const rel = home.relPath(jsPath);
+    console.log(`✓ scaffolded language support: ${rel}`);
+
+    // Step 2 — open it in the editor for review.
+    console.log('\nOpening the scaffold in your editor — review the TODO stubs...');
+    const child = ide.spawnEditor(jsPath);
+    if (child) await ide.awaitChild(child);
+
+    // Step 3 — one-shot opencode implement of the parser stubs.
+    const instruction = `You are implementing a language-support module for rarebert.
+
+The file ${rel} was scaffolded with TODO stubs for four analysis functions.
+Implement each one for ${langIdent} (.${name}):
+
+1. ${langIdent}ParseImports(content) — parse ${langIdent} import statements and
+   return notated strings using the notation documented in the file header
+   (a::mod named, a<-mod aliased/default, mod bare).
+2. ${langIdent}ExtractMainFunction(content) — locate the main entry function
+   body; return { startLine, endLine, bodyLines } (1-indexed) or null.
+3. ${langIdent}ExtractPublicMembers(content) — exported top-level members as
+   { name, kind, startLine, endLine, lines }[].
+4. ${langIdent}ExtractBindings(content) — { exports, imports } binding map.
+
+Reference implementations: lib/supports/langmjs.js, langjs.js, langpy.js.
+The Language contract lives in lib/languages.mjs.
+
+Edit only ${rel}. Keep the Template lines/sections and the Language export
+intact. The module must import { Language } from '../languages.mjs' and
+{ Template } from '../template.mjs' and default-export a Language instance.`;
+
+    console.log(`\nOne-shot opencode implement (model: ${model || 'default'})...`);
+    const { status, stdout } = ide.spawnHeadless(instruction, model, { cwd: rarebert.root });
+    if (stdout) console.log(stdout);
+    if (status !== 0) console.error(`opencode run exited with status ${status}`);
+
+    // Step 4 — validate (the "tests").
+    let report = await validateLanguageSupport(name, rel);
+    console.log(`\n${report.summary}`);
+
+    // Step 5 — interactive opencode session to correct/amend until it passes.
+    if (!report.ok) {
+        console.log(
+            `\nOpening an interactive opencode session — amend ${rel} until the validation passes.`
+        );
+        const amend = ide.spawnTui(model, { cwd: rarebert.root });
+        if (amend.child) await ide.awaitChild(amend.child);
+        report = await validateLanguageSupport(name, rel);
+        console.log(`\n${report.summary}`);
+    }
+
+    console.log(
+        report.ok
+            ? `\n✓ language support "${name}" passes validation.`
+            : `\n✗ language support "${name}" still fails validation — see ${rel}.`
+    );
+    return exit(report.ok ? 0 : 1);
+}
 
 export default new CLI(
     'add.mjs',
@@ -122,7 +243,9 @@ export default new CLI(
             new TUI(
                 'add.mjs',
                 async (opts, positional) => {
-                    console.log('\n=== Rarebert Module Creator ===\n');
+                    // add --language "<lang>" → the language-support workflow
+                    // (scaffold → editor → one-shot implement → interactive amend).
+                    if (opts.language) return languageSupportWorkflow(opts.language, opts);
 
                     const iface = Interface.createInterface('add');
                     const proj = await iface.select(
