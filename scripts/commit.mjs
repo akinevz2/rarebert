@@ -73,7 +73,7 @@ async function main(opts, positional) {
     ].join('\n');
 
     if (!status.stdout.trim()) {
-        return exit(0, { onExit: () => console.log('Nothing to commit: working tree clean.') });
+        return exit(0, () => console.log('Nothing to commit: working tree clean.'));
     }
 
     // Non-interactive mode (stdin is not a TTY, e.g. piped or CI): the
@@ -105,9 +105,7 @@ async function main(opts, positional) {
                     previewDiff();
                     if (!(await iface.confirm('Are you ready to commit?', false))) {
                         git.git('status', [], { stdio: 'inherit' });
-                        return exit(0, {
-                            onExit: () => console.error('Aborted; staged files preserved.')
-                        });
+                        return exit(0, () => console.error('Aborted; staged files preserved.'));
                     }
                 }
 

@@ -434,9 +434,7 @@ export default new CLI(
                                 false
                             );
                             if (!confirmed)
-                                return exit(0, {
-                                    onExit: () => console.log('introspect: cache not cleared.')
-                                });
+                                return exit(0, () => console.log('introspect: cache not cleared.'));
                             store.clearIntrospectCache();
                             console.log('introspect: cache cleared');
                         },

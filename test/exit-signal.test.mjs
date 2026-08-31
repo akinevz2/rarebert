@@ -101,8 +101,22 @@ describe('ExitSignal kinds', () => {
         assert.equal(await exit(null).complete(), 0);
     });
 
-    test('antipattern guard — exit(n, fn) / exit(n, runnable) fail fast instead of silently dropping', () => {
-        assert.throws(() => exit(1, () => console.error('x')), TypeError);
+    test('exit(n, fn) — a bare function second argument is the on-exit callback', async () => {
+        let ran = false;
+        const sig = exit(0, () => (ran = true));
+        assert.equal(sig.code, 0);
+        assert.equal(await sig.complete(), 0);
+        assert.equal(ran, true, 'happy-path callback runs during complete()');
+    });
+
+    test('exit(n, fn) — the callback also runs for non-zero codes', async () => {
+        let ran = false;
+        const sig = exit(3, () => (ran = true));
+        assert.equal(await sig.complete(), 3);
+        assert.equal(ran, true);
+    });
+
+    test('exit(n, runnable) fails fast — submodules are the first argument', () => {
         assert.throws(() => exit(0, { execute: async () => 1 }), TypeError);
         // The documented forms keep working:
         assert.doesNotThrow(() => exit(1, { onExit: () => {} }));

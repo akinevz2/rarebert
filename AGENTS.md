@@ -79,7 +79,7 @@ section wins.
   plus `module.supportsDirectRunning(import.meta.url);` and `export { meta };`
 - **TUI**: same shape with `new TUI(...)` — full-screen interactive modules
 - **Flows**: a main may return `exit(Interface.createInterface('<name>')
-  .stage(a).stage(b))` — stages are themselves TUI submodules
+.stage(a).stage(b))` — stages are themselves TUI submodules
 
 ### meta contract (data-driven; Commander owns parsing)
 
@@ -98,10 +98,13 @@ section wins.
   plus `.command` (the Commander Command), `.opts`, `.has(flag)` (raw
   argv), `.help()`. `positional` is the plain array (legacy convenience)
 - Return `exit(...)` — **never call `process.exit()` directly**:
-  - `exit(0)` success · `exit(n)` fail with code n
-  - `exit('explanation')` fail, message printed to stderr
-  - `exit(err)` Error kind (`AbortError` → 130)
-  - `exit(flow)` submodule kind — runs an Interface/TUI flow to completion
+    - `exit(0)` success · `exit(n)` fail with code n
+    - `exit('explanation')` fail, message printed to stderr
+    - `exit(err)` Error kind (`AbortError` → 130)
+    - `exit(flow)` submodule kind — runs an Interface/TUI flow to completion
+    - `exit(0, fn)` / `exit(n, fn)` — a bare function as the second argument
+      is the **on-exit callback**: it runs during `complete()` before the
+      process terminates (the happy-path form is `exit(0, fn)`)
 - The Runtime (`lib/runtime.mjs`) owns process termination; a main only
   returns signals
 
