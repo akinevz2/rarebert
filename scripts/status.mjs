@@ -3,7 +3,7 @@
 import { spawnSync } from 'child_process';
 import path from 'path';
 import { exit } from '../lib/core.mjs';
-import { Interface, TUI, cli } from '../lib/module.mjs';
+import { Interface, TUI, cli } from '../lib/runtime/module.mjs';
 import { rarebert, home } from '../lib/projects.mjs';
 import { git } from '../lib/git.mjs';
 

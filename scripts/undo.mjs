@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { rarebert } from '../lib/projects.mjs';
 import { exit } from '../lib/core.mjs';
-import { CLI, cli, TUI, Interface } from '../lib/module.mjs';
+import { CLI, cli, TUI, Interface } from '../lib/runtime/module.mjs';
 import { editor } from '../lib/editor.mjs';
 
 const meta = {

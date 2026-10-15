@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { CLI } from '../lib/module.mjs';
-import { exit } from '../lib/core.mjs';
+import { CLI } from '../lib/runtime/module.mjs';
+import { exit } from '../lib/runtime/core.mjs';
 
 const meta = {
     name: 'fix',

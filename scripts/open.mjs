@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { rarebert } from '../lib/projects.mjs';
+import { rarebert } from '../lib/runtime/projects.mjs';
 import { exit } from '../lib/core.mjs';
 import { models } from '../lib/models.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
-import { listAllModules, promptModule, TUI, Interface } from '../lib/module.mjs';
+import { listAllModules, promptModule, TUI, Interface } from '../lib/runtime/module.mjs';
 
 const meta = {
     name: 'open',

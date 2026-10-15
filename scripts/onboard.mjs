@@ -3,9 +3,9 @@
 import fs from 'fs';
 import path from 'path';
 import { backend, DEFAULT_BASE_URL, DEFAULT_PROVIDER } from '../lib/backend.mjs';
-import { home, rarebert } from '../lib/projects.mjs';
+import { home, rarebert } from '../lib/runtime/projects.mjs';
 import { store, exit } from '../lib/core.mjs';
-import { cli, AbortError, Interface, CLI, TUI } from '../lib/module.mjs';
+import { cli, AbortError, Interface, CLI, TUI } from '../lib/runtime/module.mjs';
 
 const meta = {
     name: 'onboard',
@@ -150,7 +150,7 @@ async function runOnboard({ force = false } = {}) {
     if (!cli.isInteractive()) {
         console.error(
             'onboard: opencode.json is not configured and stdin is not a TTY; ' +
-                'run `make onboard` in an interactive shell to configure.'
+            'run `make onboard` in an interactive shell to configure.'
         );
         return false;
     }
@@ -266,7 +266,7 @@ async function projectOnboard({ force = false } = {}) {
     if (!cli.isInteractive()) {
         console.error(
             `onboard: project "${cwd}" is not registered with rarebert.\n` +
-                'Run `rarebert onboard` in an interactive shell to mark module folders.'
+            'Run `rarebert onboard` in an interactive shell to mark module folders.'
         );
         return false;
     }

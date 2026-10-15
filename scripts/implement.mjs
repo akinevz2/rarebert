@@ -2,12 +2,12 @@
 
 import path from 'path';
 import { spawn } from 'child_process';
-import { cli, CLI, TUI, Interface } from '../lib/module.mjs';
+import { cli, CLI, TUI, Interface } from '../lib/runtime/module.mjs';
 import { editor } from '../lib/editor.mjs';
 import { models } from '../lib/models.mjs';
-import { exit } from '../lib/core.mjs';
+import { exit } from '../lib/runtime/core.mjs';
 import { server } from '../lib/server.mjs';
-import { rarebert } from '../lib/projects.mjs';
+import { rarebert } from '../lib/runtime/projects.mjs';
 import { ide } from '../lib/ide.mjs';
 import fs from 'fs';
 
@@ -264,7 +264,7 @@ async function main(opts, positional) {
         if (!instruction) {
             return exit(
                 'implement: non-interactive mode requires an instruction prompt ' +
-                    '(--prompt <text>, --prompt-file <path>, or a trailing string arg).'
+                '(--prompt <text>, --prompt-file <path>, or a trailing string arg).'
             );
         }
         return runHeadless({ fileArgs: moduleArgs, model, instruction });

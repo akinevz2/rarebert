@@ -25,11 +25,11 @@ import fs from 'fs';
 import path from 'path';
 import { models } from '../lib/models.mjs';
 import { exit } from '../lib/core.mjs';
-import { CLI, cli, TUI, Interface } from '../lib/module.mjs';
+import { CLI, cli, TUI, Interface } from '../lib/runtime/module.mjs';
 import { git } from '../lib/git.mjs';
 import { rarebert } from '../lib/projects.mjs';
 import { ide } from '../lib/ide.mjs';
-import { DIAMOND, GREEN_TICK } from '../lib/symbols.mjs';
+import { DIAMOND, GREEN_TICK } from '../lib/supports/symbols.mjs';
 
 // ─── Slide presentation ────────────────────────────────────────
 

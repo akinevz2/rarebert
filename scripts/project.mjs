@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { CLI } from '../lib/module.mjs';
+import { CLI } from '../lib/runtime/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { languages } from '../lib/languages.mjs';
 import { chooseLanguage, installFromArgs } from './languages.mjs';

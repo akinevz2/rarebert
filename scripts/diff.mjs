@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { exit } from '../lib/core.mjs';
-import { listAllModules, promptModule, CLI } from '../lib/module.mjs';
-import { libs } from '../lib/libs.mjs';
+import { exit } from '../lib/runtime/core.mjs';
+import { listAllModules, promptModule, CLI } from '../lib/runtime/module.mjs';
+import { libs } from '../lib/runtime/libs.mjs';
 import { git } from '../lib/git.mjs';
 
 /**

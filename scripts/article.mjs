@@ -4,14 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { CLI, Interface, TUI } from '../lib/module.mjs';
-import { exit } from '../lib/core.mjs';
+import { CLI, Interface, TUI } from '../lib/runtime/module.mjs';
+import { exit } from '../lib/runtime/core.mjs';
 import { models } from '../lib/models.mjs';
-import { libs } from '../lib/libs.mjs';
+import { libs } from '../lib/runtime/libs.mjs';
 import { editor } from '../lib/editor.mjs';
 import { ide } from '../lib/ide.mjs';
 import { opencode } from '../lib/opencode.mjs';
-import { rarebert } from '../lib/projects.mjs';
+import { rarebert } from '../lib/runtime/projects.mjs';
 
 // REQUEST: editSection(model, sectionPath, sectionRel) should be converted to a CLI submodule
 // that returns its exit code. On ctrl-c during editor/opencode session, cleanup should:

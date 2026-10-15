@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'child_process';
 import { exit } from '../lib/core.mjs';
-import { cli, CLI, TUI, Interface } from '../lib/module.mjs';
+import { cli, CLI, TUI, Interface } from '../lib/runtime/module.mjs';
 import { git } from '../lib/git.mjs';
 
 function fullScreenLimit() {

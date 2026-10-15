@@ -4,10 +4,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { home } from '../lib/projects.mjs';
-import { CLI, TUI, Interface } from '../lib/module.mjs';
+import { home } from '../lib/runtime/projects.mjs';
+import { CLI, TUI, Interface } from '../lib/runtime/module.mjs';
 import { backend } from '../lib/backend.mjs';
-import { exit } from '../lib/core.mjs';
+import { exit } from '../lib/runtime/core.mjs';
 
 const DEFAULT_PREFIX = path.join(os.homedir(), '.local', 'share', 'rarebert');
 const DEFAULT_BIN_DIR = path.join(os.homedir(), '.local', 'bin');

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { CLI, Interface, cli } from '../lib/module.mjs';
-import { exit } from '../lib/core.mjs';
-import { languages } from '../lib/languages.mjs';
+import { CLI, Interface, cli } from '../lib/runtime/module.mjs';
+import { exit } from '../lib/runtime/core.mjs';
+import { languages } from '../lib/runtime/languages.mjs';
 
 const meta = {
     name: 'languages',

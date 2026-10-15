@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { CLI } from '../lib/module.mjs';
-import { exit } from '../lib/core.mjs';
-import { home } from '../lib/projects.mjs';
+import { CLI } from '../lib/runtime/module.mjs';
+import { exit } from '../lib/runtime/core.mjs';
+import { home } from '../lib/runtime/projects.mjs';
 
 const meta = {
     name: 'list',

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // formatReport/printUsage merged from lib/refactor.mjs (this script was its only consumer).
-import { CLI } from '../lib/module.mjs';
+import { CLI } from '../lib/runtime/module.mjs';
 import { exit } from '../lib/core.mjs';
 import * as bindings from '../lib/bindings.mjs';
 import { home as projects } from '../lib/projects.mjs';

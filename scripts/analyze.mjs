@@ -2,7 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { exit, store } from '../lib/core.mjs';
+import { exit, store } from '../lib/runtime/core.mjs';
 import {
     CLI,
     cli,
@@ -11,11 +11,11 @@ import {
     resolveModule,
     promptModuleChoices,
     TUI
-} from '../lib/module.mjs';
+} from '../lib/runtime/module.mjs';
 import { memo } from '../lib/memo.mjs';
 import { models } from '../lib/models.mjs';
 import { ide } from '../lib/ide.mjs';
-import { languages } from '../lib/languages.mjs';
+import { languages } from '../lib/runtime/languages.mjs';
 import {
     introspectFile,
     buildGraph,

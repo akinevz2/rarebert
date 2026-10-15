@@ -3,11 +3,11 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { exit } from '../lib/core.mjs';
+import { exit } from '../lib/runtime/core.mjs';
 import { cli, CLI, TUI, Interface } from '../lib/module.mjs';
-import { home } from '../lib/projects.mjs';
+import { home } from '../lib/runtime/projects.mjs';
 import { Git } from '../lib/git.mjs';
-import { languages } from '../lib/languages.mjs';
+import { languages } from '../lib/runtime/languages.mjs';
 import { ide } from '../lib/ide.mjs';
 import { models } from '../lib/models.mjs';
 

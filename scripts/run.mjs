@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { exit } from '../lib/core.mjs';
-import { CLI, listAllModules } from '../lib/module.mjs';
+import { CLI, listAllModules } from '../lib/runtime/module.mjs';
 import { rarebert } from '../lib/projects.mjs';
 
 const SRC_DIR = path.join(rarebert.root, 'src');

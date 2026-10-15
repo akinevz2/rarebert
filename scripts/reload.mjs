@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { editor } from '../lib/editor.mjs';
-import { CLI } from '../lib/module.mjs';
+import { CLI } from '../lib/runtime/module.mjs';
 import { exit } from '../lib/core.mjs';
 import { refreshMakefile } from '../lib/makefile.mjs';
 

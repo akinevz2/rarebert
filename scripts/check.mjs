@@ -3,12 +3,12 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { rarebert } from '../lib/projects.mjs';
-import { exit } from '../lib/core.mjs';
-import { listAllModules, CLI, resolveModuleSet } from '../lib/module.mjs';
+import { rarebert } from '../lib/runtime/projects.mjs';
+import { exit } from '../lib/runtime/core.mjs';
+import { listAllModules, CLI, resolveModuleSet } from '../lib/runtime/module.mjs';
 import { memo, printDagForSet } from '../lib/memo.mjs';
-import { YELLOW_STAR, YELLOW, BOLD, RESET } from '../lib/symbols.mjs';
-import { languages } from '../lib/languages.mjs';
+import { YELLOW_STAR, YELLOW, BOLD, RESET } from '../lib/supports/symbols.mjs';
+import { languages } from '../lib/runtime/languages.mjs';
 import { buildBindingGraph, resolveClosure } from '../lib/introspect.mjs';
 
 // REQUEST: check module performs syntax and integrity checks. On ctrl-c:

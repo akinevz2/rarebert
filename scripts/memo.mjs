@@ -7,9 +7,9 @@ import {
     cli,
     Interface,
     resolveModule
-} from '../lib/module.mjs';
-import { exit, AbortError } from '../lib/core.mjs';
-import { BOLD, RESET } from '../lib/symbols.mjs';
+} from '../lib/runtime/module.mjs';
+import { exit, AbortError } from '../lib/runtime/core.mjs';
+import { BOLD, RESET } from '../lib/supports/symbols.mjs';
 import {
     memo,
     groupArgs,
@@ -133,9 +133,9 @@ async function runDrop(moduleArg, indicesArg, modules) {
         if (!indicesArg) {
             throw new AbortError(
                 `Error: missing indices argument for non-interactive --drop:\n` +
-                    `Non-interactive mode cannot prompt for memo selection.\n` +
-                    `  Pass comma-separated indices (1 for first, -1 for last): --drop ${moduleArg} 1,3,-1\n` +
-                    `  Or to remove all memos for this module, use: --forget ${moduleArg}`,
+                `Non-interactive mode cannot prompt for memo selection.\n` +
+                `  Pass comma-separated indices (1 for first, -1 for last): --drop ${moduleArg} 1,3,-1\n` +
+                `  Or to remove all memos for this module, use: --forget ${moduleArg}`,
                 1
             );
         }

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import path from 'path';
-import { rarebert, home } from './lib/projects.mjs';
+import { rarebert, home } from './lib/runtime/projects.mjs';
 import { listModules } from './scripts/list.mjs';
 import { backend } from './lib/backend.mjs';
-import { Module, CLI, cli } from './lib/module.mjs';
-import { exit } from './lib/core.mjs';
+import { Module, CLI, cli } from './lib/runtime/module.mjs';
+import { exit } from './lib/runtime/core.mjs';
 import { run } from './lib/runtime.mjs';
 
 // ---------------------------------------------------------------------------

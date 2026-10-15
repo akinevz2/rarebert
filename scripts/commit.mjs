@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { CLI, TUI, Interface, listAllModules } from '../lib/module.mjs';
-import { exit } from '../lib/core.mjs';
+import { CLI, TUI, Interface, listAllModules } from '../lib/runtime/module.mjs';
+import { exit } from '../lib/runtime/core.mjs';
 import { models } from '../lib/models.mjs';
 import { memo } from '../lib/memo.mjs';
 import {
@@ -45,8 +45,8 @@ async function main(opts, positional) {
         if (known.length > 0 && !known.some((m) => m.id === modelArg)) {
             return exit(
                 `commit: unknown model "${modelArg}".\n` +
-                    `Available models:\n` +
-                    known.map((m) => `  ${m.id}${m.isDefault ? ' (default)' : ''}`).join('\n')
+                `Available models:\n` +
+                known.map((m) => `  ${m.id}${m.isDefault ? ' (default)' : ''}`).join('\n')
             );
         }
     }
@@ -85,7 +85,7 @@ async function main(opts, positional) {
     if (!interactive) {
         return exit(
             'commit: interactive mode required (stdin is not a TTY).\n' +
-                'Run `node index.js commit` from a terminal, or use plain git for scripted commits.'
+            'Run `node index.js commit` from a terminal, or use plain git for scripted commits.'
         );
     }
 
