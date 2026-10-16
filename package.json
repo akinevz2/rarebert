@@ -1,13 +1,16 @@
 {
     "name": "rarebert",
-    "version": "1.0.0",
-    "description": "Rarebert Toolbox - A collection of tools and utilities for managing and developing projects",
     "main": "launch.js",
+    "bin": {
+        "rarebert": "./launch.ts"
+    },
     "scripts": {
-        "build": "tsc",
-        "dev": "bun run launch.js",
+        "dev": "bunli dev",
+        "build": "bunli build",
         "test": "bun test"
     },
+    "version": "1.0.0",
+    "description": "Rarebert Toolbox - A collection of tools and utilities for managing and developing projects",
     "dependencies": {
         "commander": "^12.0.0",
         "enquirer": "^2.4.0"
@@ -17,4 +20,3 @@
         "typescript": "^5.0.0"
     }
 }
-      
