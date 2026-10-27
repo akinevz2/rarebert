@@ -144,11 +144,13 @@ class Editor {
         const modules = listAllModules();
         let match;
         try {
+            // TODO(whole-object): use discovery's resolveModule() instead of this hand-rolled name-match re-resolution — see §lib-classes
             match = modules.find((s) => normalizeModuleName(s.name) === normalizeModuleName(arg));
         } catch {
             match = undefined;
         }
         if (match) {
+            // TODO(whole-object): use the Module's own accessors (match.path / match.abs) instead of re-deriving via libs.relPath — see §lib-classes
             return { cwd: null, rel: libs.relPath(match.path), isFile: true, abs: match.path };
         }
         return null;
@@ -254,6 +256,7 @@ class Editor {
                 `${message} (esc allows selecting multiple files)`
             );
             if (single) {
+                // TODO(whole-object): use the Module's own accessors (single.path / single.abs) instead of re-deriving via libs.relPath — see §lib-classes
                 selected = [
                     { rel: libs.relPath(single.path), abs: single.path ?? single.abs, isFile: true }
                 ];

@@ -685,6 +685,7 @@ async function buildGraph(
             }
             if (!b || !b.imports) continue;
             for (const imp of b.imports) {
+                // TODO(whole-object): pass the Module (mod) instead of mod.abs — see §lib-classes
                 const targetAbs = resolveImportPath(mod.abs, imp.source);
                 if (!targetAbs) continue;
                 const targetRel = rarebert.relPath(targetAbs);
@@ -720,6 +721,7 @@ async function buildGraph(
             langCache.set(ext, lang);
         }
 
+        // TODO(whole-object): pass the Module (mod) instead of mod.abs — see §lib-classes
         const fileIntrospection = await introspectFile(mod.abs);
         files.set(mod.path, fileIntrospection);
 
@@ -807,6 +809,7 @@ async function resolveClosure(
         }
         if (!b || !b.imports) continue;
         for (const imp of b.imports) {
+            // TODO(whole-object): pass the Module (mod) instead of mod.abs — see §lib-classes
             const targetAbs = resolveImportPath(mod.abs, imp.source);
             if (!targetAbs) continue;
             const targetRel = rarebert.relPath(targetAbs);
@@ -1086,6 +1089,7 @@ class Trace {
             });
 
             if (exportInfo.type === 'reexport' && exportInfo.source) {
+                // TODO(whole-object): pass the Module (mod) instead of mod.abs — see §lib-classes
                 if (mod) {
                     const targetAbs = resolveImportPath(mod.abs, exportInfo.source);
                     if (targetAbs) {
@@ -1229,6 +1233,7 @@ class Trace {
                     source: imp.source,
                     depth
                 });
+                // TODO(whole-object): pass the Module (mod) instead of mod.abs — see §lib-classes
                 if (mod) {
                     const targetAbs = resolveImportPath(mod.abs, imp.source);
                     if (targetAbs) {
@@ -1516,6 +1521,7 @@ class Trace {
 
     _resolveImportSource(mod: GraphModule | undefined, source: string): string | null {
         if (!mod) return null;
+        // TODO(whole-object): pass the Module (mod) instead of mod.abs — see §lib-classes
         const abs = resolveImportPath(mod.abs, source);
         if (!abs) return null;
         return rarebert.relPath(abs);
@@ -1742,6 +1748,7 @@ async function buildBindingGraph(modules: GraphModule[]): Promise<{
     bindings: Map<string, FileBindings>;
     byExport: Graph['byExport'];
 }> {
+    // TODO(whole-object): pass the Module[] (modules) as seeds instead of pre-dismembered m.path strings — see §lib-classes
     const graph = await buildGraph(
         modules.map((m) => m.path),
         { codebaseScope: false }

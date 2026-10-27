@@ -480,10 +480,12 @@ async function load(
     console.log(`Semantic analysis of: ${relPath} (${ext.replace(/^\./, '')})`);
 
     if (!document) {
+        // TODO(whole-object): pass the resolved Module (mod) instead of dismembered relPath/content/ext — see §lib-classes
         return printIntelligence(relPath, content, ext);
     }
 
     const model = options.model || models.resolveDefault();
+    // TODO(whole-object): pass the resolved Module (mod) instead of dismembered relPath/content/ext — see §lib-classes
     return runDocumentationPass(relPath, content, ext, { verbose, yes, model });
 }
 
@@ -564,6 +566,7 @@ export default new CLI(
                     return exit(1);
                 }
 
+                // TODO(whole-object): use discovery's resolveModule() instead of this hand-rolled endsWith re-resolution — see §lib-classes
                 const module = listAllModules().find(
                     (m) => m.path === traceModule || m.abs.endsWith(traceModule)
                 );
@@ -572,6 +575,7 @@ export default new CLI(
                     return exit(1);
                 }
 
+                // TODO(whole-object): pass the resolved Module instead of the traceModule string (runTrace re-resolves it) — see §lib-classes
                 return await runTrace([traceModule], traceName);
             }
 
@@ -585,6 +589,7 @@ export default new CLI(
                 }
                 const usageModule = usageParts[0].trim();
 
+                // TODO(whole-object): use discovery's resolveModule() instead of this hand-rolled endsWith re-resolution — see §lib-classes
                 const module = listAllModules().find(
                     (m) => m.path === usageModule || m.abs.endsWith(usageModule)
                 );
@@ -593,6 +598,7 @@ export default new CLI(
                     return exit(1);
                 }
 
+                // TODO(whole-object): pass the Module (module) as the seed instead of module.path — see §lib-classes
                 const graph = await buildGraph([module.path], { codebaseScope: true });
                 const trace = new Trace(graph, usageName);
                 const result = trace.usage();
@@ -744,6 +750,7 @@ async function runTrace(
     if (!modules) return exit(1);
 
     const seeds = modules.map((m) => m.path);
+    // TODO(whole-object): pass the Module[] (modules) as seeds instead of pre-dismembered m.path strings — see §lib-classes
     const graph = await buildGraph(seeds, { codebaseScope: true });
 
     const result = await traceBinding(graph, traceName);
@@ -763,6 +770,7 @@ async function runGraph(moduleArgs: string[] | null): Promise<unknown> {
     if (!modules) return exit(1);
 
     const seeds = modules.map((m) => m.path);
+    // TODO(whole-object): pass the Module[] (modules) as seeds instead of pre-dismembered m.path strings — see §lib-classes
     const graph = await buildGraph(seeds, { codebaseScope: false });
 
     console.log(`\nResolved import graph (${graph.modules.size} modules):\n`);

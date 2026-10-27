@@ -573,8 +573,10 @@ async function resolveAllBindings(): Promise<BindingRegistry> {
     for (const mod of modules) {
         const rel = mod.path;
         if (rel in registry) continue;
+        // TODO(whole-object): pass the Module (mod) instead of mod.abs — see §lib-classes
         const { exports, imports } = await extractBindingsForFile(mod.abs);
         const importRecords: BindingImport[] = imports.map((imp: BindingImport) => {
+            // TODO(whole-object): pass the Module (mod) instead of mod.abs — see §lib-classes
             const resolvedAbs = resolveImportPath(mod.abs, imp.source);
             return {
                 ...imp,

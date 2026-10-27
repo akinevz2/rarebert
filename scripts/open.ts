@@ -34,6 +34,7 @@ export default new TUI(
         const moduleArg = positional[0];
         if (modules.length > 0) {
             const target = await promptModule(modules, moduleArg, 'Select a module to open');
+            // TODO(whole-object): pass the Module (target) instead of target.path — see §lib-classes
             editor.writeLastModule(target.path);
 
             const editorChild = ide.spawnEditor(target.path);
