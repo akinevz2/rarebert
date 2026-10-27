@@ -2,20 +2,23 @@
 
 import fs from 'fs';
 import path from 'path';
-import { exit, store } from '../lib/runtime/core.ts';
+import { exit, store, ExitSignal } from '../lib/runtime/core.ts';
+import { CLI, defineMeta } from '../lib/runtime/CLI.ts';
 import {
-    CLI,
-    cli,
     Interface,
+    TUI
+} from '../lib/runtime/TUI.ts';
+import {
     listAllModules,
     resolveModule,
-    promptModuleChoices,
-    TUI
-} from '../lib/runtime/module.ts';
+    promptModuleChoices
+} from '../lib/runtime/discovery.ts';
+// Terminal helpers — free functions (the legacy `cli` singleton was deleted).
+import { isInteractive } from '../lib/runtime/Module.ts';
 import { memo } from '../lib/memo.ts';
 import { models } from '../lib/models.ts';
 import { ide } from '../lib/ide.ts';
-import { languages } from '../lib/runtime/languages.ts';
+import { languages } from '../lib/runtime/Language.ts';
 import {
     introspectFile,
     buildGraph,
@@ -25,6 +28,13 @@ import {
     formatTrace,
     resolveOneStep
 } from '../lib/introspect.ts';
+import type {
+    FileIntrospection,
+    FileBindings,
+    Graph,
+    GraphModule
+} from '../lib/introspect.ts';
+import type { Module } from '../lib/runtime/Module.ts';
 
 // REQUEST: runDocumentationPass loads and caches opencode output. On ctrl-c:
 // - Allow current opencode call to finish
@@ -32,7 +42,59 @@ import {
 // - No cleanup needed for this module
 // Meta suggestion: { retryOnFailure: false, cleanup: 'none' }
 
-function runOpencodeHeadless(prompt, model) {
+
+/** A main() function extracted by a language primitive. */
+interface MainFunction {
+    /** The function's source lines. */
+    bodyLines: string[];
+    /** 1-indexed start line. */
+    startLine: number;
+    /** 1-indexed end line. */
+    endLine: number;
+    /** The function's name. */
+    name?: string;
+}
+
+/** A code segment produced by the main() segmentation pass. */
+interface Segment {
+    /** The segment's source lines. */
+    lines: string[];
+    /** The 1-indexed start line, or null when unmatched. */
+    startLine: number | null;
+    /** The number of lines in the segment. */
+    lineCount: number;
+}
+
+/** A public member extracted by a language primitive. */
+interface PublicMember {
+    /** The member's name. */
+    name: string;
+    /** The member's kind (const | function | class | ...). */
+    kind: string;
+    /** 1-indexed start line. */
+    startLine: number;
+    /** 1-indexed end line. */
+    endLine: number;
+    /** The member's source lines. */
+    lines: string[];
+}
+
+
+/**
+ * Build a one-file Graph for the 1-step resolution pass. The graph only
+ * needs the file's own introspection — the resolution step reads the
+ * file's imports and declarations, not the wider dependency graph.
+ */
+function makeSingleFileGraph(file: FileIntrospection): Graph {
+    return {
+        modules: new Map<string, GraphModule>(),
+        files: new Map<string, FileIntrospection>([[file.relPath, file]]),
+        bindings: new Map<string, FileBindings>(),
+        byExport: new Map()
+    };
+}
+
+function runOpencodeHeadless(prompt: string, model: string): string {
     const { status, stdout } = ide.spawnHeadless(prompt, model);
     if (status !== 0) {
         console.error(`analyze: opencode run exited with status ${status}`);
@@ -40,7 +102,11 @@ function runOpencodeHeadless(prompt, model) {
     return stdout;
 }
 
-function segmentMainFunction(mainFunc, model, relPath) {
+function segmentMainFunction(
+    mainFunc: MainFunction,
+    model: string,
+    relPath: string
+): string[][] {
     const codeBlock = mainFunc.bodyLines.join('\n');
     const instruction = `You are a code analysis assistant.
 
@@ -81,15 +147,20 @@ ${codeBlock}
         if (!Array.isArray(spans)) return [];
         return spans.filter((s) => Array.isArray(s));
     } catch (err) {
-        console.error(`analyze: failed to parse segment JSON: ${err.message}`);
+        console.error(
+            `analyze: failed to parse segment JSON: ${err instanceof Error ? err.message : String(err)}`
+        );
         return [];
     }
 }
 
-function annotateSegmentsWithLineNumbers(segments, mainFunc) {
+function annotateSegmentsWithLineNumbers(
+    segments: string[][],
+    mainFunc: MainFunction
+): Segment[] {
     const bodyLines = mainFunc.bodyLines;
     const bodyAbsStart = mainFunc.startLine;
-    const annotated = [];
+    const annotated: Segment[] = [];
     let cursor = 0;
 
     for (const seg of segments) {
@@ -118,7 +189,14 @@ function annotateSegmentsWithLineNumbers(segments, mainFunc) {
     return annotated;
 }
 
-function documentBlock(codeLines, model, relPath, index, total, contextLabel) {
+function documentBlock(
+    codeLines: string[],
+    model: string,
+    relPath: string,
+    index: number,
+    total: number,
+    contextLabel: string
+): string {
     const code = codeLines.join('\n');
     const instruction = `You are a code documentation assistant.
 
@@ -135,7 +213,7 @@ ${code}
     return runOpencodeHeadless(instruction, model);
 }
 
-function displaySegmentedDocs(segments, docs, relPath) {
+function displaySegmentedDocs(segments: Segment[], docs: string[], relPath: string): void {
     console.log();
     for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
@@ -151,7 +229,11 @@ function displaySegmentedDocs(segments, docs, relPath) {
     }
 }
 
-function displayMemberDocs(members, docs, relPath) {
+function displayMemberDocs(
+    members: PublicMember[],
+    docs: string[],
+    relPath: string
+): void {
     console.log();
     for (let i = 0; i < members.length; i++) {
         const m = members[i];
@@ -163,7 +245,11 @@ function displayMemberDocs(members, docs, relPath) {
     }
 }
 
-function analyzeMain(mainFunc, model, relPath) {
+function analyzeMain(
+    mainFunc: MainFunction,
+    model: string,
+    relPath: string
+): { segments: Segment[]; docs: string[] } {
     console.log(
         `\nSegmenting main() (lines ${mainFunc.startLine}-${mainFunc.endLine}) via opencode...`
     );
@@ -174,7 +260,7 @@ function analyzeMain(mainFunc, model, relPath) {
     }
     const segments = annotateSegmentsWithLineNumbers(rawSegments, mainFunc);
     console.log(`\nDocumenting ${segments.length} block(s) via opencode...`);
-    const docs = [];
+    const docs: string[] = [];
     for (let i = 0; i < segments.length; i++) {
         process.stdout.write(`  block ${i + 1}/${segments.length} ... `);
         const doc = documentBlock(
@@ -191,9 +277,13 @@ function analyzeMain(mainFunc, model, relPath) {
     return { segments, docs };
 }
 
-function analyzePublicMembers(members, model, relPath) {
+function analyzePublicMembers(
+    members: PublicMember[],
+    model: string,
+    relPath: string
+): { members: PublicMember[]; docs: string[] } {
     console.log(`\nDocumenting ${members.length} public member(s) via opencode...`);
-    const docs = [];
+    const docs: string[] = [];
     for (let i = 0; i < members.length; i++) {
         const m = members[i];
         process.stdout.write(`  ${m.kind} ${m.name} (${i + 1}/${members.length}) ... `);
@@ -208,7 +298,15 @@ function analyzePublicMembers(members, model, relPath) {
  * Print a condensed source-map summary of a file using the introspect
  * layer. Replaces the old printIntelligence function.
  */
-async function printIntelligence(relPath, content, ext) {
+async function printIntelligence(
+    relPath: string,
+    content: string,
+    ext: string
+): Promise<{
+    imports: string[];
+    mainFunc: MainFunction | null;
+    members: PublicMember[];
+}> {
     const modules = listAllModules();
     const resolved = resolveModule(relPath, modules);
     if (!resolved) throw new Error(`Module not found: ${relPath}`);
@@ -216,8 +314,8 @@ async function printIntelligence(relPath, content, ext) {
 
     const file = await introspectFile(absPath);
 
-    const oneStepResults = {};
-    const graph = { files: new Map([[file.relPath, file]]) };
+    const oneStepResults: Record<string, Awaited<ReturnType<typeof resolveOneStep>>> = {};
+    const graph = makeSingleFileGraph(file);
     for (const decl of file.declarations) {
         oneStepResults[decl.name] = await resolveOneStep(decl, file, graph);
     }
@@ -226,11 +324,12 @@ async function printIntelligence(relPath, content, ext) {
 
     const imports = file.imports.map((imp) => imp.name);
     const mainFunc = await languages.extractMainFunction(content, ext);
-    const members = file.declarations.map((d) => ({
+    const members: PublicMember[] = file.declarations.map((d) => ({
         name: d.name,
         kind: d.kind,
         startLine: d.startLine,
-        endLine: d.endLine
+        endLine: d.endLine,
+        lines: d.lines
     }));
 
     return { imports, mainFunc, members };
@@ -240,7 +339,12 @@ async function printIntelligence(relPath, content, ext) {
  * Run the full opencode documentation pass: segment main(), document each
  * block / member, display, and optionally memoize. Requires --document.
  */
-async function runDocumentationPass(relPath, content, ext, { verbose, yes, model }) {
+async function runDocumentationPass(
+    relPath: string,
+    content: string,
+    ext: string,
+    { verbose, yes, model }: { verbose?: boolean; yes?: boolean; model: string }
+): Promise<void> {
     const imports = await languages.parseImports(content, ext);
     if (imports.length > 0) {
         const importMemoStr = `imports: ${imports.join('; ')}`;
@@ -250,14 +354,15 @@ async function runDocumentationPass(relPath, content, ext, { verbose, yes, model
 
     if (!model) {
         console.error('analyze: no model available; cannot run opencode analysis');
-        return exit(1);
+        exit(1);
+        return;
     }
 
     const mainFunc = await languages.extractMainFunction(content, ext);
-    let segments = [];
-    let docs = [];
-    let members = [];
-    let memberDocs = [];
+    let segments: Segment[] = [];
+    let docs: string[] = [];
+    let members: PublicMember[] = [];
+    let memberDocs: string[] = [];
     let usedFallback = false;
 
     if (mainFunc) {
@@ -266,7 +371,7 @@ async function runDocumentationPass(relPath, content, ext, { verbose, yes, model
         docs = result.docs;
         if (segments.length === 0) {
             console.log(`\n✓ Analysis complete for ${relPath}`);
-            return { path: relPath, relative: relPath, language: ext, segments, docs };
+            return;
         }
         displaySegmentedDocs(segments, docs, relPath);
     } else {
@@ -276,7 +381,7 @@ async function runDocumentationPass(relPath, content, ext, { verbose, yes, model
                 `\n✓ No main() and no public members found in ${relPath}; nothing to analyze.`
             );
             console.log(`✓ Analysis complete for ${relPath}`);
-            return { path: relPath, relative: relPath, language: ext, segments: [], docs: [] };
+            return;
         }
         console.log(`\nNo main() found; analyzing ${members.length} public member(s).`);
         usedFallback = true;
@@ -286,7 +391,7 @@ async function runDocumentationPass(relPath, content, ext, { verbose, yes, model
     }
 
     const blockCount = usedFallback ? members.length : segments.length;
-    const interactive = cli.isInteractive();
+    const interactive = isInteractive();
 
     const memoize = () => {
         if (usedFallback) {
@@ -323,7 +428,6 @@ async function runDocumentationPass(relPath, content, ext, { verbose, yes, model
     }
 
     console.log(`\n✓ Analysis complete for ${relPath}${memoized ? '' : ' (not memoized)'}`);
-    return { path: relPath, relative: relPath, language: ext, segments, docs };
 }
 
 /**
@@ -335,7 +439,10 @@ async function runDocumentationPass(relPath, content, ext, { verbose, yes, model
  *
  * If `moduleRef` is null, launches a TUI select to pick a module.
  */
-async function load(moduleRef, options = {}) {
+async function load(
+    moduleRef: string | null,
+    options: { verbose?: boolean; yes?: boolean; document?: boolean; model?: string } = {}
+): Promise<unknown> {
     const verbose = options.verbose || false;
     const yes = options.yes || false;
     const document = options.document || false;
@@ -349,7 +456,7 @@ async function load(moduleRef, options = {}) {
             console.error('analyze: no modules found.');
             return exit(1);
         }
-        if (!cli.isInteractive()) {
+        if (!isInteractive()) {
             return exit('analyze: selecting a module requires an interactive terminal.');
         }
         const iface = Interface.createInterface('analyze');
@@ -360,6 +467,7 @@ async function load(moduleRef, options = {}) {
         const selection = await iface.select('Select a module to analyze:', choices, {
             nonInteractiveBehavior: 'fail'
         });
+        if (typeof selection !== 'string') return selection;
         resolved = resolveModule(selection, modules);
     }
     if (!resolved) throw new Error(`Module not found: ${moduleRef}`);
@@ -379,7 +487,7 @@ async function load(moduleRef, options = {}) {
     return runDocumentationPass(relPath, content, ext, { verbose, yes, model });
 }
 
-const meta = {
+const meta = defineMeta({
     name: 'analyze',
     description:
         'Analyze a module: print a condensed source map (imports, declarations with 1-step resolution, exports). Accepts one or multiple modules. Pass --trace <module::name> to walk the full dependency chain. Pass --usage <module::name> to launch a TUI showing all project-wide references to that binding. Pass --document for an opencode documentation pass.',
@@ -401,17 +509,18 @@ const meta = {
             flag: '--document',
             description: 'Run opencode documentation pass (segment, document, memoize)'
         },
+        { flag: '--model <id>', description: 'Model id for the opencode documentation pass' },
         { flag: '--clear-cache', description: 'Clear the introspect tool cache' },
         { flag: '-v, --verbose', description: 'Verbose output' },
         { flag: '-y, --yes', description: 'Skip confirmation prompts' }
     ]
-};
+});
 
 export { meta };
 
 export default new CLI(
     'analyze.ts',
-    async (opts = {}, positional = []) => {
+    async (opts, positional) => {
         const args = Array.isArray(positional) ? positional : [];
         const verbose = !!opts.verbose;
         const yes = !!opts.yes;
@@ -528,7 +637,7 @@ export default new CLI(
                         memo.remember(module.path, content);
                     }
                     console.log(`Memoized ${references.length} reference(s) on ${module.path}.`);
-                } else if (cli.isInteractive()) {
+                } else if (isInteractive()) {
                     const iface = Interface.createInterface('analyze');
                     const memoize = await iface.confirm(
                         'Memoize these references on the target module?',
@@ -562,14 +671,16 @@ export default new CLI(
 
             return await runSummary(moduleArgs, { oneline });
         } catch (err) {
-            console.error('Error:', err.message);
+            console.error('Error:', err instanceof Error ? err.message : String(err));
             return exit(1);
         }
     },
     meta
-).supportsDirectRunning(import.meta.url);
+).supportsDirectRunning();
 
-async function resolveModuleList(moduleArgs) {
+async function resolveModuleList(
+    moduleArgs: string[] | null
+): Promise<Module[] | ExitSignal | null> {
     if (!moduleArgs) {
         const modules = listAllModules();
         if (modules.length === 0) {
@@ -586,11 +697,11 @@ async function resolveModuleList(moduleArgs) {
 
     const modules = listAllModules();
     const resolved = moduleArgs
-        .map((arg) => {
+        .map((arg: string) => {
             const r = resolveModule(arg, modules);
             return r ? r.module : null;
         })
-        .filter(Boolean);
+        .filter((m): m is Module => m !== null);
 
     if (resolved.length === 0) {
         console.error('analyze: no modules resolved from args');
@@ -600,15 +711,19 @@ async function resolveModuleList(moduleArgs) {
     return resolved;
 }
 
-async function runSummary(moduleArgs, { oneline }) {
+async function runSummary(
+    moduleArgs: string[] | null,
+    { oneline }: { oneline: boolean }
+): Promise<unknown> {
     const modules = await resolveModuleList(moduleArgs);
+    if (modules instanceof ExitSignal) return modules;
     if (!modules) return exit(1);
 
     for (const mod of modules) {
         const file = await introspectFile(mod.abs);
 
-        const oneStepResults = {};
-        const graph = { files: new Map([[file.relPath, file]]) };
+        const oneStepResults: Record<string, Awaited<ReturnType<typeof resolveOneStep>>> = {};
+        const graph = makeSingleFileGraph(file);
         for (const decl of file.declarations) {
             oneStepResults[decl.name] = await resolveOneStep(decl, file, graph);
         }
@@ -620,8 +735,12 @@ async function runSummary(moduleArgs, { oneline }) {
     return exit(0);
 }
 
-async function runTrace(moduleArgs, traceName) {
+async function runTrace(
+    moduleArgs: string[] | null,
+    traceName: string
+): Promise<unknown> {
     const modules = await resolveModuleList(moduleArgs);
+    if (modules instanceof ExitSignal) return modules;
     if (!modules) return exit(1);
 
     const seeds = modules.map((m) => m.path);
@@ -638,8 +757,9 @@ async function runTrace(moduleArgs, traceName) {
     return exit(0);
 }
 
-async function runGraph(moduleArgs) {
+async function runGraph(moduleArgs: string[] | null): Promise<unknown> {
     const modules = await resolveModuleList(moduleArgs);
+    if (modules instanceof ExitSignal) return modules;
     if (!modules) return exit(1);
 
     const seeds = modules.map((m) => m.path);

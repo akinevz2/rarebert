@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { CLI } from '../lib/runtime/module.ts';
+import { CLI, type Args, type Positional } from '../lib/runtime/CLI.ts';
 import { exit } from '../lib/runtime/core.ts';
 
 const meta = {
@@ -10,7 +10,7 @@ const meta = {
     options: []
 };
 
-async function main(opts, positional) {
+async function main(args: Args<typeof meta>, positional: Positional<typeof meta>) {
     // fix: implementation scaffold
     console.log('fix module - must accept a project reference or a module reference');
     console.log(

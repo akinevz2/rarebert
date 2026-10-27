@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { home, rarebert } from './runtime/projects.ts';
+import { home, rarebert } from './runtime/Project.ts';
 import { store } from './runtime/core.ts';
+import type { FolderSpec } from './runtime/core.ts';
 import { stripJsonc } from './models.ts';
 
 const OPENCODE_CONFIG = path.join(home.root, 'opencode.jsonc');
@@ -40,7 +41,68 @@ const IGNORED = new Set([
     'venv'
 ]);
 
+
+/** A provider entry in the opencode config. */
+export interface ConfigProvider {
+    /** The npm package implementing the provider. */
+    npm?: string;
+    /** The provider's display name. */
+    name?: string;
+    /** Provider options (holds `baseURL`). */
+    options?: { baseURL?: string; [key: string]: unknown };
+    /** The provider's base URL (legacy top-level form). */
+    baseURL?: string;
+    /** The models this provider exposes, keyed by model id. */
+    models?: Record<string, { name?: string; [key: string]: unknown }>;
+}
+
+/** The parsed opencode config. */
+export interface OpencodeConfig {
+    /** The config schema URL. */
+    $schema?: string;
+    /** Instruction files to load. */
+    instructions?: string[];
+    /** The default model id ('provider/model'). */
+    model?: string;
+    /** The configured providers, keyed by provider name. */
+    provider?: Record<string, ConfigProvider>;
+    [key: string]: unknown;
+}
+
+/** A model offered by a provider. */
+export interface ModelDescriptor {
+    /** The model id. */
+    id: string;
+    /** The model's display name. */
+    name?: string;
+}
+
+/** A candidate project folder discovered during onboarding. */
+export interface CandidateFolder {
+    /** The folder name. */
+    name: string;
+    /** The folder path relative to the project root. */
+    rel: string;
+    /** How many module files the folder holds. */
+    fileCount: number;
+    /** The file extensions found in the folder. */
+    exts: string[];
+}
+
+/** Options accepted by `ensureAll`. */
+export interface EnsureAllOptions {
+    /** Skip every check and return true immediately. */
+    skip?: boolean;
+    /** Suppress the stderr diagnostics emitted by the guard paths. */
+    quiet?: boolean;
+}
+
 class Backend {
+    /** Path of the opencode config file. */
+    configPath: string;
+    /** Whether stderr diagnostics are suppressed (set by ensureAll). */
+    _quiet: boolean;
+
     constructor() {
         this.configPath = OPENCODE_CONFIG;
         // Set transiently by ensureAll({ quiet }) to suppress the stderr
@@ -48,7 +110,7 @@ class Backend {
         this._quiet = false;
     }
 
-    readConfig() {
+    readConfig(): OpencodeConfig | null {
         if (!fs.existsSync(this.configPath)) return null;
         try {
             // opencode.jsonc permits JSONC syntax (comments + trailing
@@ -60,7 +122,7 @@ class Backend {
         }
     }
 
-    isConfigured() {
+    isConfigured(): boolean {
         const cfg = this.readConfig();
         if (!cfg) return false;
         if (!cfg.model || typeof cfg.model !== 'string') return false;
@@ -79,7 +141,7 @@ class Backend {
      * meaning the endpoint was unreachable during onboarding and the
      * user should be re-prompted to complete model selection.
      */
-    hasPendingModels() {
+    hasPendingModels(): boolean {
         const cfg = this.readConfig();
         if (!cfg) return false;
         const providers = cfg.provider;
@@ -94,7 +156,7 @@ class Backend {
     /**
      * Extract the persisted base URL from an existing config.
      */
-    getBaseURL() {
+    getBaseURL(): string | null {
         const cfg = this.readConfig();
         if (!cfg) return null;
         const providers = cfg.provider;
@@ -104,7 +166,7 @@ class Backend {
         return provider.options?.baseURL || provider.baseURL || null;
     }
 
-    fetchModels(baseURL, timeoutMs = 3000) {
+    fetchModels(baseURL: string, timeoutMs = 3000): string[] {
         const url = baseURL.replace(/\/$/, '') + '/models';
         try {
             const result = spawnSync(
@@ -118,15 +180,27 @@ class Backend {
             if (result.status !== 0 || !result.stdout) return [];
             const parsed = JSON.parse(result.stdout);
             if (!Array.isArray(parsed)) return [];
-            return parsed.map((m) => (typeof m === 'string' ? m : m.id || m.name)).filter(Boolean);
+            return parsed
+                .map((m: any) => (typeof m === 'string' ? m : m.id || m.name))
+                .filter(Boolean) as string[];
         } catch {
             return [];
         }
     }
 
-    buildConfig({ provider, baseURL, models, defaultModelId }) {
+    buildConfig({
+        provider,
+        baseURL,
+        models,
+        defaultModelId
+    }: {
+        provider?: string;
+        baseURL: string;
+        models: ModelDescriptor[];
+        defaultModelId?: string;
+    }): OpencodeConfig {
         const providerName = provider || DEFAULT_PROVIDER;
-        const modelsObj = {};
+        const modelsObj: Record<string, { name: string }> = {};
         for (const { id, name } of models) {
             modelsObj[id] = { name: name || id };
         }
@@ -145,7 +219,7 @@ class Backend {
         };
     }
 
-    writeConfig(cfg) {
+    writeConfig(cfg: OpencodeConfig): void {
         fs.writeFileSync(this.configPath, JSON.stringify(cfg, null, 4) + '\n');
     }
 
@@ -154,7 +228,7 @@ class Backend {
      * Used when the endpoint is unreachable so the base URL is
      * persisted for retry on the next run.
      */
-    writePartialConfig(baseURL) {
+    writePartialConfig(baseURL: string): void {
         const cfg = {
             $schema: 'https://opencode.ai/config.json',
             instructions: ['AGENTS.md'],
@@ -177,7 +251,7 @@ class Backend {
      * the same key under which the opencode.jsonc config lives. Returns null
      * if unset or the store is unavailable.
      */
-    getEditorType() {
+    getEditorType(): 'terminal' | 'graphical' | null {
         try {
             return store.getEditorType(home.root);
         } catch {
@@ -189,7 +263,7 @@ class Backend {
      * Persist the editor-type preference to the SQLite store under
      * home.root so `make open` can read it without touching opencode.jsonc.
      */
-    setEditorType(editorType) {
+    setEditorType(editorType: 'terminal' | 'graphical'): void {
         try {
             store.registerProject(home.root);
             store.setEditorType(home.root, editorType);
@@ -203,7 +277,7 @@ class Backend {
      * (see ensureAll). Existing callers are unaffected: quiet defaults to
      * false, so warn() behaves exactly like console.error for them.
      */
-    warn(message) {
+    warn(message: string): void {
         if (!this._quiet) console.error(message);
     }
 
@@ -214,7 +288,7 @@ class Backend {
      * interactive onboarding flow (`make onboard` / `node index.js onboard`,
      * orchestrated in scripts/onboard.ts).
      */
-    async ensureConfig() {
+    async ensureConfig(): Promise<boolean> {
         if (this.isConfigured()) return true;
 
         // Partial config: base URL persisted but no models (endpoint was
@@ -269,7 +343,7 @@ class Backend {
      * least one file with a known module extension. Returns an array
      * of { name, rel, fileCount, exts } sorted by file count desc.
      */
-    scanCandidateFolders(root) {
+    scanCandidateFolders(root: string): CandidateFolder[] {
         if (!fs.existsSync(root)) return [];
         const top = fs
             .readdirSync(root, { withFileTypes: true })
@@ -279,7 +353,7 @@ class Backend {
             .map((e) => e.name)
             .sort();
 
-        const candidates = [];
+        const candidates: CandidateFolder[] = [];
         for (const name of top) {
             const dir = path.join(root, name);
             const files = this.scanModuleFiles(dir);
@@ -295,10 +369,10 @@ class Backend {
      * Recursively scan a directory for files with known module
      * extensions, up to a depth of 2. Returns an array of file paths.
      */
-    scanModuleFiles(dir, depth = 0) {
+    scanModuleFiles(dir: string, depth = 0): string[] {
         if (depth > 2 || !fs.existsSync(dir)) return [];
         const entries = fs.readdirSync(dir, { withFileTypes: true });
-        const files = [];
+        const files: string[] = [];
         for (const e of entries) {
             if (e.isFile()) {
                 const ext = path.extname(e.name).toLowerCase();
@@ -315,8 +389,9 @@ class Backend {
      * folders, marking it onboarded. No prompting — the interactive folder
      * selection lives in scripts/onboard.ts (projectOnboard).
      */
-    registerFolders(cwd, folders) {
+    registerFolders(cwd: string, folders: FolderSpec[]): void {
         const project = store.registerProject(cwd);
+        if (!project) return;
         store.setFolders(project.id, folders);
         store.markOnboarded(cwd);
     }
@@ -344,7 +419,7 @@ class Backend {
      * The Dispatcher (index.js) is the primary caller. Called with no
      * arguments the behavior is identical to the pre-options version.
      */
-    async ensureAll({ skip = false, quiet = false } = {}) {
+    async ensureAll({ skip = false, quiet = false }: EnsureAllOptions = {}): Promise<boolean> {
         if (skip) return true;
         this._quiet = quiet;
         try {

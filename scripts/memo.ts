@@ -2,14 +2,17 @@
 
 import {
     CLI,
-    listAllModules,
-    resolveModuleSet,
-    cli,
-    Interface,
-    resolveModule
-} from '../lib/runtime/module.ts';
+    defineMeta,
+    type Args,
+    type Positional
+} from '../lib/runtime/CLI.ts';
+import { listAllModules, resolveModuleSet, resolveModule, type ResolvedModule } from '../lib/runtime/discovery.ts';
+import { Interface } from '../lib/runtime/TUI.ts';
+// Terminal helpers — free functions (the legacy `cli` singleton was deleted).
+import { isInteractive } from '../lib/runtime/Module.ts';
 import { exit, AbortError } from '../lib/runtime/core.ts';
 import { BOLD, RESET } from '../lib/supports/symbols.ts';
+import type { Module } from '../lib/runtime/Module.ts';
 import {
     memo,
     groupArgs,
@@ -22,24 +25,27 @@ import {
     cmdPrintAll,
     cmdPrintSet,
     parseIndices,
-    applyDrop
+    applyDrop,
+    renderMemoEntry,
+    type MemoContent
 } from '../lib/memo.ts';
 
-const META = {
+export const meta = defineMeta({
     name: 'memo',
     description:
-        'Print or manage memos. Default (no flags): print memos — all, or scoped to file args. Mutating flags: --add, --drop, --forget, --commit, --recall, --log. --oldest prints the most-forgotten memo (DAG order); --forget --oldest drops exactly that one.',
-    usage: 'node index.js memo [files...] [--oldest|--add <path> <memo>...|--drop <path> [indices]|--forget [--oldest|<path>...]|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
+        'Print or manage memos. Default (no flags): print memos as a DAG — all, or scoped to file args. Mutating flags: --add, --drop, --forget, --commit, --recall, --log. --oldest prints the most-forgotten memo (DAG order); --forget --oldest drops exactly that one.',
+    usage:
+        'rarebert memo [files...] [--oldest|--add <path> <memo>...|--drop <path> [indices]|--forget [--oldest|<path>...]|--commit [--yes] [--fresh]|--log [files...]|--recall <ref> [files...]]',
     allowUnknownOption: true,
     options: [
         { flag: '--yes', description: 'Skip confirmation for --commit' },
         { flag: '--fresh', description: 'Clear working sidecars after --commit' },
         { flag: '--verbose', description: 'Verbose output' }
     ]
-};
+});
 
 // ---------------------------------------------------------------------------
-// Action dispatch table — data-driven, deterministic.
+// Action dispatch table — data-driven, deterministic, typed.
 //
 // The table order IS the dispatch priority: the first entry whose flag is
 // present runs, exactly one action per invocation. Each entry carries its
@@ -47,7 +53,21 @@ const META = {
 // a flat loop with no per-action branches.
 // ---------------------------------------------------------------------------
 
-const ACTIONS = [
+interface DispatchCtx {
+    opts: Args<typeof meta>;
+    groups: ReturnType<typeof groupArgs>;
+    flags: Set<string>;
+    nonFlag: string[];
+    modules: Module[];
+}
+
+interface ActionEntry {
+    flag: string;
+    clearBuffer?: boolean;
+    run: (ctx: DispatchCtx) => unknown;
+}
+
+const ACTIONS: ActionEntry[] = [
     {
         flag: '--add',
         run: ({ groups, modules }) => cmdAdd(groups, modules)
@@ -90,11 +110,11 @@ const ACTIONS = [
 // memo.loadMemos, parseIndices, applyDrop).
 // ---------------------------------------------------------------------------
 
-async function runCommit(opts) {
+async function runCommit(opts: Args<typeof meta>): Promise<void> {
     if (!opts.yes) {
         // The memo CLI can run non-interactively (make flows, CI) — guard
         // before constructing the Interface.
-        if (!cli.isInteractive()) {
+        if (!isInteractive()) {
             throw new AbortError(
                 'memo --commit: confirmation required; pass --yes for non-interactive runs.',
                 1
@@ -112,7 +132,11 @@ async function runCommit(opts) {
     }
 }
 
-async function runDrop(moduleArg, indicesArg, modules) {
+async function runDrop(
+    moduleArg: string | undefined,
+    indicesArg: string | undefined,
+    modules: Module[]
+): Promise<void> {
     if (!moduleArg) {
         throw new AbortError("A memo'd module must be specified for --drop.", 1);
     }
@@ -123,7 +147,7 @@ async function runDrop(moduleArg, indicesArg, modules) {
         throw new AbortError(`Module not found: ${moduleArg}`, 1);
     }
 
-    const allMemos = memo.loadMemos(resolved.rel).flatMap((m) => m.content);
+    const allMemos: MemoContent[] = memo.loadMemos(resolved.rel).flatMap((m) => m.content);
     if (!allMemos.length) {
         console.log('No memos found for this module.');
         return;
@@ -148,7 +172,7 @@ async function runDrop(moduleArg, indicesArg, modules) {
         return;
     }
 
-    let selected;
+    let selected: MemoContent[];
     // Interactive path only — the non-interactive branch above has already
     // returned, so Interface construction is safe here.
     const iface = Interface.createInterface('memo');
@@ -159,7 +183,7 @@ async function runDrop(moduleArg, indicesArg, modules) {
 
         console.log(`\n${BOLD}Memos to drop from ${resolved.rel}:${RESET}`);
         for (const [i, content] of selected.entries()) {
-            console.log(`  ${indicesArg.split(',')[i]?.trim() || i + 1}. ${content}`);
+            console.log(`  ${indicesArg.split(',')[i]?.trim() || i + 1}. ${renderMemoEntry(content)}`);
         }
         console.log();
         const confirmed = await iface.select('Proceed?', [
@@ -181,7 +205,7 @@ async function runDrop(moduleArg, indicesArg, modules) {
     applyDrop(resolved, selected);
 }
 
-async function multiSelectMemos(resolved) {
+async function multiSelectMemos(resolved: ResolvedModule): Promise<MemoContent[]> {
     const memos = memo.loadMemos(resolved.rel).flatMap((m) => m.content);
     if (!memos.length) return [];
 
@@ -196,19 +220,23 @@ async function multiSelectMemos(resolved) {
         }))
     });
     try {
-        const result = await prompt.run();
-        return result.map((idx) => memos[parseInt(idx, 10)]);
+        const result = (await prompt.run()) as Array<string | number>;
+        return result.map((idx) => memos[parseInt(String(idx), 10)]);
     } catch {
         throw new AbortError();
     }
 }
 
-async function main(opts, positional) {
+export async function main(opts: Args<typeof meta>, positional: Positional<typeof meta>) {
+    // Warm the language parsers before any traversal — the DAG print,
+    // drop resolution and flush cascade all need real import edges.
+    await memo.ensureLanguages();
+
     const groups = groupArgs(positional);
     const flags = new Set(positional.filter((a) => a.startsWith('-') && !/^-?\d+$/.test(a)));
     const nonFlag = positional.filter((a) => (!a.startsWith('-') || /^-?\d+$/.test(a)) && a);
     const modules = listAllModules();
-    const ctx = { opts, groups, flags, nonFlag, modules };
+    const ctx: DispatchCtx = { opts, groups, flags, nonFlag, modules };
 
     // Deterministic dispatch: first matching table entry wins.
     for (const action of ACTIONS) {
@@ -234,4 +262,4 @@ async function main(opts, positional) {
     return exit(0);
 }
 
-export default new CLI('memo.ts', main, META).supportsDirectRunning(import.meta.url);
+export default new CLI('memo.ts', main, meta);

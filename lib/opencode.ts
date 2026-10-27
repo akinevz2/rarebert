@@ -3,30 +3,35 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
-import { home } from './runtime/projects.ts';
+import { home } from './runtime/Project.ts';
 import { exit } from './runtime/core.ts';
 
 const BINARY_REL = 'node_modules/opencode-ai/bin/opencode.exe';
 const BINARY_PATH = path.join(home.root, BINARY_REL);
 
 class Opencode {
+    /** The resolved binary path, cached after the first successful lookup. */
+    cached: string | null;
+    /** Whether an install is currently running. */
+    installing: boolean;
+
     constructor() {
         this.cached = null;
         this.installing = false;
     }
 
-    bundledWorks() {
+    bundledWorks(): boolean {
         if (!fs.existsSync(BINARY_PATH)) return false;
         const result = spawnSync(BINARY_PATH, ['--version'], { stdio: 'ignore' });
         return result.status === 0;
     }
 
-    systemWorks() {
+    systemWorks(): boolean {
         const result = spawnSync('opencode', ['--version'], { stdio: 'ignore' });
         return result.status === 0;
     }
 
-    installBundled() {
+    installBundled(): boolean {
         if (this.installing) return false;
         this.installing = true;
         try {
@@ -49,13 +54,14 @@ class Opencode {
         }
     }
 
-    resolve() {
+    resolve(): string {
         if (this.cached) return this.cached;
         if (this.bundledWorks()) return (this.cached = BINARY_PATH);
         if (this.installBundled() && this.bundledWorks()) return (this.cached = BINARY_PATH);
         if (this.systemWorks()) return (this.cached = 'opencode');
         console.error('opencode: no working binary found after install attempt');
-        return exit('opencode: no working binary found after install attempt');
+        exit('opencode: no working binary found after install attempt');
+        return 'opencode';
     }
 }
 

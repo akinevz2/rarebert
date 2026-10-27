@@ -1,8 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { rarebert } from './runtime/projects.ts';
-import { listAllModules, cli, resolveModule } from './runtime/module.ts';
+import { rarebert } from './runtime/Project.ts';
+import { listAllModules, resolveModule } from './runtime/discovery.ts';
+import type { Module } from './runtime/Module.ts';
+import { Script } from './runtime/Script.ts';
+import { Languages } from './runtime/Language.ts';
+import type { Language } from './runtime/Language.ts';
+import { parseModuleImports, buildImportGraph, computeChainDepths, stronglyConnectedComponents, compareDagGroups } from './depgraph.ts';
+// Terminal/abort helpers — free functions from the runtime Module module
+// (the legacy `cli` singleton was deleted).
+import { onAbort } from './runtime/Module.ts';
 import { git } from './git.ts';
 import { YELLOW_TICK, RED_BOLD, DIM, RESET, BOLD, BOLD_DIM } from './supports/symbols.ts';
 
@@ -18,8 +26,37 @@ const SUFFIX = '.';
  *  content      - ordered list of individual memo notes (strings)
  *  related      - relative paths of memoised imports, oldest memo first
  */
+/** Constructor payload for a Memo. */
+export interface MemoInit {
+    /** Filename of the module this memo is attached to. */
+    owner: string;
+    /** Filename of the sidecar storing this memo. */
+    name: string;
+    /** Timestamp of the most recent write to the sidecar. */
+    lastModified?: number;
+    /** Project-relative path of the owner and sidecar directory. */
+    path?: string;
+    /** Ordered list of individual memo notes (strings and/or rich shape entries). */
+    content?: MemoContent[];
+    /** Relative paths of memoised imports, oldest memo first. */
+    related?: string[];
+}
+
 class Memo {
-    constructor({ owner, name, lastModified = 0, path: relPath = '', content = [], related = [] }) {
+    /** Filename of the module this memo is attached to. */
+    owner: string;
+    /** Filename of the sidecar storing this memo. */
+    name: string;
+    /** Timestamp of the most recent write to the sidecar. */
+    lastModified: number;
+    /** Project-relative path of the owner and sidecar directory. */
+    path: string;
+    /** Ordered list of individual memo notes (strings and/or rich shape entries). */
+    content: MemoContent[];
+    /** Relative paths of memoised imports, oldest memo first. */
+    related: string[];
+
+    constructor({ owner, name, lastModified = 0, path: relPath = '', content = [], related = [] }: MemoInit) {
         this.owner = owner;
         this.name = name;
         this.lastModified = lastModified;
@@ -29,23 +66,321 @@ class Memo {
     }
 }
 
+/** One memo entry in the in-memory buffer. */
+export interface BufferEntry {
+    /** The module (or sidecar) name. */
+    name: string;
+    /** The memo text or a rich-memo shape entry. */
+    content: MemoContent;
+    /** Project-relative path of the owning module. */
+    modulePath: string;
+    /** Timestamp of the memo. */
+    lastModified?: number;
+    /** Storage-order tiebreaker. */
+    idx?: number;
+}
+
+/** A memo entry with its timestamp, as read from a sidecar. */
+export interface TimestampedEntry {
+    /** The memo text. */
+    content: string;
+    /** Timestamp of the memo. */
+    lastModified: number;
+    /** Storage-order index. */
+    idx: number;
+}
+
+/** A memoised module as returned by `loadAllMemos`. */
+export interface AllMemoEntry {
+    /** The owning module. */
+    module: Module;
+    /** The memo texts. */
+    memos: string[];
+    /** Timestamp of the sidecar. */
+    lastModified: number;
+}
+
+/** A related (memoised) import in the DAG view. */
+export interface RelatedEntry {
+    /** Project-relative path of the import. */
+    path: string;
+    /** True for a genuine back-edge. */
+    cycle: boolean;
+}
+
+/** One node of the memo DAG. */
+export interface MemoGroup {
+    /** The owning module's name. */
+    owner: string;
+    /** Project-relative path of the owning module. */
+    path: string;
+    /** The memo texts (strings and/or rich shape entries). */
+    memos: MemoContent[];
+    /** Timestamp of the sidecar. */
+    lastModified: number;
+    /** Memoised imports (for display). */
+    related: RelatedEntry[];
+    /** Number of genuine back-edges at this node. */
+    cycles: number;
+    /**
+     * Reference-chain depth: how many layers of modules transitively
+     * import this one (longest importer chain; top-level modules = 0).
+     * The PRIMARY key of the DAG print ordering (deepest first).
+     */
+    depth: number;
+}
+
+/** The memo DAG: its groups plus cycle metadata. */
+export interface MemoDag extends Array<MemoGroup> {
+    /** Total number of cycles found. */
+    totalCycles: number;
+    /** Cycle descriptions. */
+    cycles: Array<{ path: string[] }>;
+}
+
+// ---------------------------------------------------------------------------
+// Rich memos — pre-definable, reusable memo shapes.
+//
+// A sidecar's `content` array holds BOTH human read-writeable string
+// memos AND structured shape entries, interleaved. A shape entry is
+// `{ shape: <id>, ...fields }` authored compactly as
+// `@<id>(<arg>, <arg>, ...)` — e.g. `@see-line(42, race in flush
+// ordering)`. Shapes are data: the registry maps an id to its ordered
+// fields and a renderer, so scaffolding a new shape extends every
+// consumer (DAG print, --oldest, snapshots) at once — the same
+// philosophy as the language-support framework.
+//
+// Backward compatible: plain strings pass through untouched; an
+// `@<unknown-shape>(...)` or arity/type-mismatched authoring keeps the
+// authored text verbatim. (Per docs/KNOWN_ISSUES.md §0b: per-shape
+// aging/expiry rules are pinned for later.)
+// ---------------------------------------------------------------------------
+
+/** Field type of a memo shape; positional args bind in order. */
+export type MemoShapeFieldType = 'int' | 'float' | 'string';
+
+export interface MemoShapeField {
+    name: string;
+    type: MemoShapeFieldType;
+    description?: string;
+}
+
+/** A structured shape entry as stored in a sidecar content array. */
+export interface ShapeEntry {
+    shape: string;
+    [field: string]: unknown;
+}
+
+/**
+ * One memo content entry: a human read-writeable string memo or a rich
+ * shape entry. The consumer-side type for anything that reads/writes a
+ * sidecar `content` array.
+ */
+export type MemoContent = string | ShapeEntry;
+
+export interface MemoShape {
+    id: string;
+    description: string;
+    fields: readonly MemoShapeField[];
+    render: (entry: ShapeEntry) => string;
+}
+
+/** The reusable memo-shape registry. Data, not behaviour: extend by adding entries. */
+export const memoShapes: Record<string, MemoShape> = {
+    'see-line': {
+        id: 'see-line',
+        description: 'Anchor an issue to a source line: @see-line(<line>, <issue>)',
+        fields: [
+            { name: 'line', type: 'int', description: '1-indexed source line' },
+            { name: 'issue', type: 'string', description: 'the issue — consumes the remaining args verbatim' }
+        ],
+        render: (e) => `line ${e.line}: ${e.issue}`
+    },
+    smell: {
+        id: 'smell',
+        description: 'Anchor a code smell to a source line: @smell(<line>, <smell>)',
+        fields: [
+            { name: 'line', type: 'int', description: '1-indexed source line' },
+            { name: 'smell', type: 'string', description: 'the smell — consumes the remaining args verbatim' }
+        ],
+        render: (e) => `smell @ line ${e.line}: ${e.smell}`
+    }
+};
+
+/**
+ * Split a shape's argument list on unquoted commas; double quotes protect
+ * embedded commas in text fields.
+ */
+function splitShapeArgs(s: string): string[] {
+    const out: string[] = [];
+    let cur = '';
+    let quoted = false;
+    for (const ch of s) {
+        if (ch === '"') {
+            quoted = !quoted;
+            continue;
+        }
+        if (ch === ',' && !quoted) {
+            out.push(cur.trim());
+            cur = '';
+            continue;
+        }
+        cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+}
+
+/**
+ * Author a memo entry. `@<shape>(args)` becomes a ShapeEntry when the
+ * shape is known and the args bind cleanly; everything else (plain
+ * strings, unknown shapes, mismatched args) is kept verbatim.
+ */
+export function parseMemoContent(raw: string): MemoContent {
+    const m = /^@([\w-]+)\s*\((.*)\)\s*$/.exec(raw.trim());
+    if (!m) return raw;
+    const shape = memoShapes[m[1]];
+    if (!shape) return raw;
+    const args = splitShapeArgs(m[2]);
+    const entry: ShapeEntry = { shape: shape.id };
+    let argIdx = 0;
+    for (let f = 0; f < shape.fields.length; f++) {
+        const field = shape.fields[f];
+        // A final string field consumes the remaining args verbatim (the
+        // comma separators are re-joined; quoted commas survive inside).
+        if (field.type === 'string' && f === shape.fields.length - 1) {
+            entry[field.name] = args.slice(argIdx).join(', ').trim();
+            argIdx = args.length;
+            break;
+        }
+        const value = args[argIdx++];
+        if (value === undefined) return raw;
+        if (field.type === 'int') {
+            const n = parseInt(value, 10);
+            if (isNaN(n)) return raw;
+            entry[field.name] = n;
+        } else if (field.type === 'float') {
+            const n = parseFloat(value);
+            if (isNaN(n)) return raw;
+            entry[field.name] = n;
+        } else {
+            entry[field.name] = value;
+        }
+    }
+    if (argIdx < args.length) return raw;
+    return entry;
+}
+
+/** Render any memo entry for display: shape → its formatter, object → JSON, string → itself. */
+export function renderMemoEntry(entry: unknown): string {
+    if (typeof entry === 'string') return entry;
+    if (entry && typeof entry === 'object') {
+        const e = entry as ShapeEntry;
+        if (typeof e.shape === 'string') {
+            const shape = memoShapes[e.shape];
+            if (shape) {
+                try {
+                    return shape.render(e);
+                } catch {
+                    /* fall through to JSON */
+                }
+            }
+        }
+        return JSON.stringify(e);
+    }
+    return String(entry);
+}
+
+/**
+ * Canonical dedup key for a content entry: objects get a stable JSON form
+ * (sorted keys), strings pass through. Two authorings of the same shape
+ * with the same fields are one memo.
+ */
+export function memoEntryKey(entry: unknown): string {
+    if (typeof entry === 'string') return entry;
+    if (entry && typeof entry === 'object') {
+        const e = entry as Record<string, unknown>;
+        const sorted: Record<string, unknown> = {};
+        for (const k of Object.keys(e).sort()) sorted[k] = e[k];
+        return JSON.stringify(sorted);
+    }
+    return String(entry);
+}
+
 /**
  * In-memory buffer + persistence manager for the cascading memo subsystem.
  * Previously named `Memo`; renamed so `Memo` can describe a loaded sidecar.
  */
 class Memory {
+    /** The in-memory memo buffer. */
+    buffer: BufferEntry[];
+    /** Whether the buffer has already been flushed. */
+    flushed: boolean;
+    /** Cached module list. */
+    modulesCache: Module[] | null;
+    /** The running script's whole ref (set by loadForRun). */
+    runScript: Script | null;
+    /** Per-extension Language cache, warmed by ensureLanguages(). */
+    private langCache: Map<string, Language | null>;
+    /** The in-flight warm-up promise (ensureLanguages is idempotent). */
+    private langWarm: Promise<void> | null;
+    /** Extensions already warned about (one warning per missing support). */
+    private warnedExt: Set<string>;
+
     constructor() {
         this.buffer = [];
         this.flushed = false;
         this.modulesCache = null;
+        this.runScript = null;
+        this.langCache = new Map();
+        this.langWarm = null;
+        this.warnedExt = new Set();
     }
 
-    modules() {
+    modules(): Module[] {
         if (!this.modulesCache) this.modulesCache = listAllModules();
         return this.modulesCache;
     }
 
-    memoFilePathFor(moduleRef) {
+    /**
+     * Preload the Language parser for every module extension in the
+     * project. MUST be awaited before any synchronous traversal
+     * (_allImports / walkAll / flush) so the import graph is built by the
+     * language-variadic extractors instead of a regex guess. Non-fatal:
+     * an extension with no support module caches null and its modules
+     * simply contribute no import edges.
+     */
+    async ensureLanguages(): Promise<void> {
+        if (!this.langWarm) this.langWarm = this._warmLanguages();
+        await this.langWarm;
+    }
+
+    private async _warmLanguages(): Promise<void> {
+        const exts = new Set(this.modules().map((m) => path.extname(m.abs).toLowerCase()));
+        await Promise.all(
+            [...exts].map(async (ext) => {
+                if (this.langCache.has(ext)) return;
+                try {
+                    this.langCache.set(ext, await Languages.loadLanguage(ext));
+                } catch {
+                    this.langCache.set(ext, null);
+                }
+            })
+        );
+    }
+
+    /** The cached Language for a file's extension (null when absent/unwarmed). */
+    private languageFor(absPath: string): Language | null {
+        return this.langCache.get(path.extname(absPath).toLowerCase()) ?? null;
+    }
+
+    /** Load a module's Memo sidecar value object (null when none). */
+    loadMemoFor(modPath: string): Memo | null {
+        const own = this.loadMemos(modPath);
+        return own.length > 0 ? own[0] : null;
+    }
+
+    memoFilePathFor(moduleRef: string): string | null {
         if (path.isAbsolute(moduleRef)) {
             const rel = rarebert.relPath(moduleRef);
             const mod = this.modules().find((m) => m.path === rel);
@@ -59,7 +394,7 @@ class Memory {
         return mod ? mod.abs + SUFFIX : null;
     }
 
-    remember(moduleRef, content) {
+    remember(moduleRef: string, content: string): void {
         const file = this.memoFilePathFor(moduleRef);
         // Resolve moduleRef to a relative path for consistent buffer entries.
         // moduleRef may be a name, a relative path, or an absolute path.
@@ -71,7 +406,11 @@ class Memory {
         const name = mod?.name ?? path.basename(relPath, path.extname(relPath));
         const modulePath = mod?.path ?? relPath;
 
-        if (this.buffer.some((m) => m.name === name && m.content === content)) return;
+        // Rich memos: @shape(...) authoring becomes a structured entry at
+        // the single write choke point; everything else stays a string.
+        const entry = parseMemoContent(content);
+
+        if (this.buffer.some((m) => m.name === name && memoEntryKey(m.content) === memoEntryKey(entry))) return;
 
         // Only surface the memo in the flush trail when it belongs to the
         // running module or one of its imports. A memo added to an
@@ -81,7 +420,7 @@ class Memory {
         // trail, and in particular must not outrank the running module's
         // own memos (which it would, since remember() stamps Date.now()).
         if (this._isTrailRelevant(modulePath)) {
-            this.buffer.push({ name, content, modulePath, lastModified: Date.now() });
+            this.buffer.push({ name, content: entry, modulePath, lastModified: Date.now() });
         }
 
         if (!file) {
@@ -90,21 +429,24 @@ class Memory {
         }
 
         const existing = this.loadMemos(moduleRef).flatMap((m) => m.content);
-        const contentSet = new Set([...existing, content]);
+        // Canonical dedup: same-shape authorings collapse; key order is
+        // irrelevant for structured entries.
+        const seen = new Map(existing.map((e) => [memoEntryKey(e), e]));
+        if (!seen.has(memoEntryKey(entry))) seen.set(memoEntryKey(entry), entry);
         fs.writeFileSync(
             file,
-            JSON.stringify({ name, content: [...contentSet], lastModified: Date.now() }, null, 2) +
+            JSON.stringify({ name, content: [...seen.values()], lastModified: Date.now() }, null, 2) +
             '\n'
         );
     }
 
-    forgetAll() {
+    forgetAll(): void {
         for (const m of this.modules()) {
             this.forgetByPath(m.path);
         }
     }
 
-    forgetByPath(moduleRelPath) {
+    forgetByPath(moduleRelPath: string): void {
         const file = rarebert.absPath(moduleRelPath) + SUFFIX;
         try {
             fs.unlinkSync(file);
@@ -118,15 +460,20 @@ class Memory {
 
     /**
      * Find the "most-forgotten" memo: the one that would be printed first
-     * by the DAG print — the most deeply included module in the walk order
-     * (groups[0]; the DFS is post-order, so dependencies are emitted
-     * before dependents) and, within it, the oldest memo (first in the
-     * sidecar's content order — entries share the sidecar's lastModified,
-     * so insertion order is the age order).
+     * by the DAG print — the first row of the spec ordering (reference-
+     * chain depth deepest-first, then memo age oldest-first) and, within
+     * it, the oldest memo (first in the sidecar's content order — entries
+     * share the sidecar's lastModified, so insertion order is the age
+     * order).
      * Returns { rel, module, content, lastModified } or null.
      */
-    findOldestMemo() {
-        const groups = this.walkAll();
+    findOldestMemo(): {
+        rel: string;
+        module: Module | null;
+        content: MemoContent;
+        lastModified: number;
+    } | null {
+        const groups = [...this.walkAll()].sort(compareDagGroups);
         if (groups.length === 0) return null;
         const first = groups[0];
         const content = first.memos[0];
@@ -141,7 +488,7 @@ class Memory {
     }
 
     /** Drop the single most-forgotten memo (see findOldestMemo). */
-    forgetOldest() {
+    forgetOldest(): ReturnType<Memory['findOldestMemo']> {
         const oldest = this.findOldestMemo();
         if (!oldest) return null;
         const resolved = {
@@ -154,8 +501,7 @@ class Memory {
         applyDrop(resolved, [oldest.content]);
         return oldest;
     }
-
-    loadMemos(moduleRef) {
+    loadMemos(moduleRef: string): Memo[] {
         const inputRel = path.isAbsolute(moduleRef) ? rarebert.relPath(moduleRef) : moduleRef;
         const mod =
             this.modules().find(
@@ -168,7 +514,7 @@ class Memory {
         const file = this.memoFilePathFor(moduleRef);
         let lastModified = 0;
         try {
-            const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+            const data = JSON.parse(fs.readFileSync(file!, 'utf-8'));
             lastModified = typeof data.lastModified === 'number' ? data.lastModified : 0;
         } catch {
             /* missing sidecar */
@@ -186,7 +532,7 @@ class Memory {
         ];
     }
 
-    _relatedMemos(mod) {
+    _relatedMemos(mod: Module | null | undefined): string[] {
         if (!mod) return [];
         const related = [];
         for (const rel of this._allImports(mod)) {
@@ -198,7 +544,7 @@ class Memory {
                 /* no memo sidecar for this import */
             }
         }
-        const oldestToNewestByKey = (key) => (a, b) => {
+        const oldestToNewestByKey = (key: string) => (a: any, b: any): number => {
             if (!(key in a && key in b))
                 throw new Error(`can't sort {${a}<>${b}}, missing comparable field ${key}`);
             return a[key] - b[key];
@@ -220,18 +566,29 @@ class Memory {
 
     /**
      * Return ALL import paths (relative) for a module, memoised or not.
-     * Used by walkAll() to traverse the full import graph so transitive
-     * dependencies through non-memoised intermediaries are discovered.
+     * Parsed through the module extension's Language support (comment-safe,
+     * structured) — never regex-guessed. Used by walkAll() to traverse the
+     * full import graph so transitive dependencies through non-memoised
+     * intermediaries are discovered. Requires ensureLanguages() to have
+     * warmed the cache; unwarmed/unsupported extensions yield no edges.
      */
-    _allImports(mod) {
+    _allImports(mod: { abs: string } | null | undefined): string[] {
         if (!mod) return [];
-        const imports = parseImports(mod.abs);
-        const rels = [];
-        for (const libPath of imports) {
-            const rel = path.isAbsolute(libPath) ? rarebert.relPath(libPath) : libPath;
-            rels.push(rel);
+        const ext = path.extname(mod.abs).toLowerCase();
+        const lang = this.languageFor(mod.abs);
+        if (!lang) {
+            // Warn only for extensions that SHOULD have support (a lang*.js
+            // module exists but failed to load). Extensions with no support
+            // module at all (.md, .json) are silently edge-less by design.
+            if (Languages.isSupported(ext) && !this.warnedExt.has(ext)) {
+                this.warnedExt.add(ext);
+                console.error(
+                    `memo: no language support loaded for ${ext} — import edges unavailable (call ensureLanguages() first)`
+                );
+            }
+            return [];
         }
-        return rels;
+        return parseModuleImports(mod.abs, lang).map((absSource) => rarebert.relPath(absSource));
     }
 
     /**
@@ -242,15 +599,12 @@ class Memory {
      * kept out of the trail so it can't outrank the running module's
      * own memos.
      */
-    _isTrailRelevant(modulePath) {
-        if (!this.runScriptName) return true; // no run context: keep legacy behaviour
+    _isTrailRelevant(modulePath: string): boolean {
+        if (!this.runScript) return true; // no run context: keep legacy behaviour
         const byPath = new Map(this.modules().map((m) => [m.path, m]));
         const running =
-            byPath.get(`scripts/${this.runScriptName}.ts`) ||
-            byPath.get(this.runScriptName) ||
-            this.modules().find(
-                (m) => m.path.endsWith(this.runScriptName) || m.name === this.runScriptName
-            );
+            byPath.get(this.runScript.path) ||
+            this.modules().find((m) => m.name === this.runScript!.name);
         if (!running) return true;
         if (running.path === modulePath) return true;
 
@@ -259,6 +613,7 @@ class Memory {
         const queue = [running.path];
         while (queue.length) {
             const cur = queue.shift();
+            if (cur === undefined) continue;
             if (seen.has(cur)) continue;
             seen.add(cur);
             if (cur === modulePath) return true;
@@ -268,32 +623,34 @@ class Memory {
         return false;
     }
 
-    loadMemosWithTimestamps(moduleRef) {
+    loadMemosWithTimestamps(moduleRef: string): TimestampedEntry[] {
         const file = this.memoFilePathFor(moduleRef);
         if (!file) return [];
         try {
             const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
-            const entries = (data.content || []).map((c, i) => ({
-                content: c,
-                lastModified:
-                    typeof data.lastModified === 'number'
-                        ? data.lastModified
-                        : typeof c === 'object' && c !== null
-                            ? c.lastModified || 0
-                            : 0,
-                idx: i
-            }));
+            const entries: TimestampedEntry[] = (data.content || []).map(
+                (c: any, i: number) => ({
+                    content: c,
+                    lastModified:
+                        typeof data.lastModified === 'number'
+                            ? data.lastModified
+                            : typeof c === 'object' && c !== null
+                                ? c.lastModified || 0
+                                : 0,
+                    idx: i
+                })
+            );
             return entries;
         } catch {
             return [];
         }
     }
 
-    loadAllMemos() {
+    loadAllMemos(): AllMemoEntry[] {
         const entries = [];
         for (const m of this.modules()) {
             const file = m.abs + SUFFIX;
-            let memos = [];
+            let memos: string[] = [];
             let lastModified = 0;
             try {
                 const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -308,21 +665,27 @@ class Memory {
         return entries;
     }
 
-    loadMemosByPath(modulePath) {
+    loadMemosByPath(modulePath: string): {
+        name: string;
+        memos: TimestampedEntry[];
+        modulePath: string;
+    } {
         const rel = path.isAbsolute(modulePath) ? rarebert.relPath(modulePath) : modulePath;
         const file = rarebert.absPath(rel) + SUFFIX;
         try {
             const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
-            const entries = (data.content || []).map((c, i) => ({
-                content: c,
-                lastModified:
-                    typeof data.lastModified === 'number'
-                        ? data.lastModified
-                        : typeof c === 'object' && c !== null
-                            ? c.lastModified || 0
-                            : 0,
-                idx: i
-            }));
+            const entries: TimestampedEntry[] = (data.content || []).map(
+                (c: any, i: number) => ({
+                    content: c,
+                    lastModified:
+                        typeof data.lastModified === 'number'
+                            ? data.lastModified
+                            : typeof c === 'object' && c !== null
+                                ? c.lastModified || 0
+                                : 0,
+                    idx: i
+                })
+            );
             entries.sort((a, b) => a.lastModified - b.lastModified);
             return {
                 name: data.name || path.basename(rel, path.extname(rel)),
@@ -334,9 +697,9 @@ class Memory {
         }
     }
 
-    recallImports(callerRef) {
+    recallImports(callerRef: string): BufferEntry[] {
         const callerPath = callerRef.startsWith('file://') ? fileURLToPath(callerRef) : callerRef;
-        const imports = parseImports(callerPath);
+        const imports = this._allImports({ abs: callerPath });
         const collected = [];
         for (const libPath of imports) {
             const { name: libName, memos, modulePath: relPath } = this.loadMemosByPath(libPath);
@@ -360,24 +723,27 @@ class Memory {
         return collected;
     }
 
-    loadForRun(scriptPath, scriptName) {
-        this.runScriptName = scriptName;
+    async loadForRun(script: Script): Promise<void> {
+        this.runScript = script;
+        // Warm the language parsers first — recallImports' transitive
+        // cascade and flush()'s depth ordering both need real import edges.
+        await this.ensureLanguages();
         // If the running script has no memos of its own, don't load
         // import memos or install flush handlers — the cascading buffer
         // would only print dependency memos, which is confusing when
         // the command's own output already covered them.
-        const ownMemos = this.loadMemosWithTimestamps(scriptName);
+        const ownMemos = this.loadMemosWithTimestamps(script.name);
         if (ownMemos.length === 0) return;
 
-        this.recallImports(scriptPath);
+        this.recallImports(script.abs);
         const mod =
-            this.modules().find((m) => m.path === scriptPath) ||
-            this.modules().find((m) => m.name === scriptName);
-        const modulePath = mod?.path ?? scriptPath;
+            this.modules().find((m) => m.path === script.path) ||
+            this.modules().find((m) => m.name === script.name);
+        const modulePath = mod?.path ?? script.path;
         for (const entry of ownMemos) {
-            if (!this.buffer.some((m) => m.name === scriptName && m.content === entry.content)) {
+            if (!this.buffer.some((m) => m.name === script.name && m.content === entry.content)) {
                 this.buffer.push({
-                    name: scriptName,
+                    name: script.name,
                     content: entry.content,
                     modulePath: modulePath || '',
                     lastModified: entry.lastModified,
@@ -388,67 +754,52 @@ class Memory {
         this.installFlushHandlers();
     }
 
-    flush() {
+    flush(): void {
         if (this.flushed || this.buffer.length === 0) return;
         this.flushed = true;
 
-        // Compute dependency depth for each buffer entry so that
-        // dependencies print before dependents (topological order).
-        // Depth = longest path from a leaf (no memoised imports) to this node.
+        // Spec ordering (the shared comparator): reference-chain depth
+        // deepest-first, then memo age oldest-first — dependencies print
+        // before dependents, and the least-referenced (depth 0) entries
+        // land last. Depths come from the shared depgraph primitive over
+        // the full module graph (importer chains above each node).
         const allModules = this.modules();
-        const byPath = new Map(allModules.map((m) => [m.path, m]));
-        const depthCache = new Map();
-        const computing = new Set();
-
-        const depthOf = (modPath) => {
-            if (depthCache.has(modPath)) return depthCache.get(modPath);
-            if (computing.has(modPath)) return 0; // cycle guard
-            const mod = byPath.get(modPath);
-            if (!mod) {
-                depthCache.set(modPath, 0);
-                return 0;
+        const importersOf = new Map<string, string[]>(allModules.map((m) => [m.path, []]));
+        for (const m of allModules) {
+            for (const rel of this._allImports(m)) {
+                importersOf.get(rel)?.push(m.path);
             }
-            computing.add(modPath);
-            const imports = this._allImports(mod);
-            let maxChildDepth = 0;
-            for (const imp of imports) {
-                const d = depthOf(imp);
-                if (d > maxChildDepth) maxChildDepth = d;
-            }
-            computing.delete(modPath);
-            const depth = maxChildDepth + 1;
-            depthCache.set(modPath, depth);
-            return depth;
-        };
+        }
+        const depths = computeChainDepths(
+            allModules.map((m) => m.path),
+            importersOf
+        );
 
-        const sorted = [...this.buffer].sort((a, b) => {
-            const da = depthOf(a.modulePath) || 0;
-            const db = depthOf(b.modulePath) || 0;
-            if (da !== db) return da - db; // deeper dependencies first
-            const ta = a.lastModified || 0;
-            const tb = b.lastModified || 0;
-            if (ta !== tb) return ta - tb; // oldest memo first within same depth
-            return (a.idx ?? 0) - (b.idx ?? 0); // storage order tiebreaker
-        });
+        const sorted = [...this.buffer].sort((a, b) =>
+            compareDagGroups(
+                { depth: depths.get(a.modulePath) ?? 0, lastModified: a.lastModified },
+                { depth: depths.get(b.modulePath) ?? 0, lastModified: b.lastModified }
+            )
+        );
         process.stderr.write('\n');
-        const runLabel = this.runScriptName || 'this module';
+        const runLabel = this.runScript?.name || 'this module';
         process.stderr.write(`${YELLOW_TICK} Reminder for ${runLabel}, memos exist:\n`);
         for (const entry of sorted) {
             const display = entry.modulePath || entry.name;
-            process.stderr.write(`${BOLD_DIM}${display}:${RESET} ${entry.content}\n`);
+            process.stderr.write(`${BOLD_DIM}${display}:${RESET} ${renderMemoEntry(entry.content)}\n`);
         }
     }
 
-    clearBuffer() {
+    clearBuffer(): void {
         this.buffer.length = 0;
     }
 
-    installFlushHandlers() {
+    installFlushHandlers(): void {
         process.on('exit', () => this.flush());
-        cli.onAbort(() => this.flush());
+        onAbort(() => this.flush());
     }
 
-    snapshot(label = 'memo snapshot') {
+    snapshot(label = 'memo snapshot'): boolean {
         const all = this.loadAllMemos();
         if (all.length === 0) {
             console.log('memo: nothing to snapshot (no memos found)');
@@ -473,7 +824,7 @@ class Memory {
      * prompting lives in scripts/memo.ts; callers invoke this after their
      * own confirm. Returns false when there are no memos to commit.
      */
-    commitMemos({ label = 'memo snapshot', fresh = false } = {}) {
+    commitMemos({ label = 'memo snapshot', fresh = false }: { label?: string; fresh?: boolean } = {}): boolean {
         if (this.loadAllMemos().length === 0) return false;
         this.snapshot(label);
         if (fresh) {
@@ -484,7 +835,7 @@ class Memory {
         return true;
     }
 
-    showSnapshot(ref = 'HEAD') {
+    showSnapshot(ref = 'HEAD'): { legacy: boolean; entries: unknown } | null {
         const note = git.notesShow(ref);
         if (!note) {
             console.log(`memo: no snapshot at ${ref}`);
@@ -509,7 +860,7 @@ class Memory {
         }
     }
 
-    log(limit = -1) {
+    log(limit = -1): Array<{ hash: string; date: string; subject: string; modules: string[] }> {
         const entries = this.logEntries(limit);
         if (entries.length === 0) {
             console.log('memo: no snapshots in refs/notes/memos');
@@ -537,15 +888,15 @@ class Memory {
      * snapshots print first and a developer can interrupt once they've
      * seen fresh information.
      */
-    logEntries(limit = -1) {
+    logEntries(limit = -1): Array<{ hash: string; date: string; subject: string; modules: string[] }> {
         const raw = git.notesLog('refs/notes/memos', limit);
         const entries = raw.map((e) => ({
             hash: e.hash,
             date: e.date,
-            subject: e.subject,
-            modules: e.subject
+            subject: e.subject ?? '',
+            modules: (e.subject ?? '')
                 .split(',')
-                .map((s) => s.trim())
+                .map((s: string) => s.trim())
                 .filter(Boolean)
         }));
         // Reverse-chronological (newest first). git notes list order is by
@@ -569,17 +920,27 @@ class Memory {
      * legacy plain-text snapshots (one memo per line, no timestamps),
      * the sidecar's lastModified is not updated.
      */
-    restore(ref = 'HEAD', files = null) {
+    restore(ref = 'HEAD', files: string[] | null = null): boolean {
         const snapshot = this.showSnapshot(ref);
         if (!snapshot) return false;
 
         const wanted = files && files.length ? new Set(files) : null;
         const { legacy, entries } = snapshot;
-        const restored = [];
+        const restored: Array<{ path: string; count: number; added: number }> = [];
 
         // Normalise legacy plain-line snapshots into the {module, memos} shape.
         // Legacy lines are "<modulePath>: <memo>" or bare "<memo>" lines.
-        const normalised = legacy ? this._normaliseLegacySnapshot(entries) : entries;
+        const normalised: Array<{
+            module: { path: string; name: string };
+            memos: string[];
+            lastModified?: number;
+        }> = legacy
+            ? this._normaliseLegacySnapshot(entries as string[])
+            : (entries as Array<{
+                  module: { path: string; name: string };
+                  memos: string[];
+                  lastModified?: number;
+              }>);
 
         for (const { module, memos } of normalised) {
             if (wanted && !wanted.has(module.path)) continue;
@@ -637,7 +998,11 @@ class Memory {
      * { module, memos } shape. Lines of the form "<path>: <memo>" are
      * grouped by path; bare lines are grouped under an "unknown" module.
      */
-    _normaliseLegacySnapshot(lines) {
+    _normaliseLegacySnapshot(lines: string[]): Array<{
+        module: { path: string; name: string };
+        memos: string[];
+        lastModified?: number;
+    }> {
         const byPath = new Map();
         for (const line of lines) {
             const m = line.match(/^([^:\s]+(?:\.[a-z]+)?)\s*:\s*(.+)$/i);
@@ -657,7 +1022,7 @@ class Memory {
         }));
     }
 
-    _readSidecarContent(file) {
+    _readSidecarContent(file: string): string[] {
         try {
             const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
             return Array.isArray(data.content) ? data.content : [];
@@ -666,7 +1031,7 @@ class Memory {
         }
     }
 
-    _readSidecarLastModified(file) {
+    _readSidecarLastModified(file: string): number {
         try {
             const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
             return typeof data.lastModified === 'number' ? data.lastModified : 0;
@@ -675,7 +1040,10 @@ class Memory {
         }
     }
 
-    _oldestTimestampInSnapshot(normalised, modPath) {
+    _oldestTimestampInSnapshot(
+        normalised: Array<{ module: { path: string }; lastModified?: number }>,
+        modPath: string
+    ): number {
         const entry = normalised.find((e) => e.module.path === modPath);
         if (!entry) return 0;
         const ts = typeof entry.lastModified === 'number' ? entry.lastModified : 0;
@@ -685,137 +1053,94 @@ class Memory {
     /**
      * Build a flat, unique-element DAG view of all memoised modules.
      *
-     * Traverses the FULL import graph (including non-memoised
-     * intermediaries) so transitive dependencies are discovered:
-     * if A → B → C where B has no memo, C is still emitted before A.
-     * Only memoised modules produce output rows; non-memoised nodes
-     * are walked through (for ordering/cycle detection) but not emitted.
-     *
-     * Uses DFS post-order so dependencies appear before dependents
-     * (topological order). Each memoised module appears exactly once.
-     *
-     * Cycle detection: a true back-edge is an edge to a node on the
-     * *current DFS path* (the recursion stack), not merely a visited
-     * node. A shared dependency (in-degree > 1) is NOT a cycle.
+     * Graph math lives in lib/depgraph.ts (language-variadic, reusable):
+     * the full import graph (including non-memoised intermediaries) is
+     * built there, reference-chain depths are computed there, and
+     * genuine cycles are detected as strongly-connected components there.
+     * Only memoised modules produce rows; walk order is the stable final
+     * tiebreaker of the print (see compareDagGroups).
      *
      * Returns groups of:
-     *   { owner, path, memos: string[], related: RelatedEntry[], cycles: number }
+     *   { owner, path, memos: string[], related: RelatedEntry[], cycles: number, depth: number }
      *
      * where RelatedEntry is { path, cycle: boolean }. `related` lists
-     * only the memoised imports (for display); cycle is true only for
-     * genuine back-edges.
+     * only the memoised direct imports (for display, oldest memo first);
+     * cycle is true only for edges inside a genuine SCC.
      */
-    walkAll() {
+    walkAll(): MemoDag {
         const allModules = this.modules();
-        const byPath = new Map(allModules.map((m) => [m.path, m]));
 
-        const memoCache = new Map();
-        const loadMemo = (modPath) => {
-            if (memoCache.has(modPath)) return memoCache.get(modPath);
-            const own = this.loadMemos(modPath);
-            const memo = own.length > 0 ? own[0] : null;
-            memoCache.set(modPath, memo);
-            return memo;
-        };
-
-        const visited = new Set(); // fully processed nodes (memoised or not)
-        const onStack = new Set(); // nodes on the current DFS path
-        const stackPath = []; // ordered list of modPaths on the current DFS path
-        const groups = [];
-        const cycles = []; // array of { path: string[] } cycle descriptions
-
-        // DFS over the full import graph. Recurses through non-memoised
-        // nodes (tracking them for cycle detection) but only emits
-        // memoised nodes in post-order.
-        const visit = (modPath) => {
-            if (visited.has(modPath)) return;
-            if (onStack.has(modPath)) return; // caller handles back-edge check
-
-            const mod = byPath.get(modPath);
-            if (!mod) {
-                // external/non-project import — nothing to traverse
-                visited.add(modPath);
-                return;
+        // Full import graph over every project module (memoised or not) —
+        // transitive dependencies through non-memoised intermediaries count.
+        const graph = buildImportGraph(allModules, this.langCache);
+        for (const ext of graph.unsupported) {
+            // Only extensions that SHOULD have support warn; .md/.json-style
+            // modules are edge-less by design.
+            if (Languages.isSupported(ext) && !this.warnedExt.has(ext)) {
+                this.warnedExt.add(ext);
+                console.error(
+                    `memo: no language support loaded for ${ext} — modules of this type contribute no import edges`
+                );
             }
-
-            const ownerMemo = loadMemo(modPath);
-            onStack.add(modPath);
-            stackPath.push(modPath);
-
-            // Traverse ALL imports (memoised or not) for ordering/cycles.
-            const allImports = this._allImports(mod);
-            for (const relPath of allImports) {
-                if (onStack.has(relPath)) {
-                    // genuine back-edge: target is an ancestor on this DFS path.
-                    // Only warn if BOTH endpoints are memoised — a cycle
-                    // through non-memoised intermediaries is valid JS and
-                    // doesn't affect the memo DAG.
-                    const targetMemo = loadMemo(relPath);
-                    if (ownerMemo && targetMemo) {
-                        // Record the cycle path: from the ancestor back to us
-                        const cycleStart = stackPath.indexOf(relPath);
-                        const cyclePath = stackPath.slice(cycleStart).concat(relPath);
-                        cycles.push({ path: cyclePath });
-                    }
-                } else if (!visited.has(relPath)) {
-                    // recurse into unvisited dependency (emits it before us
-                    // if it's memoised, or just traverses through it if not)
-                    visit(relPath);
-                }
-                // cross/forward edge to an already-visited node: nothing to do
-            }
-
-            onStack.delete(modPath);
-            stackPath.pop();
-            visited.add(modPath);
-
-            // Only emit memoised nodes
-            if (ownerMemo) {
-                // Build the display `related` from memoised imports only,
-                // pre-sorted oldest memo first.
-                const related = [];
-                let nodeCycles = 0;
-                for (const relPath of this._relatedMemos(mod)) {
-                    if (onStack.has(relPath)) {
-                        nodeCycles++;
-                        related.push({ path: relPath, cycle: true });
-                    } else {
-                        related.push({ path: relPath, cycle: false });
-                    }
-                }
-
-                groups.push({
-                    owner: ownerMemo.owner,
-                    path: ownerMemo.path,
-                    memos: ownerMemo.content,
-                    lastModified: ownerMemo.lastModified || 0,
-                    related,
-                    cycles: nodeCycles
-                });
-            }
-        };
-
-        // Iterate oldest memo first so the DFS roots favour old nodes,
-        // though post-order emission is what guarantees dependencies-first.
-        const oldestToNewestByKey = (key) => (a, b) => {
-            if (!(key in a && key in b))
-                throw new Error(`can't sort {${a}<>${b}}, missing comparable field ${key}`);
-            return a[key] - b[key];
-        };
-        const stamped = allModules
-            .map((m) => ({ mod: m, ts: this._moduleLastModified(m.path) }))
-            .sort(oldestToNewestByKey('ts'));
-
-        for (const { mod } of stamped) {
-            visit(mod.path);
         }
 
-        groups.totalCycles = cycles.length;
-        groups.cycles = cycles;
-        return groups;
+        const depths = computeChainDepths(
+            allModules.map((m) => m.path),
+            graph.importersOf
+        );
+
+        // Cycle membership: an import edge u → v is cyclic iff u and v sit
+        // in the same strongly-connected component. Warnings follow the
+        // memo policy: only cycles whose endpoints are ALL memoised.
+        const sccs = stronglyConnectedComponents(
+            allModules.map((m) => m.path),
+            graph.importsOf
+        );
+        const sccIndexOf = new Map<string, number>();
+        for (let i = 0; i < sccs.length; i++) {
+            for (const member of sccs[i]) sccIndexOf.set(member, i);
+        }
+        const cycles: Array<{ path: string[] }> = [];
+        for (const scc of sccs) {
+            if (scc.every((member) => !!this.loadMemoFor(member))) {
+                cycles.push({ path: [...scc, scc[0]] });
+            }
+        }
+
+        const groups: MemoGroup[] = [];
+        for (const mod of allModules) {
+            const ownerMemo = this.loadMemoFor(mod.path);
+            if (!ownerMemo) continue;
+
+            const sccIndex = sccIndexOf.get(mod.path);
+            const related: RelatedEntry[] = [];
+            let nodeCycles = 0;
+            for (const relPath of this._relatedMemos(mod)) {
+                const relMod = allModules.find((m) => m.path === relPath);
+                const bothMemoised = !!relMod && !!this.loadMemoFor(relPath);
+                const cyclic = sccIndex !== undefined && sccIndexOf.get(relPath) === sccIndex && bothMemoised;
+                if (cyclic) nodeCycles++;
+                related.push({ path: relPath, cycle: cyclic });
+            }
+
+            groups.push({
+                owner: ownerMemo.owner,
+                path: ownerMemo.path,
+                memos: ownerMemo.content,
+                lastModified: ownerMemo.lastModified || 0,
+                related,
+                cycles: nodeCycles,
+                depth: depths.get(mod.path) ?? 0
+            });
+        }
+
+        const dag = groups as MemoDag;
+        dag.totalCycles = cycles.length;
+        dag.cycles = cycles;
+        return dag;
     }
 
-    _moduleLastModified(modulePath) {
+    _moduleLastModified(modulePath: string): number {
         const file = rarebert.absPath(modulePath) + SUFFIX;
         try {
             const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -826,42 +1151,13 @@ class Memory {
     }
 }
 
-function parseImports(filePath) {
-    let src;
-    try {
-        src = fs.readFileSync(filePath, 'utf-8');
-    } catch {
-        return [];
-    }
-    const importerDir = path.dirname(filePath);
-    const results = [];
-    const seen = new Set();
-    const re = /from\s+(['"`])([^'"`]+)\1/g;
-    let m;
-    while ((m = re.exec(src)) !== null) {
-        const spec = m[2];
-        if (!spec.includes('/') && !spec.startsWith('.')) continue;
-        let resolved;
-        try {
-            resolved = path.resolve(importerDir, spec);
-        } catch {
-            continue;
-        }
-        if (!seen.has(resolved)) {
-            seen.add(resolved);
-            results.push(resolved);
-        }
-    }
-    return results;
-}
-
 const memo = new Memory();
 
 // ---------------------------------------------------------------------------
 // Memo CLI command helpers (merged from lib/memo-cmd.ts)
 // ---------------------------------------------------------------------------
 
-export function printMemoAdded(rel) {
+export function printMemoAdded(rel: string): void {
     console.log(`${YELLOW_TICK} Memo added to ${rel}`);
 }
 
@@ -871,9 +1167,9 @@ export function printMemoAdded(rel) {
  * until the next `--flag`. Non-flag positionals before any flag form a leading
  * group with an empty flags array.
  */
-export function groupArgs(argv) {
-    const groups = [];
-    let current = { flags: [], positional: [] };
+export function groupArgs(argv: string[]): Array<{ flags: string[]; positional: string[] }> {
+    const groups: Array<{ flags: string[]; positional: string[] }> = [];
+    let current: { flags: string[]; positional: string[] } = { flags: [], positional: [] };
     groups.push(current);
     for (const arg of argv) {
         if (arg.startsWith('--')) {
@@ -890,12 +1186,12 @@ export function groupArgs(argv) {
     return groups.filter((g) => g.flags.length || g.positional.length);
 }
 
-export function printFlatMemos(entries) {
+export function printFlatMemos(entries: AllMemoEntry[]): boolean {
     if (entries.length === 0) {
         console.log('No memos found.');
         return false;
     }
-    const flat = [];
+    const flat: Array<{ path: string; content: string; lastModified: number }> = [];
     for (const { module, memos: contents, lastModified } of entries) {
         for (const content of contents) {
             flat.push({ path: module.path, content, lastModified });
@@ -904,17 +1200,19 @@ export function printFlatMemos(entries) {
     flat.sort((a, b) => a.lastModified - b.lastModified);
     for (const { path: p, content } of flat) {
         console.log(`${p} memos:`);
-        console.log(`\t${content}`);
+        console.log(`\t${renderMemoEntry(content)}`);
     }
     return true;
 }
 
 /**
  * Print the memo DAG, optionally filtered to a set of resolved module
- * descriptors. When a set is given, ancestors are emitted before the
- * members that reference them (deepest-first).
+ * descriptors. Rows are ordered by the spec comparator (reference-chain
+ * depth deepest-first, then memo age oldest-first), so the last row
+ * printed is always the youngest, least-referenced memo. When a set is
+ * given, ancestors are emitted before the members that reference them.
  */
-export function printDagForSet(resolvedSet) {
+export function printDagForSet(resolvedSet: Array<{ rel: string }> | null): boolean {
     const groups = memo.walkAll();
     if (groups.length === 0) {
         console.log('No memos found.');
@@ -923,21 +1221,18 @@ export function printDagForSet(resolvedSet) {
 
     const totalCycles = groups.totalCycles ?? 0;
     const cyclePaths = groups.cycles ?? [];
-    const wanted = resolvedSet ? new Set(resolvedSet.map((r) => r.rel)) : null;
+    // Empty array is NOT "no filter" — only null/undefined is. (An empty
+    // set arg must not silently suppress every row.)
+    const wanted = resolvedSet && resolvedSet.length ? new Set(resolvedSet.map((r) => r.rel)) : null;
     const byPath = new Map(groups.map((g) => [g.path, g]));
-    const emitted = new Set();
+    const emitted = new Set<string>();
     let shown = 0;
 
-    // Compute priority ranks: most recent lastModified = 0, next = 1, ...
-    const sortedByRecency = [...groups].sort(
-        (a, b) => (b.lastModified || 0) - (a.lastModified || 0)
-    );
-    const priorityByPath = new Map();
-    for (let i = 0; i < sortedByRecency.length; i++) {
-        priorityByPath.set(sortedByRecency[i].path, i);
-    }
+    // Spec order: depth desc, then oldest first. `groups` (walk order)
+    // is the stable final tiebreaker.
+    const ordered = [...groups].sort(compareDagGroups);
 
-    const emitGroup = (groupPath, indent) => {
+    const emitGroup = (groupPath: string, indent: boolean): void => {
         if (emitted.has(groupPath)) return;
         emitted.add(groupPath);
         const g = byPath.get(groupPath);
@@ -953,7 +1248,6 @@ export function printDagForSet(resolvedSet) {
         console.log(`\n${style}${prefix}${g.path}${DIM} has ${g.memos.length} memos${RESET}`);
 
         const ts = g.lastModified || 0;
-        const priority = priorityByPath.get(g.path) ?? 0;
         const tsLabel = ts
             ? new Date(ts)
                 .toISOString()
@@ -961,7 +1255,7 @@ export function printDagForSet(resolvedSet) {
                 .replace(/\.\d+Z$/, 'Z')
             : 'unknown';
         console.log(`${prefix}  timestamp: ${tsLabel}`);
-        console.log(`${prefix}  priority: ${priority}`);
+        console.log(`${prefix}  depth: ${g.depth}`);
 
         if (g.related.length) {
             for (let i = 0; i < g.related.length; i++) {
@@ -977,16 +1271,16 @@ export function printDagForSet(resolvedSet) {
         }
 
         for (const content of g.memos) {
-            console.log(`${prefix}  ${DIM}└${g.path}${RESET} memo: ${content}`);
+            console.log(`${prefix}  ${DIM}└${g.path}${RESET} memo: ${renderMemoEntry(content)}`);
         }
     };
 
     if (wanted) {
-        for (const { path } of groups) {
+        for (const { path } of ordered) {
             if (wanted.has(path)) emitGroup(path, false);
         }
     } else {
-        for (const { path } of groups) emitGroup(path, false);
+        for (const { path } of ordered) emitGroup(path, false);
     }
 
     if (shown === 0) {
@@ -1009,7 +1303,7 @@ export function printDagForSet(resolvedSet) {
  * Parse a comma-separated indices string into 0-based array indices.
  * 1-based positive; negative counts from end; 0 is invalid.
  */
-export function parseIndices(arg, count) {
+export function parseIndices(arg: string, count: number): number[] | null {
     if (count === 0) {
         console.error('No memos to drop.');
         return null;
@@ -1023,7 +1317,7 @@ export function parseIndices(arg, count) {
         return null;
     }
 
-    const indices = [];
+    const indices: number[] = [];
     for (const token of raw) {
         const n = parseInt(token, 10);
         if (Number.isNaN(n)) {
@@ -1047,7 +1341,10 @@ export function parseIndices(arg, count) {
     return indices;
 }
 
-export function applyDrop(resolved, selected) {
+export function applyDrop(
+    resolved: { module: Module | null; rel: string; sidecar: string },
+    selected: MemoContent[]
+): void {
     const remaining = memo
         .loadMemos(resolved.rel)
         .flatMap((m) => m.content)
@@ -1062,7 +1359,11 @@ export function applyDrop(resolved, selected) {
         fs.writeFileSync(
             resolved.sidecar,
             JSON.stringify(
-                { name: resolved.module.name, content: remaining, lastModified: Date.now() },
+                {
+                    name: resolved.module?.name ?? path.basename(resolved.rel),
+                    content: remaining,
+                    lastModified: Date.now()
+                },
                 null,
                 2
             ) + '\n'
@@ -1071,25 +1372,27 @@ export function applyDrop(resolved, selected) {
     console.log(`Dropped ${selected.length} memo(s) from ${resolved.rel}`);
 }
 
-export function cmdPrintSet(resolvedSet, withAncestors) {
+export function cmdPrintSet(resolvedSet: Array<{ rel: string }>, withAncestors: boolean): boolean {
     if (withAncestors) {
-        printDagForSet(resolvedSet);
-    } else {
-        const setPaths = new Set(resolvedSet.map((r) => r.rel));
-        const all = memo.loadAllMemos().filter((e) => setPaths.has(e.module.path));
-        printFlatMemos(all);
+        return printDagForSet(resolvedSet);
     }
+    const setPaths = new Set(resolvedSet.map((r) => r.rel));
+    const all = memo.loadAllMemos().filter((e) => setPaths.has(e.module.path));
+    return printFlatMemos(all);
 }
 
-export function cmdPrintAll(withAncestors = false) {
+export function cmdPrintAll(withAncestors = false): boolean {
     if (withAncestors) {
-        printDagForSet(null);
-    } else {
-        printFlatMemos(memo.loadAllMemos());
+        // null = no filter (an empty array would suppress every row).
+        return printDagForSet(null);
     }
+    return printFlatMemos(memo.loadAllMemos());
 }
 
-export async function cmdAdd(groups, modules) {
+export async function cmdAdd(
+    groups: Array<{ flags: string[]; positional: string[] }>,
+    modules: Module[]
+): Promise<void> {
     for (const g of groups) {
         if (g.flags[0] !== '--add') continue;
         const [modArg, ...rest] = g.positional;
@@ -1112,7 +1415,7 @@ export async function cmdAdd(groups, modules) {
     }
 }
 
-export function cmdLog(nonFlag) {
+export function cmdLog(nonFlag: string[] = []): void {
     const entries = memo.logEntries();
     if (entries.length === 0) {
         console.log('memo: no snapshots in refs/notes/memos');
@@ -1135,7 +1438,7 @@ export function cmdLog(nonFlag) {
     }
 }
 
-export function cmdRecall(ref, nonFlag) {
+export function cmdRecall(ref: string | undefined, nonFlag: string[] = []): void {
     if (!ref) {
         console.error('memo --recall: missing ref argument');
         return;
@@ -1144,7 +1447,7 @@ export function cmdRecall(ref, nonFlag) {
     memo.clearBuffer();
 }
 
-export function cmdForget(moduleArgs, modules) {
+export function cmdForget(moduleArgs: string[], modules: Module[]): void {
     if (!moduleArgs || moduleArgs.length === 0) {
         console.error('memo --forget: missing module argument');
         return;
@@ -1177,7 +1480,7 @@ export function cmdForget(moduleArgs, modules) {
  * first by the DAG print (most deeply included module in the walk order,
  * oldest memo within it). Non-mutating.
  */
-export function cmdOldest() {
+export function cmdOldest(): void {
     const oldest = memo.findOldestMemo();
     if (!oldest) {
         console.log('No memos found.');
@@ -1191,7 +1494,7 @@ export function cmdOldest() {
         : 'unknown';
     console.log(`${BOLD}oldest memo — most deeply included module, first-printed:${RESET}`);
     console.log(`${DIM}  ${oldest.rel}  (timestamp: ${ts})${RESET}`);
-    console.log(`  memo: ${oldest.content}`);
+    console.log(`  memo: ${renderMemoEntry(oldest.content)}`);
 }
 
 /**
@@ -1199,14 +1502,14 @@ export function cmdOldest() {
  * and drop just the one memo that would be printed first. No module
  * reference required.
  */
-export function cmdForgetOldest() {
+export function cmdForgetOldest(): void {
     const oldest = memo.forgetOldest();
     if (!oldest) {
         console.log('No memos found.');
         return;
     }
     console.log(`${YELLOW_TICK} Forgot the oldest memo from ${oldest.rel}:`);
-    console.log(`  ${oldest.content}`);
+    console.log(`  ${renderMemoEntry(oldest.content)}`);
 }
 
 export { Memo, Memory, memo };

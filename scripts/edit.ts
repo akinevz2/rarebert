@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 
 import fs from 'fs';
-import { listAllModules, promptModule, resolveModule, TUI } from '../lib/runtime/module.ts';
-import { tui } from '../lib/tui.ts';
+import { TUI } from '../lib/runtime/TUI.ts';
+import { defineMeta } from '../lib/runtime/CLI.ts';
+import { listAllModules, promptModule, resolveModule } from '../lib/runtime/discovery.ts';
 import { models } from '../lib/models.ts';
 import { editor } from '../lib/editor.ts';
 import { ide } from '../lib/ide.ts';
 import { exit } from '../lib/runtime/core.ts';
 import { git } from '../lib/git.ts';
-import { rarebert } from '../lib/runtime/projects.ts';
+import { rarebert } from '../lib/runtime/Project.ts';
 
-const meta = {
+const meta = defineMeta({
     name: 'edit',
     description:
         'Edit a module in $EDITOR; optionally review with opencode (which re-launches the editor on exit), then commit/diff/discard prompt',
@@ -21,7 +22,7 @@ const meta = {
             description: 'opencode model id (overrides the default from opencode.json)'
         }
     ]
-};
+});
 
 export { meta };
 
@@ -93,4 +94,4 @@ export default new TUI(
         return exit(await git.commitFlow(rel));
     },
     meta
-).supportsDirectRunning(import.meta.url);
+).supportsDirectRunning();

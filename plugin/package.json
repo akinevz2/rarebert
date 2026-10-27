@@ -1,0 +1,19 @@
+{
+    "$schema": "https://json.schemastore.org/package.json",
+    "name": "rarebert-plugin",
+    "version": "0.1.0",
+    "description": "OpenCode plugin: surface rarebert's own tooling (launch.ts commands) as live-session tools so fixed parts of rarebert can be used to fix the rest.",
+    "type": "module",
+    "license": "MIT",
+    "main": "index.ts",
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@opencode/plugin": "^2.1.4"
+    },
+    "devDependencies": {
+        "bun-types": "^1.4.4",
+        "typescript": "^5.6.0"
+    }
+}

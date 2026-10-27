@@ -3,9 +3,10 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import Enquirer from 'enquirer';
-import { rarebert } from './runtime/projects.ts';
+import { rarebert } from './runtime/Project.ts';
 import { exit } from './runtime/core.ts';
-import { cli, AbortError } from './runtime/module.ts';
+import { onAbort } from './runtime/Module.ts';
+import { AbortError } from './runtime/core.ts';
 import { ide } from './ide.ts';
 import { opencode } from './opencode.ts';
 
@@ -34,16 +35,55 @@ const ALLOWED = new Set([
     'cat-file'
 ]);
 
+/** Options accepted by `Git.git`. */
+export interface GitOptions {
+    /** Stage everything (`git add -A`). */
+    all?: boolean;
+    /** Commit message (`git commit -m`). */
+    message?: string;
+    /** Keep the index (`git stash --keep-index`). */
+    keepIndex?: boolean;
+    /** stdio mode for the spawned process. */
+    stdio?: 'pipe' | 'inherit' | 'ignore' | 'overlapped' | Array<'pipe' | 'inherit' | 'ignore' | 'overlapped'>;
+}
+
+/** The result of a git invocation. */
+export interface GitResult {
+    /** The full command line that was run. */
+    command: string;
+    /** The process exit status. */
+    status: number | null;
+    /** Captured stdout. */
+    stdout: string;
+    /** Captured stderr. */
+    stderr: string;
+    /** True when the command exited 0. */
+    ok: boolean;
+}
+
+/** One entry of the memo notes log. */
+export interface NotesLogEntry {
+    /** The target commit hash. */
+    hash: string;
+    /** The commit date. */
+    date: string;
+    /** The note's first line. */
+    subject: string;
+}
+
 class Git {
+    /** The repository root this instance operates on. */
+    root: string;
+
     constructor(root = rarebert.root) {
         this.root = root;
     }
 
-    git(subcommand, args = [], options = {}) {
+    git(subcommand: string, args: string[] = [], options: GitOptions = {}): GitResult {
         if (!ALLOWED.has(subcommand)) {
             throw new Error(`Disallowed git command: ${subcommand ?? '(none)'}`);
         }
-        const flagArgs = [];
+        const flagArgs: string[] = [];
         if (options.all && subcommand === 'add') flagArgs.push('-A');
         if (options.message && subcommand === 'commit') flagArgs.push('-m', options.message);
         if (options.keepIndex && subcommand === 'stash') flagArgs.push('keep-index');
@@ -63,11 +103,11 @@ class Git {
         };
     }
 
-    add(args = [], options = {}) {
+    add(args: string[] = [], options: GitOptions = {}): GitResult {
         return this.git('add', args, options);
     }
 
-    statusPorcelain(pathspecs = []) {
+    statusPorcelain(pathspecs: string[] = []): Array<{ xy: string; path: string }> {
         const r = this.git('status', ['--porcelain', ...pathspecs]);
         return r.stdout
             .split('\n')
@@ -78,33 +118,33 @@ class Git {
             }));
     }
 
-    isTrackedModified(relPath) {
+    isTrackedModified(relPath: string): boolean {
         const rows = this.statusPorcelain([relPath]);
         if (rows.length === 0) return false;
         return rows[0].xy[0] !== '?' && rows[0].xy[0] !== '!';
     }
 
-    diffForPath(relPath, base = 'HEAD') {
+    diffForPath(relPath: string, base = 'HEAD'): string {
         const r = this.git('diff', [base, '--', relPath]);
         return r.stdout;
     }
 
-    stagedDiffForPath(relPath) {
+    stagedDiffForPath(relPath: string): string {
         const r = this.git('diff', ['--cached', '--', relPath]);
         return r.stdout;
     }
 
-    notesAdd(content, ref = 'HEAD', notesRef = 'refs/notes/memos') {
+    notesAdd(content: string, ref = 'HEAD', notesRef = 'refs/notes/memos'): boolean {
         const r = this.git('notes', ['--ref', notesRef, 'add', '-f', '-m', content, ref]);
         return r.ok;
     }
 
-    notesShow(ref = 'HEAD', notesRef = 'refs/notes/memos') {
+    notesShow(ref = 'HEAD', notesRef = 'refs/notes/memos'): string | null {
         const r = this.git('notes', ['--ref', notesRef, 'show', ref]);
         return r.ok ? r.stdout.trim() : null;
     }
 
-    notesLog(notesRef = 'refs/notes/memos', limit = 20) {
+    notesLog(notesRef = 'refs/notes/memos', limit = 20): NotesLogEntry[] {
         const list = this.git('notes', ['--ref', notesRef, 'list']);
         if (!list.ok) return [];
         const allPairs = list.stdout
@@ -116,36 +156,35 @@ class Git {
         // limit = -1 (or any negative) means "all entries"
         const pairs = limit >= 0 ? allPairs.slice(0, limit) : allPairs;
 
-        return pairs
-            .map((targetHash) => {
-                const r = this.git('log', ['--pretty=format:%ai', '--max-count=1', targetHash]);
-                if (!r.ok) return null;
-                const date = r.stdout.trim();
-                const note = this.notesShow(targetHash, notesRef) || '';
-                const subject = note.split('\n')[0] || '(no subject)';
-                return { hash: targetHash, date, subject };
-            })
-            .filter(Boolean)
-            .reverse();
+        const entries: NotesLogEntry[] = [];
+        for (const targetHash of pairs) {
+            const r = this.git('log', ['--pretty=format:%ai', '--max-count=1', targetHash]);
+            if (!r.ok) continue;
+            const date = r.stdout.trim();
+            const note = this.notesShow(targetHash, notesRef) || '';
+            const subject = note.split('\n')[0] || '(no subject)';
+            entries.push({ hash: targetHash, date, subject });
+        }
+        return entries.reverse();
     }
 
-    headRef() {
+    headRef(): string | null {
         const r = this.git('rev-parse', ['HEAD']);
         return r.ok ? r.stdout.trim() : null;
     }
 
     /** Full `git status --porcelain=v1 -b` output (branch line + file entries). */
-    statusSummary() {
+    statusSummary(): string {
         return this.git('status', ['--porcelain=v1', '-b']).stdout.trim();
     }
 
     /** Raw `git diff HEAD` output (uncoloured by default; git controls colour). */
-    diffSummary() {
+    diffSummary(): string {
         return this.git('diff', ['HEAD']).stdout.trim();
     }
 
     /** `git diff --stat` one-line-per-file summary. */
-    diffStat() {
+    diffStat(): string {
         return this.git('diff', ['--stat']).stdout.trim();
     }
 
@@ -154,7 +193,7 @@ class Git {
      *
      * @returns {{ branch: string, upstream: string, aheadBehind: string }}
      */
-    branchInfo() {
+    branchInfo(): { branch: string; upstream: string; aheadBehind: string } {
         const branch = this.git('branch', ['--show-current']).stdout.trim() || '(detached)';
         const upstream = this.git('rev-parse', ['--abbrev-ref', '@{upstream}'])
             .stdout.trim()
@@ -171,7 +210,7 @@ class Git {
     }
 
     /** `git remote -v` output. */
-    remoteInfo() {
+    remoteInfo(): string {
         const r = this.git('remote', ['-v']).stdout.trim();
         return r || '(no remotes)';
     }
@@ -188,7 +227,7 @@ class Git {
      * @param {string} text - pre-coloured text to display
      * @returns {number} pager exit status, or 0 on fallback
      */
-    pipeToPager(text) {
+    pipeToPager(text: string): number {
         if (!text) return 0;
         const pager = process.env.PAGER || 'less -R';
         const parts = pager.split(/\s+/).filter(Boolean);
@@ -206,7 +245,9 @@ class Git {
             }
             return child.status ?? 0;
         } catch (err) {
-            console.error(`Failed to launch pager (${pager}): ${err.message}`);
+            console.error(
+                `Failed to launch pager (${pager}): ${err instanceof Error ? err.message : String(err)}`
+            );
             process.stdout.write(text);
             return 0;
         }
@@ -224,7 +265,7 @@ class Git {
      * @param {string} [base='HEAD'] - diff base ref
      * @returns {number} exit status
      */
-    previewDiffFor(rel, base = 'HEAD') {
+    previewDiffFor(rel: string, base = 'HEAD'): number {
         const r = this.git('diff', ['--color=always', base, '--', rel]);
         return this.pipeToPager(r.stdout);
     }
@@ -239,10 +280,10 @@ const git = new Git();
 const DEFAULT_PROMPT_FIRST_LINE = 'Write a git commit message for the staged changelist below.';
 export { DEFAULT_PROMPT_FIRST_LINE };
 
-export function stripCommitMessage(raw) {
+export function stripCommitMessage(raw: string): string {
     return raw
         .split('\n')
-        .filter((line) => !line.startsWith('#'))
+        .filter((line: string) => !line.startsWith('#'))
         .join('\n')
         .replace(/\n+$/, '');
 }
@@ -265,7 +306,7 @@ export function stripCommitMessage(raw) {
  *
  * Returns the cleaned message, or '' if nothing usable remains.
  */
-export function cleanSummary(raw) {
+export function cleanSummary(raw: string | null | undefined): string {
     let text = (raw ?? '').trim();
     if (!text) return '';
 
@@ -355,7 +396,7 @@ export async function promptPreview() {
     }
 }
 
-export async function promptBail(message) {
+export async function promptBail(message: string): Promise<boolean> {
     if (process.stdin.isTTY !== true) {
         return false;
     }
@@ -373,7 +414,7 @@ export async function promptBail(message) {
     }
 }
 
-export function bailCommit(reason) {
+export function bailCommit(reason: string): void {
     // Do NOT unstage here. The only time we unstage is when the user
     // erases the entire commit message in the editor (editSummaryInEditor
     // returns null). Bailing at a prompt means the user chose not to
@@ -383,7 +424,7 @@ export function bailCommit(reason) {
     exit(0);
 }
 
-export function previewDiff() {
+export function previewDiff(): void {
     // Use the shared pipeToPager helper so colour and fallback handling are
     // consistent across all diff viewers.  Force --color=always since the
     // output is captured (not a TTY); the pager renders the ANSI codes.
@@ -432,7 +473,12 @@ export async function promptPromptFirstLine() {
     }
 }
 
-export function summariseChangelist(model, changelist, firstLine, verbose = false) {
+export function summariseChangelist(
+    model: string,
+    changelist: string,
+    firstLine: string,
+    verbose = false
+): string {
     const prompt = [
         firstLine,
         'Strict rules (do not violate any):',
@@ -495,7 +541,12 @@ export function summariseChangelist(model, changelist, firstLine, verbose = fals
     return cleanSummary(text.trim());
 }
 
-export function summariseAndShow(model, changelist, firstLine, verbose = false) {
+export function summariseAndShow(
+    model: string,
+    changelist: string,
+    firstLine: string,
+    verbose = false
+): string {
     console.log('\n--- opencode summary ---');
     const summary = summariseChangelist(model, changelist, firstLine, verbose);
     if (summary) {
@@ -507,7 +558,7 @@ export function summariseAndShow(model, changelist, firstLine, verbose = false) 
     return summary;
 }
 
-export async function editSummaryInEditor(summary) {
+export async function editSummaryInEditor(summary: string): Promise<string[] | null> {
     const templateFile = path.join(os.tmpdir(), `rarebert-commit-${process.pid}.txt`);
     fs.writeFileSync(templateFile, summary + '\n');
 
@@ -548,14 +599,14 @@ export async function editSummaryInEditor(summary) {
     return ['-m', stripped];
 }
 
-export function stageAndCommit(commitArgs) {
+export function stageAndCommit(commitArgs: string[]): void {
     // Register an abort handler that fires only on Ctrl-C during the
     // commit. Capture the unsubscribe so we can deregister it on success
     // — otherwise process.on('exit') would fire runAbortCallbacks() after
     // a successful commit. On interrupt we do NOT unstage — the user can
     // rerun make commit or manually commit. Unstaging only happens when
     // the user erases the commit message in the editor.
-    const offAbort = cli.onAbort(() => {
+    const offAbort = onAbort(() => {
         console.error('\nInterrupted; staged files preserved.');
     });
 
@@ -587,7 +638,7 @@ export function stageAndCommit(commitArgs) {
             exit(result.status ?? 1);
         }
     } catch (err) {
-        console.error(`Commit failed: ${err.message}`);
+        console.error(`Commit failed: ${err instanceof Error ? err.message : String(err)}`);
         offAbort();
         exit(1);
     }

@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
-import { rarebert } from '../lib/runtime/projects.ts';
+import { rarebert } from '../lib/runtime/Project.ts';
+import { defineMeta } from '../lib/runtime/CLI.ts';
 import { exit } from '../lib/core.ts';
 import { models } from '../lib/models.ts';
 import { editor } from '../lib/editor.ts';
 import { ide } from '../lib/ide.ts';
-import { listAllModules, promptModule, TUI, Interface } from '../lib/runtime/module.ts';
+import { Interface, TUI } from '../lib/runtime/TUI.ts';
+import { listAllModules, promptModule } from '../lib/runtime/discovery.ts';
 
-const meta = {
+const meta = defineMeta({
     name: 'open',
     description: 'Open a module in $EDITOR then launch the opencode full TUI at the project root',
     usage: 'node index.js open [module] [--model <id>]',
@@ -17,7 +19,7 @@ const meta = {
             description: 'opencode model id (overrides the default from opencode.json)'
         }
     ]
-};
+});
 
 export { meta };
 
@@ -54,4 +56,4 @@ export default new TUI(
         return exit(status);
     },
     meta
-).supportsDirectRunning(import.meta.url);
+).supportsDirectRunning();

@@ -15,13 +15,18 @@
  * order defines the generated module layout.
  */
 class Template {
-    constructor({ lines = {}, sections = [] } = {}) {
+    /** Symbolic line templates, keyed by section name. */
+    lines: Record<string, string>;
+    /** Ordered list of line keys forming the generated module layout. */
+    sections: string[];
+
+    constructor({ lines = {}, sections = [] }: { lines?: Record<string, string>; sections?: string[] } = {}) {
         this.lines = lines;
         this.sections = sections;
     }
 }
 
-function firstAlpha(s) {
+function firstAlpha(s: string): string {
     for (const ch of s) {
         if (/[a-zA-Z]/.test(ch)) return ch.toLowerCase();
     }
@@ -32,7 +37,7 @@ function firstAlpha(s) {
  * Sort template line entries alphabetically by the first alphabetic
  * character of the line value (stable by value length as a tiebreaker).
  */
-function sortLinesByFirstAlpha(entries) {
+function sortLinesByFirstAlpha(entries: Array<[string, string]>): Array<[string, string]> {
     return [...entries].sort((a, b) => {
         const fa = firstAlpha(a[1]);
         const fb = firstAlpha(b[1]);
@@ -44,9 +49,9 @@ function sortLinesByFirstAlpha(entries) {
 /**
  * Substitute `{{key}}` placeholders in a single line.
  */
-function substitute(line, vars = {}) {
+function substitute(line: string, vars: Record<string, unknown> = {}): string {
     return Object.entries(vars).reduce(
-        (l, [key, value]) => l.replaceAll(`{{${key}}}`, value),
+        (l, [key, value]) => l.replaceAll(`{{${key}}}`, String(value)),
         line
     );
 }
@@ -55,11 +60,11 @@ function substitute(line, vars = {}) {
  * Resolve a `Template` into an array of substituted lines, following
  * the `sections` array of line keys in order.
  *
- * @param {Template} tpl - template to resolve
- * @param {object} vars - placeholder substitutions
- * @returns {string[]} resolved boilerplate lines
+ * @param tpl - template to resolve
+ * @param vars - placeholder substitutions
+ * @returns resolved boilerplate lines
  */
-function resolveTemplate(tpl, vars = {}) {
+function resolveTemplate(tpl: Template, vars: Record<string, unknown> = {}): string[] {
     if (!tpl || !tpl.lines || !Array.isArray(tpl.sections)) {
         throw new Error('Template must be { lines, sections: [] }');
     }
@@ -68,7 +73,7 @@ function resolveTemplate(tpl, vars = {}) {
         if (!sorted.has(key)) {
             throw new Error(`Template missing line: ${key}`);
         }
-        return substitute(sorted.get(key), vars);
+        return substitute(sorted.get(key)!, vars);
     });
 }
 

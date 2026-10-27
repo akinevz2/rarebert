@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // formatReport/printUsage merged from lib/refactor.ts (this script was its only consumer).
-import { CLI } from '../lib/runtime/module.ts';
+import { CLI, defineMeta, type Args, type Positional } from '../lib/runtime/CLI.ts';
 import { exit } from '../lib/core.ts';
 import * as bindings from '../lib/bindings.ts';
-import { home as projects } from '../lib/projects.ts';
+import { home as projects } from '../lib/runtime/Project.ts';
 
 function formatReport(damageReport, format) {
     if (format === 'json') {
@@ -60,7 +60,7 @@ function printUsage(meta, subcommands) {
     }
 }
 
-const meta = {
+const meta = defineMeta({
     name: 'refactor',
     description:
         'Resolve bindings across import trees, detect damage after edits, emit LLM-ready repair job specs. Baselines are pinned to commits via git notes (refs/notes/refactor). Damage and what-if automatically generate memos via opencode.',
@@ -104,7 +104,7 @@ const meta = {
             description: 'Include resolved-but-healthy bindings in output, not just damaged ones'
         }
     ]
-};
+});
 
 const subcommands = {
     snapshot: 'Capture binding baseline + memo state as a note on HEAD (run on a clean commit)',
@@ -125,7 +125,7 @@ export default new CLI(
         const entryFile = opts.entry || projects.scriptsDir;
         const baselineRef = opts.baseline || 'HEAD';
         const format = opts.format || 'json';
-        const noMemos = opts['no-memos'] === true;
+        const noMemos = opts.memos === false;
         const model = opts.model || null;
 
         let effectiveSub = sub;
@@ -252,4 +252,4 @@ export default new CLI(
         }
     },
     meta
-).supportsDirectRunning(import.meta.url);
+).supportsDirectRunning();

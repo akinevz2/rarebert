@@ -1,22 +1,26 @@
 {
     "name": "rarebert",
-    "main": "launch.js",
+    "type": "module",
     "bin": {
         "rarebert": "./launch.ts"
     },
     "scripts": {
-        "dev": "bunli dev",
-        "build": "bunli build",
+        "dev": "bun --hot launch.ts",
+        "build": "bun build --target bun launch.ts --outdir dist",
         "test": "bun test"
     },
     "version": "1.0.0",
     "description": "Rarebert Toolbox - A collection of tools and utilities for managing and developing projects",
     "dependencies": {
-        "commander": "^12.0.0",
-        "enquirer": "^2.4.0"
+        "@bunli/core": "^0.9.1",
+        "enquirer": "^2.4.0",
+        "zod": "^4.6.7"
     },
     "devDependencies": {
+        "@bunli/utils": "^0.6.0",
+        "@types/node": "^26.6.5",
         "bun-types": "^1.0.0",
+        "bunli": "^0.9.1",
         "typescript": "^5.0.0"
     }
 }

@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exit, ExitSignal, EXIT_FAIL } from '../lib/core.ts';
-import { runInteractively, cli, TUI, Interface } from '../lib/module.ts';
+import { runInteractively, isInteractive } from '../lib/runtime/Module.ts';
+import { TUI, Interface } from '../lib/module.ts';
 import * as moduleNS from '../lib/module.ts';
 
 // Regression tests for the runInteractively gate: closure-producing,
@@ -13,11 +14,11 @@ import * as moduleNS from '../lib/module.ts';
 
 const interactiveCtx = {
     isInteractive: () => true,
-    nonInteractive: (m) => exit('non-interactive: ' + m)
+    nonInteractive: (m: string) => exit('non-interactive: ' + m)
 };
 const nonInteractiveCtx = {
     isInteractive: () => false,
-    nonInteractive: (m) => exit('non-interactive: ' + m)
+    nonInteractive: (m: string) => exit('non-interactive: ' + m)
 };
 
 describe('module export spec', () => {
@@ -101,11 +102,10 @@ describe('runInteractively', () => {
     // Interface prompt factories — the replacement for the former tui
     // singleton. In a non-interactive runtime the Interface constructor
     // guard bails, so construction itself yields the ExitSignal (the
-    // lenient tui-object fallbacks are gone by design; explicit
-    // cli.isInteractive() guards now own that decision at call sites).
+    // explicit isInteractive() guards now own that decision at call sites).
     test(
         'Interface.confirm construction bails with a nonInteractive ExitSignal',
-        { skip: cli.isInteractive() },
+        { skip: isInteractive() },
         async () => {
             const result = Interface.createInterface('test');
             assert.ok(result instanceof ExitSignal);

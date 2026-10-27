@@ -9,7 +9,7 @@ import { AbortError } from '../lib/module.ts';
 
 describe('ExitSignal kinds', () => {
     test('code kind — complete() yields the code and runs onExit', async () => {
-        let saw;
+        let saw: number | undefined;
         const sig = exit(7, { onExit: (c) => (saw = c) });
         assert.ok(sig instanceof ExitSignal);
         assert.equal(await sig.complete(), 7);
@@ -17,7 +17,7 @@ describe('ExitSignal kinds', () => {
     });
 
     test('code kind — cleanup runs before onExit', async () => {
-        const order = [];
+        const order: string[] = [];
         const sig = exit(0, {
             onExit: () => order.push('onExit'),
             cleanup: () => order.push('cleanup')
@@ -34,7 +34,7 @@ describe('ExitSignal kinds', () => {
     });
 
     test('error kind — custom onExit suppresses the default message print', async () => {
-        let saw;
+        let saw: number | undefined;
         const sig = exit(new Error('boom'), { onExit: (c) => (saw = c) });
         assert.equal(await sig.complete(), EXIT_FAIL);
         assert.equal(saw, EXIT_FAIL);
@@ -70,7 +70,7 @@ describe('ExitSignal kinds', () => {
     });
 
     test('promise kind — onExit hook sees the resolved code', async () => {
-        let saw;
+        let saw: number | undefined;
         const sig = exit(Promise.resolve(5), { onExit: (c) => (saw = c) });
         assert.equal(await sig.complete(), 5);
         assert.equal(saw, 5);

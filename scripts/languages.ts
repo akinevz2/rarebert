@@ -1,118 +1,49 @@
 #!/usr/bin/env node
+// ---------------------------------------------------------------------------
+// languages.ts — STUB (implementation removed in the Bunli-migration slim-down).
+//
+// Original behavior: a toolkit for the supported module languages (the
+// templates that power module scaffolding, kept under lib/supports/). With no
+// subcommand (or `list`/`--list`) it printed the installed language list via
+// languages.show(). With `install <lang> [--force]` it drove installFromArgs:
+// resolve/validate the language ext, confirm overwrite if already installed
+// (declining politely in non-interactive runs), then
+// languages.install(name, { force }) and a summary printout (template path,
+// line count, section keys). Interactive fallback installNewLanguage prompted
+// for a language name and confirmed overwrite via an Interface.
+//
+// CLI surface (original meta):
+//   usage: 'node index.js languages [install <lang> [--force]]'
+//   options:
+//     --force — overwrite an existing template
+//   (no positional args were declared in meta; `install` was dispatched by
+//   inspecting positional[0] in main)
+//
+// Exports beyond the default (helper functions imported elsewhere at the
+// time): chooseLanguage (interactive language select used by add.ts /
+// project.ts; guarded by isInteractive → nonInteractive), installNewLanguage
+// (interactive install), installFromArgs (opts/positional-driven install).
+// Their only importers were add.ts and project.ts, both stubbed in the same
+// slim-down, so no compat re-exports are preserved here.
+// Dependencies: TUI/Interface, Module terminal helpers, languages
+// (lib/runtime/Language.ts), exit (core.ts).
+// ---------------------------------------------------------------------------
 
-import { CLI, Interface, cli } from '../lib/runtime/module.ts';
+import { CLI, type Args, type Positional } from '../lib/runtime/CLI.ts';
 import { exit } from '../lib/runtime/core.ts';
-import { languages } from '../lib/runtime/languages.ts';
 
 const meta = {
     name: 'languages',
-    description: 'Install or list supported module languages (templates under lib/supports/)',
+    description:
+        'Install or list supported module languages (templates under lib/supports/) (unimplemented)',
     usage: 'node index.js languages [install <lang> [--force]]',
-    options: [{ flag: '--force', description: 'overwrite an existing template' }]
+    options: [], // original flags preserved in the docblock above
+    args: []     // original positional declarations preserved in the docblock above
 };
 
-export { meta };
-
-/**
- * Interactive language install (input + overwrite confirm + install).
- * Moved from lib/languages.ts#installNew — Interface construction lives
- * in scripts/ per the lib-purity directive.
- */
-async function installNewLanguage() {
-    const iface = Interface.createInterface('languages');
-    const lang = await iface.input('Language to install (e.g. ts, rb, go):', {
-        validate: (v) => (v.trim() ? true : 'Language is required')
-    });
-    const name = lang.replace(/^\.+/, '').toLowerCase();
-    if (languages.isSupported(name)) {
-        const overwrite = await iface.confirm(
-            `Language "${name}" is already installed. Overwrite?`,
-            false
-        );
-        if (!overwrite) return cli.ok('Not overwritten.');
-    }
-    console.log(`languages: installing "${name}"...`);
-    const result = await languages.install(name, { force: true });
-    console.log(`\n✓ Installed language: ${result.name} (${result.path})`);
-    return result.name;
+async function main(_opts: Args<typeof meta>, _positional: Positional<typeof meta>) {
+    return exit(new Error('languages: unimplemented - see the documented original behavior in this file\'s header (recoverable from git history).'));
 }
 
-/**
- * Interactive language chooser. Moved from lib/languages.ts#choose.
- * Guards interactivity BEFORE constructing the Interface.
- */
-async function chooseLanguage({ default: defaultLang = 'mjs' } = {}) {
-    if (!cli.isInteractive()) return cli.nonInteractive('cannot choose a language.');
-    const iface = Interface.createInterface('languages');
-    const langs = languages.list();
-    if (langs.length === 0) return await installNewLanguage();
-    const initial = Math.max(0, langs.indexOf(defaultLang));
-    const choice = await iface.select(
-        'Select a language for the new module:',
-        languages.choices(),
-        {
-            nonInteractiveBehavior: 'return',
-            initial
-        }
-    );
-    if (choice === '__install__') return await installNewLanguage();
-    return choice;
-}
-
-/**
- * CLI install path driven by opts/positionals. Moved from
- * lib/languages.ts#installFromArgs. The Interface is constructed
- * lazily, only after an interactive guard has passed.
- */
-async function installFromArgs(opts = {}, positional = []) {
-    const nameArg = positional[0];
-    let force = !!opts.force;
-    let lang = nameArg;
-    let iface = null;
-    const prompt = () => (iface ??= Interface.createInterface('languages'));
-    if (!lang) {
-        if (!cli.isInteractive())
-            return cli.fail('Usage: node index.js languages install <lang> [--force]');
-        lang = await prompt().input('Language to install (e.g. ts, rb, go):', {
-            validate: (v) => (v.trim() ? true : 'Language is required')
-        });
-    }
-    lang = lang.replace(/^\.+/, '').toLowerCase();
-    if (languages.isSupported(lang) && !force) {
-        // Non-interactive parity with the old confirm-prompt fallback
-        // (initial = false → decline the overwrite).
-        if (!cli.isInteractive()) return cli.ok('Not overwritten.');
-        const overwrite = await prompt().confirm(
-            `Language "${lang}" is already installed. Overwrite?`,
-            false
-        );
-        if (!overwrite) return cli.ok('Not overwritten.');
-        force = true;
-    }
-    console.log(`languages: installing "${lang}"...`);
-    const result = await languages.install(lang, { force });
-    console.log(`\n✓ Installed language: ${result.name}`);
-    console.log(`  template: ${result.path}`);
-    console.log(`  lines: ${Object.keys(result.template.lines).length}`);
-    console.log(`  sections: ${result.template.sections.length} line keys`);
-    return cli.ok(`Done. New modules can now use .${result.name}`);
-}
-
-export { chooseLanguage, installNewLanguage, installFromArgs };
-
-export default new CLI(
-    'languages.ts',
-    async (opts, positional) => {
-        const sub = positional[0];
-        if (!sub || sub === 'list' || sub === '--list') {
-            languages.show();
-            return exit(0);
-        }
-        if (sub === 'install') {
-            await installFromArgs(opts, positional.slice(1));
-            return exit(0);
-        }
-        return exit(`Unknown subcommand: ${sub}\nUsage: ${meta.usage}`);
-    },
-    meta
-).supportsDirectRunning(import.meta.url);
+export default new CLI('languages.ts', main, meta).supportsDirectRunning();
+export { main, meta };

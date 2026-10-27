@@ -1,171 +1,59 @@
 #!/usr/bin/env node
+// ---------------------------------------------------------------------------
+// status.ts — STUB (implementation removed in the Bunli-migration slim-down).
+//
+// Original behavior: an interactive staged review of project + git state.
+// Built the flow AT IMPORT TIME: a single shared Interface ('status') was
+// constructed at module scope, five stage TUIs were instantiated as top-level
+// consts (each a TUI submodule whose main returned exit(0) to advance the
+// chain, exit('exit') to terminate, or exit(n)), and the default export was a
+// TUI whose main returned exit(Interface.createInterface('status')
+// .stage(...).stage(...) — a five-stage chain:
+//   1. stageProjectDiscovery — table of rarebert.discover() folders + their
+//      discovered modules (rarebert.discoverModules)
+//   2. stageGitStatus — git.statusSummary()
+//   3. stageGitDiff — git.diffSummary() (colour; "(no uncommitted changes)"
+//      when clean)
+//   4. stageBranchRemote — git.branchInfo() (branch/upstream/aheadBehind) +
+//      git.remoteInfo()
+//   5. stageLaunchEdit — interactive confirm to spawn scripts/edit.ts via
+//      spawnSync(process.execPath, [editScript]) with stdio inherit; skipped
+//      non-interactively
+// Each stage ended with promptContinue() (select:'Continue?' → next stage or
+// exit to shell).
+//
+// Non-interactive entry: `--debug` printed the project-folder listing, git
+// status summary, and branch/remote info (printDebugListing) and exited 0.
+//
+// CLI surface (original meta):
+//   usage: 'node index.js status [--debug]'
+//   options:
+//     --debug — print prod-ready project discovery listing and exit
+//
+// NOTE: this was a TUI/flow module (default export was a TUI instance, not a
+// CLI, and Interface stages were constructed at import time). This stub
+// standardizes the file on the plain CLI shape (CLI + exit(new Error(...)))
+// so every scripts/ file presents the same surface to discovery/launch; the
+// staged-flow behavior above is retained only in this record. Had no other
+// module importing from it. Dependencies: TUI/Interface, isInteractive,
+// rarebert/home, git (lib/git.ts), spawnSync, exit (lib/core.ts).
+// ---------------------------------------------------------------------------
 
-import { spawnSync } from 'child_process';
-import path from 'path';
-import { exit } from '../lib/core.ts';
-import { Interface, TUI, cli } from '../lib/runtime/module.ts';
-import { rarebert, home } from '../lib/projects.ts';
-import { git } from '../lib/git.ts';
+import { CLI, type Args, type Positional } from '../lib/runtime/CLI.ts';
+import { exit } from '../lib/runtime/core.ts';
 
 const meta = {
     name: 'status',
     description:
-        'Show project folders and modules, then git status/diff/branch/remote, and optionally launch edit — interactive staged review',
+        'Show project folders and modules, then git status/diff/branch/remote, and optionally launch edit — interactive staged review (unimplemented)',
     usage: 'node index.js status [--debug]',
-    options: [
-        { flag: '--debug', description: 'print prod-ready project discovery listing and exit' }
-    ]
+    options: [], // original flags preserved in the docblock above
+    args: []     // original positional declarations preserved in the docblock above
 };
 
-export { meta };
-
-// Each stage is a TUI submodule chained by an Interface flow. A stage main
-// returns exit(0) to advance the chain, exit("explanation") to terminate
-// the flow with an explanation, or exit(n) to terminate with code n —
-// dispatched by exit()'s argument kind.
-
-// The stage TUIs only run inside the interactive flow, so a single shared
-// Interface is safe to construct at module scope for all prompt call sites.
-const iface = Interface.createInterface('status');
-
-async function promptContinue() {
-    const choice = await iface.select('Continue?', [
-        { name: 'continue', message: 'Continue to next stage' },
-        { name: 'exit', message: 'Exit to shell' }
-    ]);
-    return choice === 'exit' ? exit('exit') : exit(0);
+async function main(_opts: Args<typeof meta>, _positional: Positional<typeof meta>) {
+    return exit(new Error('status: unimplemented - see the documented original behavior in this file\'s header (recoverable from git history).'));
 }
 
-const stageProjectDiscovery = new TUI(
-    'stage-project-discovery.ts',
-    async () => {
-        console.log('\n=== project folders ===\n');
-        const folders = rarebert.discover();
-        console.log(`${'key'.padEnd(12)} ${'path'.padEnd(16)} modules`);
-        for (const f of folders) {
-            const mods = rarebert.discoverModules(f.dir, f.exts);
-            const modCount =
-                mods.length > 0
-                    ? `(${mods.length} module${mods.length === 1 ? '' : 's'})`
-                    : '(empty)';
-            console.log(`${f.key.padEnd(12)} ${f.rel.padEnd(16)} ${modCount}`);
-            for (const m of mods) {
-                console.log(`  ${m.path}`);
-            }
-        }
-        return promptContinue();
-    },
-    { name: 'stage-project-discovery', description: 'status flow stage: project folders' }
-);
-
-const stageGitStatus = new TUI(
-    'stage-git-status.ts',
-    async () => {
-        console.log('\n=== git status ===\n');
-        console.log(git.statusSummary());
-        return promptContinue();
-    },
-    { name: 'stage-git-status', description: 'status flow stage: git status' }
-);
-
-const stageGitDiff = new TUI(
-    'stage-git-diff.ts',
-    async () => {
-        console.log('\n=== git diff (colour) ===\n');
-        const diff = git.diffSummary();
-        if (!diff) {
-            console.log('(no uncommitted changes)');
-        } else {
-            console.log(diff);
-        }
-        return promptContinue();
-    },
-    { name: 'stage-git-diff', description: 'status flow stage: git diff' }
-);
-
-const stageBranchRemote = new TUI(
-    'stage-branch-remote.ts',
-    async () => {
-        console.log('\n=== branch & remote ===\n');
-        const { branch, upstream, aheadBehind } = git.branchInfo();
-        console.log(`branch:    ${branch}`);
-        console.log(`upstream:  ${upstream}`);
-        console.log(`ahead/behind: ${aheadBehind}`);
-        console.log(`\n${git.remoteInfo()}`);
-        return promptContinue();
-    },
-    { name: 'stage-branch-remote', description: 'status flow stage: branch & remote' }
-);
-
-const stageLaunchEdit = new TUI(
-    'stage-launch-edit.ts',
-    async () => {
-        console.log('\n=== launch edit ===\n');
-        if (!cli.isInteractive()) {
-            console.log('Non-interactive; skipping edit launch.');
-            return exit('exit');
-        }
-
-        const launch = await iface.select('Launch the edit submodule?', [
-            { name: 'edit', message: 'Yes — select a module and edit' },
-            { name: 'exit', message: 'No — exit to shell' }
-        ]);
-
-        if (launch === 'exit') return exit('exit');
-
-        const editScript = path.join(home.root, 'scripts', 'edit.ts');
-        const result = spawnSync(process.execPath, [editScript], {
-            stdio: 'inherit',
-            cwd: rarebert.root
-        });
-        return exit(result.status ?? 0);
-    },
-    { name: 'stage-launch-edit', description: 'status flow stage: launch edit' }
-);
-
-function printDebugListing() {
-    const folders = rarebert.discover();
-    console.log(`${'key'.padEnd(12)} ${'path'.padEnd(16)} modules`);
-    for (const f of folders) {
-        const mods = rarebert.discoverModules(f.dir, f.exts);
-        const modCount =
-            mods.length > 0 ? `(${mods.length} module${mods.length === 1 ? '' : 's'})` : '(empty)';
-        console.log(`${f.key.padEnd(12)} ${f.rel.padEnd(16)} ${modCount}`);
-        for (const m of mods) {
-            console.log(`  ${m.path}`);
-        }
-    }
-
-    console.log('\n=== git status ===');
-    console.log(git.statusSummary() || '(clean)');
-
-    const { branch, upstream, aheadBehind } = git.branchInfo();
-    console.log('\n=== branch & remote ===');
-    console.log(`branch:       ${branch}`);
-    console.log(`upstream:     ${upstream}`);
-    console.log(`ahead/behind: ${aheadBehind}`);
-    console.log(git.remoteInfo());
-}
-
-// Flow-as-main: the stages are themselves TUI submodules; the main returns
-// exit(flow) — exit()'s kind dispatch wraps the Interface chain as an
-// ExitSignal submodule and the Runtime drives it through complete().
-export default new TUI(
-    'status.ts',
-    async (opts) => {
-        if (opts.debug) {
-            printDebugListing();
-            return exit(0);
-        }
-
-        return exit(
-            Interface.createInterface('status')
-                .stage(stageProjectDiscovery)
-                .stage(stageGitStatus)
-                .stage(stageGitDiff)
-                .stage(stageBranchRemote)
-                .stage(stageLaunchEdit)
-        );
-    },
-    meta
-).supportsDirectRunning(import.meta.url);
+export default new CLI('status.ts', main, meta).supportsDirectRunning();
+export { main, meta };

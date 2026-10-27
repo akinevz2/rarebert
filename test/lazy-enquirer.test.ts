@@ -10,16 +10,15 @@ import { fileURLToPath } from 'node:url';
 //    runtime returns exit() (a nonInteractive ExitSignal) instead of an
 //    instance; behaviour tests live in interface.test.ts.
 //
-// 2. Lazy enquirer loading — mirroring how createCommand(meta) pulls in
-//    commander at runtime, enquirer may only be imported dynamically
+// 2. Lazy enquirer loading — enquirer may only be imported dynamically
 //    inside TUI class-member methods (via createInterface()) or the
 //    standalone promptModuleChoices helper. lib/module.ts must never
 //    statically import it.
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const source = fs.readFileSync(path.join(ROOT, 'lib', 'module.ts'), 'utf-8');
+const source = fs.readFileSync(path.join(ROOT, 'lib', 'runtime', 'TUI.ts'), 'utf-8');
 
-describe('lazy enquirer loading (lib/module.ts)', () => {
+describe('lazy enquirer loading (lib/runtime/TUI.ts)', () => {
     test('no static enquirer import at module scope', () => {
         assert.doesNotMatch(source, /from\s+'enquirer'/);
         assert.doesNotMatch(source, /require\(\s*'enquirer'\s*\)/);

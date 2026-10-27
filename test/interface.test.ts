@@ -1,7 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { exit, ExitSignal } from '../lib/core.ts';
-import { Interface, TUI, cli } from '../lib/module.ts';
+import { Interface, TUI } from '../lib/module.ts';
+import type { ExitSignal as ExitSignalType } from '../lib/runtime/core.ts';
+// Terminal helpers — free functions (the legacy `cli` singleton was deleted).
+import { isInteractive } from '../lib/runtime/Module.ts';
 
 // Regression tests for the Interface flow class: TUI -> TUI stage chains
 // run through the exit() machinery, and constructing an Interface from a
@@ -10,18 +13,33 @@ import { Interface, TUI, cli } from '../lib/module.ts';
 
 // Build an instance bypassing the constructor's CLI-runtime guard so the
 // chain semantics are deterministic regardless of the test runner's TTY.
-function makeFlow(stages) {
-    const flow = Object.create(Interface.prototype);
+/** The context object a function stage receives. */
+interface StageCtx {
+    /** The flow's TUI instance. */
+    tui: TUI | null;
+    /** The argv the flow was executed with. */
+    args: any[];
+    /** The previous stage's value. */
+    prev: unknown;
+}
+
+/** A stage: a plain function step or a Module-shaped object. */
+type Stage =
+    | ((ctx: StageCtx) => unknown)
+    | { execute: (args?: any[]) => unknown };
+
+function makeFlow(stages: Stage[]) {
+    const flow = Object.create(Interface.prototype) as Interface;
     flow.name = 'test-flow';
     flow.path = 'test-flow';
-    flow.tui = null;
+    flow.tui = null as unknown as TUI;
     flow.stages = stages;
     return flow;
 }
 
 // Same bypass for the prompt-factory tests: factories only need this.tui.
 function makeIface() {
-    const iface = Object.create(Interface.prototype);
+    const iface = Object.create(Interface.prototype) as Interface;
     iface.name = 'test-iface';
     iface.path = 'test-iface';
     iface.tui = new TUI('test.ts');
@@ -32,12 +50,12 @@ function makeIface() {
 describe('Interface — CLI-runtime guard', () => {
     test(
         'constructing from a CLI runtime returns exit() — a nonInteractive ExitSignal, not an instance',
-        { skip: cli.isInteractive() },
+        { skip: isInteractive() },
         () => {
             const result = new Interface('nope');
             assert.ok(result instanceof ExitSignal);
-            assert.ok(!(result instanceof Interface));
             assert.equal(result.code, 1);
+            assert.ok(!(result instanceof Interface));
         }
     );
 });
@@ -49,7 +67,7 @@ describe('Interface — stage chain semantics', () => {
     });
 
     test('function stages receive ctx { tui, args, prev } and plain values chain as prev', async () => {
-        const seen = [];
+        const seen: unknown[][] = [];
         const flow = makeFlow([
             async ({ args, prev }) => {
                 seen.push(['s1', args, prev]);
@@ -83,8 +101,8 @@ describe('Interface — stage chain semantics', () => {
     });
 
     test('TUI-shaped stages run via their execute(args)', async () => {
-        const calls = [];
-        const stage = { execute: async (args) => (calls.push(args), 0) };
+        const calls: any[][] = [];
+        const stage = { execute: async (args?: any[]) => (calls.push(args ?? []), 0) };
         const flow = makeFlow([stage]);
         assert.equal(await flow.execute(['a']), 0);
         assert.deepEqual(calls, [['a']]);
@@ -109,7 +127,7 @@ describe('Interface — prompt factories (submodule-level runnables)', () => {
 
     test(
         '"return value" — confirm falls back to its initial when non-interactive',
-        { skip: cli.isInteractive() },
+        { skip: isInteractive() },
         async () => {
             const iface = makeIface();
             assert.equal(await iface.confirm('proceed?', true), true);
@@ -119,7 +137,7 @@ describe('Interface — prompt factories (submodule-level runnables)', () => {
 
     test(
         '"return exit" — select/input bail with a nonInteractive ExitSignal',
-        { skip: cli.isInteractive() },
+        { skip: isInteractive() },
         async () => {
             const iface = makeIface();
             const s = await iface.select('pick?', ['a', 'b']);
@@ -131,7 +149,7 @@ describe('Interface — prompt factories (submodule-level runnables)', () => {
 
     test(
         'a select runnable used as an exit() submodule folds to the bail code',
-        { skip: cli.isInteractive() },
+        { skip: isInteractive() },
         async () => {
             const iface = makeIface();
             const code = await exit(iface.select('pick?', ['a', 'b'])).complete();
@@ -141,7 +159,7 @@ describe('Interface — prompt factories (submodule-level runnables)', () => {
 
     test('effectful steps are plain function stages — no gate, value chains as prev', async () => {
         const iface = makeIface();
-        const logged = [];
+        const logged: string[] = [];
         const flow = makeFlow([
             () => {
                 logged.push('hello');
@@ -151,18 +169,26 @@ describe('Interface — prompt factories (submodule-level runnables)', () => {
         ]);
         assert.equal(await flow.execute([]), 0);
         assert.deepEqual(logged, ['hello']);
-        assert.equal(typeof iface.print, 'undefined', 'print factory is deliberately absent');
-    });
-
-    test('a confirm runnable drops into a stage chain and chains its value as prev', async () => {
-        const iface = makeIface();
-        const flow = makeFlow([iface.confirm('proceed?', true), async ({ prev }) => prev === true]);
-        assert.equal(await flow.execute([]), 0);
+        assert.equal(
+            typeof (iface as unknown as Record<string, unknown>).print,
+            'undefined',
+            'print factory is deliberately absent'
+        );
     });
 
     test(
+        'a confirm runnable drops into a stage chain and chains its value as prev',
+        { skip: isInteractive() },
+        async () => {
+            const iface = makeIface();
+            const flow = makeFlow([iface.confirm('proceed?', true), async ({ prev }) => prev === true]);
+            assert.equal(await flow.execute([]), 0);
+        }
+    );
+
+    test(
         'query bails with a nonInteractive ExitSignal when non-interactive',
-        { skip: cli.isInteractive() },
+        { skip: isInteractive() },
         async () => {
             const iface = makeIface();
             const r = await iface.query('Select', { name: 'x', choices: ['a'] });
@@ -172,7 +198,7 @@ describe('Interface — prompt factories (submodule-level runnables)', () => {
 
     test(
         'Interface.createInterface is the single entry — CLI runtime yields exit()',
-        { skip: cli.isInteractive() },
+        { skip: isInteractive() },
         () => {
             const result = Interface.createInterface('nope');
             assert.ok(result instanceof ExitSignal);
@@ -211,7 +237,7 @@ describe('Interface — directed stage protocol & flow-as-main', () => {
 
     test(
         'flow-as-main in a CLI runtime — the guard\'s ExitSignal passes through and bails',
-        { skip: cli.isInteractive() },
+        { skip: isInteractive() },
         async () => {
             const { CLI } = await import('../lib/module.ts');
             const mod = new CLI(

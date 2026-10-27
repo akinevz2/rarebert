@@ -22,22 +22,69 @@ import { CLEAR_SCREEN } from '../supports/symbols.ts';
 // final code.
 // ---------------------------------------------------------------------------
 
+/** An error carrying an explicit process exit code (e.g. AbortError → 130). */
+export interface ExitError extends Error {
+    exitCode?: number;
+}
+
+/**
+ * Callback invoked with the final exit code during `complete()`.
+ *
+ * The return type is `unknown` rather than `void | Promise<void>`: a
+ * `void` return type accepts any function whose result is *discarded*,
+ * but a union with `Promise<void>` breaks that rule — a callback like
+ * `(c) => (saw = c)` (which returns the assigned value) would be
+ * rejected. `unknown` accepts both sync and async callbacks and lets
+ * `complete()` await the result.
+ */
+export type ExitCallback = (code: number) => unknown;
+
+/**
+ * Cleanup callback run before the process terminates.
+ *
+ * `unknown` for the same reason as `ExitCallback` — see its doc comment.
+ */
+export type CleanupFn = () => unknown;
+
+/** Options accepted by `exit()`. */
+export interface ExitOptions {
+    onExit?: ExitCallback;
+    retry?: boolean;
+    cleanup?: CleanupFn | null;
+}
+
+/** A Module-like object the runtime can execute as a submodule. */
+export interface ModuleLike {
+    execute: (args?: string[]) => unknown;
+    path?: string;
+    clearScreen?: boolean;
+    isInteractive?: () => boolean;
+}
+
+/** A submodule: a Module-like object, a plain function, or a thenable. */
+export type Submodule = ModuleLike | ((...args: any[]) => unknown) | PromiseLike<unknown> | null;
+
+/** Narrow an unknown value to a thenable. */
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+    return !!value && typeof (value as { then?: unknown }).then === 'function';
+}
+
 /**
  * Run `mod` with `args` and terminate the process with the resulting
  * exit code. Never resolves in the normal path — the process exits
  * inside this function.
  *
- * @param {object} mod - a Module-like object: `{ path, execute(args), isInteractive? }`
- * @param {Array} args - argv for the module's main callback
+ * @param mod - a Module-like object: `{ path, execute(args), isInteractive? }`
+ * @param args - argv for the module's main callback
  */
-async function run(mod, args = []) {
-    let result;
+async function run(mod: ModuleLike, args: string[] = []): Promise<never> {
+    let result: unknown;
     try {
         result = await mod.execute(args);
     } catch (err) {
         // Error kind — route through the exit() machinery so abort
         // callbacks run and AbortError maps to its own code (130).
-        result = exit(err);
+        result = exit(err as ExitError);
     }
 
     if (result === undefined) {
@@ -51,29 +98,30 @@ async function run(mod, args = []) {
     // process.exit() branches: a main callback may return an Error, a
     // promise, a message string, or a bare code and the same complete()
     // path handles cleanup, onExit, and the final code.
-    if (!(result instanceof ExitSignal)) {
-        if (
-            result instanceof Error ||
-            (result && typeof result.then === 'function') ||
-            typeof result === 'string' ||
-            typeof result === 'number'
-        ) {
-            result = exit(result);
-        } else {
-            console.error(
-                `${mod.path}: main callback returned ${typeof result} — expected an ExitSignal from exit().`
-            );
-            process.exit(1);
-        }
+    let signal: ExitSignal;
+    if (result instanceof ExitSignal) {
+        signal = result;
+    } else if (
+        result instanceof Error ||
+        isThenable(result) ||
+        typeof result === 'string' ||
+        typeof result === 'number'
+    ) {
+        signal = exit(result as ExitError | PromiseLike<unknown> | string | number);
+    } else {
+        console.error(
+            `${mod.path}: main callback returned ${typeof result} — expected an ExitSignal from exit().`
+        );
+        process.exit(1);
     }
 
-    const finalCode = await result.complete();
-    const exitCode = typeof finalCode === 'number' ? finalCode : result.code;
+    const finalCode = await signal.complete();
+    const exitCode = typeof finalCode === 'number' ? finalCode : signal.code;
 
     // Submodule chains: a TUI submodule asks for a screen clear after its
     // run so the next shell line doesn't clash with TUI output.
-    if (result.isSubmodule()) {
-        const submodule = result.submodule;
+    if (signal.isSubmodule()) {
+        const submodule = signal.submodule as ModuleLike | null;
         if (submodule && submodule.clearScreen && mod.isInteractive?.()) {
             process.stdout.write(CLEAR_SCREEN);
         }
@@ -125,13 +173,26 @@ const EXIT_ABORT = 130;
  * - nonInteractive() in lib/cli.ts - use exit() with appropriate code
  */
 class ExitSignal {
+    /** The exit code this signal resolves to. */
+    code: number;
+    /** Callback run with the final code during `complete()`. */
+    onExit?: ExitCallback;
+    /** Whether the caller asked for a retry. */
+    retry: boolean;
+    /** Cleanup run before termination. */
+    cleanup: CleanupFn | null;
+    /** The submodule (Module-like, function, or thenable) to run. */
+    submodule: Submodule;
+    /** The error carried by this signal (error kind). */
+    error: ExitError | null;
+
     constructor(
-        code,
-        onExit = undefined,
+        code: number,
+        onExit: ExitCallback | undefined = undefined,
         retry = false,
-        cleanup = null,
-        submodule = null,
-        error = null
+        cleanup: CleanupFn | null = null,
+        submodule: Submodule = null,
+        error: ExitError | null = null
     ) {
         this.code = code;
         this.onExit = onExit;
@@ -141,7 +202,7 @@ class ExitSignal {
         this.error = error;
     }
 
-    async complete() {
+    async complete(): Promise<number> {
         // Promise kind — await the thenable and fold its outcome back into
         // the signal machinery.
         if (this.isPromise()) {
@@ -149,7 +210,7 @@ class ExitSignal {
             try {
                 result = await this.submodule;
             } catch (err) {
-                return await ExitSignal.fromError(err, {
+                return await ExitSignal.fromError(err as ExitError, {
                     onExit: this.onExit,
                     retry: this.retry,
                     cleanup: this.cleanup
@@ -165,12 +226,13 @@ class ExitSignal {
 
         // Submodule kind — a Module instance runs its own execute() and
         // folds the returned signal/code.
-        if (this.submodule && typeof this.submodule.execute === 'function') {
+        const submodule = this.submodule as ModuleLike | null;
+        if (submodule && typeof submodule.execute === 'function') {
             try {
-                const result = await this.submodule.execute();
+                const result = await submodule.execute();
                 if (result === undefined) {
                     console.error(
-                        `${this.submodule.path || 'submodule'}: main callback returned undefined — use exit() to signal completion.`
+                        `${submodule.path || 'submodule'}: main callback returned undefined — use exit() to signal completion.`
                     );
                     if (typeof this.onExit === 'function') await this.onExit(1);
                     return 1;
@@ -186,7 +248,7 @@ class ExitSignal {
                 }
                 return exitCode;
             } catch (err) {
-                return await ExitSignal.fromError(err, {
+                return await ExitSignal.fromError(err as ExitError, {
                     onExit: this.onExit,
                     retry: this.retry,
                     cleanup: this.cleanup
@@ -205,7 +267,7 @@ class ExitSignal {
                 }
                 return exitCode;
             } catch (err) {
-                return await ExitSignal.fromError(err, {
+                return await ExitSignal.fromError(err as ExitError, {
                     onExit: this.onExit,
                     retry: this.retry,
                     cleanup: this.cleanup
@@ -253,7 +315,7 @@ class ExitSignal {
     }
 
     isPromise() {
-        return !!this.submodule && typeof this.submodule.then === 'function';
+        return isThenable(this.submodule);
     }
 
     isError() {
@@ -268,11 +330,14 @@ class ExitSignal {
         return this.cleanup;
     }
 
-    static fromError(err, { onExit, retry, cleanup } = {}) {
+    static fromError(err: ExitError, { onExit, retry, cleanup }: ExitOptions = {}): ExitSignal {
         return new ExitSignal(err?.exitCode ?? EXIT_FAIL, onExit, retry, cleanup, null, err);
     }
 
-    static fromPromise(promise, { onExit, retry, cleanup } = {}) {
+    static fromPromise(
+        promise: PromiseLike<unknown>,
+        { onExit, retry, cleanup }: ExitOptions = {}
+    ): ExitSignal {
         return new ExitSignal(EXIT_OK, onExit, retry, cleanup, promise);
     }
 }
@@ -289,6 +354,9 @@ class HelpRequestedSignal extends Error {
 // like projects.ts can use it without importing module.ts — breaking the
 // projects ↔ module import cycle. module.ts re-exports it for compat.
 class AbortError extends Error {
+    /** The process exit code this abort maps to (130 by default). */
+    exitCode: number;
+
     constructor(message = 'Aborted', code = EXIT_ABORT) {
         super(message);
         this.name = 'AbortError';
@@ -296,7 +364,24 @@ class AbortError extends Error {
     }
 }
 
-function exit(codeOrSubmodule, options = {}) {
+/** Everything `exit()` accepts as its first argument. */
+type ExitArgument = number | string | ExitError | ExitSignal | Submodule | undefined | null;
+
+/**
+ * The second argument of `exit()`.
+ *
+ * `ExitOptions` is the documented form; a bare function is the
+ * `exit(n, fn)` shorthand. `ModuleLike` is included so the runtime
+ * guard (which rejects `exit(code, runnable)` with a TypeError) stays
+ * reachable from TypeScript — otherwise the guard would be untestable
+ * and the error would only surface at runtime.
+ */
+type ExitSecondArgument = ExitOptions | ExitCallback | ModuleLike;
+
+function exit(
+    codeOrSubmodule?: ExitArgument,
+    options: ExitSecondArgument = {}
+): ExitSignal {
     // exit(n, fn) — a bare function as the second argument is the
     // happy-path on-exit callback: it runs during complete() before the
     // process terminates (exit(n, { onExit: fn }) is the equivalent object
@@ -305,13 +390,13 @@ function exit(codeOrSubmodule, options = {}) {
     if (typeof options === 'function') {
         options = { onExit: options };
     }
-    if (options && typeof options === 'object' && typeof options.execute === 'function') {
+    if (options && typeof options === 'object' && typeof (options as ModuleLike).execute === 'function') {
         throw new TypeError(
             'exit(code, runnable) is not supported — submodules are the first argument: ' +
             'use exit(fn) / exit(flow).'
         );
     }
-    const { onExit, retry, cleanup } = options;
+    const { onExit, retry, cleanup } = options as ExitOptions;
 
     // Error kind — the error rides the signal; AbortError maps to its own
     // exitCode (130), anything else fails with EXIT_FAIL.
@@ -321,7 +406,7 @@ function exit(codeOrSubmodule, options = {}) {
 
     // Promise kind — the awaited outcome folds back through complete():
     // ExitSignal → recurse, number → code, rejection → error kind.
-    if (codeOrSubmodule && typeof codeOrSubmodule.then === 'function') {
+    if (isThenable(codeOrSubmodule)) {
         return ExitSignal.fromPromise(codeOrSubmodule, { onExit, retry, cleanup });
     }
 
@@ -351,7 +436,8 @@ function exit(codeOrSubmodule, options = {}) {
         return codeOrSubmodule;
     }
 
-    return new ExitSignal(codeOrSubmodule.code ?? 0, onExit, retry, cleanup, codeOrSubmodule);
+    const fallback = codeOrSubmodule as ModuleLike & { code?: number };
+    return new ExitSignal(fallback.code ?? 0, onExit, retry, cleanup, fallback);
 }
 
 // ---------------------------------------------------------------------------
@@ -394,7 +480,40 @@ const DB_PATH = path.join(DATA_DIR, 'rarebert.db');
  * Callers go through the `store` singleton; never construct Store
  * directly outside of tests.
  */
+/** A row of the `projects` table. */
+export interface ProjectRow {
+    id: number;
+    path: string;
+    onboarded: number;
+    editor_type: string | null;
+    last_model: string | null;
+    created_at: string;
+}
+
+/** A row of the `folders` table (with `exts` decoded from JSON). */
+export interface FolderRow {
+    id: number;
+    project_id: number;
+    rel: string;
+    key: string;
+    exts: string[];
+    label: string | null;
+}
+
+/** A folder descriptor accepted by `Store.setFolders`. */
+export interface FolderSpec {
+    rel: string;
+    key: string;
+    exts: string[];
+    label?: string | null;
+}
+
 class Store {
+    /** Absolute path of the SQLite database file. */
+    dbPath: string;
+    /** The lazily-opened database handle. */
+    _db: DatabaseSync | null;
+
     constructor(dbPath = DB_PATH) {
         this.dbPath = dbPath;
         this._db = null;
@@ -472,8 +591,10 @@ class Store {
      * Look up a project by its absolute root path. Returns
      * { id, path, onboarded, created_at } or null.
      */
-    getProject(absPath) {
-        const row = this.db().prepare('SELECT * FROM projects WHERE path = ?').get(absPath);
+    getProject(absPath: string): ProjectRow | null {
+        const row = this.db()
+            .prepare('SELECT * FROM projects WHERE path = ?')
+            .get(absPath) as ProjectRow | undefined;
         return row ?? null;
     }
 
@@ -482,7 +603,7 @@ class Store {
      * record. Does NOT mark it onboarded — call markOnboarded() after
      * the onboarding flow completes.
      */
-    registerProject(absPath) {
+    registerProject(absPath: string): ProjectRow | null {
         const db = this.db();
         const existing = this.getProject(absPath);
         if (existing) return existing;
@@ -491,7 +612,7 @@ class Store {
     }
 
     /** Mark a project as having completed onboarding. */
-    markOnboarded(absPath) {
+    markOnboarded(absPath: string): void {
         this.db().prepare('UPDATE projects SET onboarded = 1 WHERE path = ?').run(absPath);
     }
 
@@ -499,7 +620,7 @@ class Store {
      * Get the persisted `editor_type` preference for a project.
      * Returns 'terminal' | 'graphical' | null.
      */
-    getEditorType(absPath) {
+    getEditorType(absPath: string): 'terminal' | 'graphical' | null {
         const p = this.getProject(absPath);
         if (!p) return null;
         return p.editor_type === 'terminal'
@@ -510,7 +631,7 @@ class Store {
     }
 
     /** Persist the editor_type preference for a project. */
-    setEditorType(absPath, editorType) {
+    setEditorType(absPath: string, editorType: 'terminal' | 'graphical' | null): void {
         const p = this.getProject(absPath);
         if (!p) return;
         this.db()
@@ -521,13 +642,13 @@ class Store {
     /**
      * Get the last-chosen model id for a project ('provider/model' or null).
      */
-    getLastModel(absPath) {
+    getLastModel(absPath: string): string | null {
         const p = this.getProject(absPath);
         return p?.last_model ?? null;
     }
 
     /** Persist the last-chosen model id for a project. */
-    setLastModel(absPath, modelId) {
+    setLastModel(absPath: string, modelId: string | null): void {
         const p = this.getProject(absPath);
         if (!p) return;
         this.db()
@@ -536,13 +657,13 @@ class Store {
     }
 
     /** True when the project at absPath has completed onboarding. */
-    isOnboarded(absPath) {
+    isOnboarded(absPath: string): boolean {
         const p = this.getProject(absPath);
         return p?.onboarded === 1;
     }
 
     /** Remove a project and its folders (cascade). */
-    forgetProject(absPath) {
+    forgetProject(absPath: string): void {
         this.db().prepare('DELETE FROM projects WHERE path = ?').run(absPath);
     }
 
@@ -552,7 +673,7 @@ class Store {
      * Replace the set of registered folders for a project. `folders` is
      * an array of { rel, key, exts (array), label }.
      */
-    setFolders(projectId, folders) {
+    setFolders(projectId: number, folders: FolderSpec[]): void {
         const db = this.db();
         db.prepare('DELETE FROM folders WHERE project_id = ?').run(projectId);
         const ins = db.prepare(
@@ -567,8 +688,10 @@ class Store {
      * Return the registered folders for a project as
      * [{ id, project_id, rel, key, exts (array), label }] or [].
      */
-    getFolders(projectId) {
-        const rows = this.db().prepare('SELECT * FROM folders WHERE project_id = ?').all(projectId);
+    getFolders(projectId: number): FolderRow[] {
+        const rows = this.db()
+            .prepare('SELECT * FROM folders WHERE project_id = ?')
+            .all(projectId) as Array<Omit<FolderRow, 'exts'> & { exts: string }>;
         return rows.map((r) => ({ ...r, exts: JSON.parse(r.exts) }));
     }
 
@@ -576,7 +699,7 @@ class Store {
      * Return the registered folders for a project identified by its
      * absolute root path, or [] when the project isn't registered.
      */
-    getFoldersForPath(absPath) {
+    getFoldersForPath(absPath: string): FolderRow[] {
         const p = this.getProject(absPath);
         if (!p) return [];
         return this.getFolders(p.id);
@@ -584,15 +707,21 @@ class Store {
 
     // ---- introspect_cache ----
 
-    getIntrospectCache(tool, key) {
+    getIntrospectCache(tool: string, key: string): { parsed: string } | null {
         const row = this.db()
             .prepare('SELECT parsed FROM introspect_cache WHERE tool = ? AND cache_key = ?')
-            .get(tool, key);
+            .get(tool, key) as { parsed: string | null } | undefined;
         if (!row || !row.parsed) return null;
         return { parsed: row.parsed };
     }
 
-    setIntrospectCache(tool, key, absPath, output, parsed) {
+    setIntrospectCache(
+        tool: string,
+        key: string,
+        absPath: string,
+        output: string,
+        parsed: string | null
+    ): void {
         this.db()
             .prepare(
                 `INSERT INTO introspect_cache (tool, cache_key, abs_path, output, parsed)
@@ -606,7 +735,11 @@ class Store {
             .run(tool, key, absPath, output, parsed ?? null);
     }
 
-    clearIntrospectCache(tool = null) {
+    /**
+     * Clear the introspect cache. With a `tool`, only that tool's entries
+     * are removed; without one, the whole cache is cleared.
+     */
+    clearIntrospectCache(tool: string | null = null): void {
         if (tool) {
             this.db().prepare('DELETE FROM introspect_cache WHERE tool = ?').run(tool);
         } else {

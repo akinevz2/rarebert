@@ -37,10 +37,218 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { languages } from './runtime/languages.ts';
-import { rarebert } from './runtime/projects.ts';
-import { listAllModules } from './runtime/module.ts';
+import { languages } from './runtime/Language.ts';
+import { rarebert } from './runtime/Project.ts';
+import { listAllModules } from './runtime/discovery.ts';
+import type { Module } from './runtime/Module.ts';
 import { store } from './runtime/core.ts';
+
+
+// ─── Shared Types ─────────────────────────────────────────────
+
+/** An import binding extracted from a file. */
+export interface ImportRef {
+    /** The imported binding name. */
+    name: string;
+    /** Local alias (same as `name` when not aliased). */
+    localName: string;
+    /** The import source specifier. */
+    source: string;
+    /** 1-indexed line number. */
+    line: number;
+    /** named | default | namespace | reexport | dynamic | sideeffect | star | relative */
+    kind: string;
+    /** Project-relative path of the resolved target, or null. */
+    resolvedPath: string | null;
+    /** The export name at the target, when resolvable. */
+    resolvedExport: string | null;
+}
+
+/** A top-level declaration extracted from a file. */
+export interface Declaration {
+    /** Declaration name. */
+    name: string;
+    /** const | let | function | class | ... */
+    kind: string;
+    /** 1-indexed start line. */
+    startLine: number;
+    /** 1-indexed end line. */
+    endLine: number;
+    /** Source lines of the declaration. */
+    lines: string[];
+    /** Names this declaration references (1-step). */
+    computedFrom: string[] | null;
+    /** Whether the declaration is exported. */
+    exported: boolean;
+}
+
+/** An export entry extracted from a file. */
+export interface ExportRef {
+    /** Export name. */
+    name: string;
+    /** named | default | reexport | type */
+    type: string;
+    /** 1-indexed line number. */
+    line: number;
+    /** Source specifier when this is a re-export. */
+    reexportSource: string | null;
+}
+
+/** An issue found during introspection or tracing. */
+export interface IntrospectionIssue {
+    /** Issue category. */
+    kind: string;
+    /** File the issue belongs to, when known. */
+    file?: string;
+    /** Line the issue belongs to, when known. */
+    line?: number | null;
+    /** Human-readable description. */
+    message: string;
+}
+
+/** The introspection result for one file. */
+export interface FileIntrospection {
+    /** Absolute path of the file. */
+    path: string;
+    /** Project-relative path. */
+    relPath: string;
+    /** File extension (without the leading dot). */
+    ext: string;
+    /** Imports found in the file. */
+    imports: ImportRef[];
+    /** Top-level declarations found in the file. */
+    declarations: Declaration[];
+    /** Exports found in the file. */
+    exports: ExportRef[];
+    /** Issues found during introspection. */
+    issues: IntrospectionIssue[];
+}
+
+/** Export metadata as reported by a language primitive. */
+export interface ExportInfo {
+    /** Export name. */
+    name?: string;
+    /** named | default | reexport | type */
+    type?: string;
+    /** 1-indexed line number. */
+    line?: number;
+    /** Source specifier when this is a re-export. */
+    source?: string;
+}
+
+/** Import metadata as reported by a language primitive. */
+export interface ImportInfo {
+    /** The imported binding name. */
+    binding?: string;
+    /** Local alias. */
+    localName?: string;
+    /** The import source specifier. */
+    source: string;
+    /** 1-indexed line number. */
+    line?: number;
+    /** Import kind. */
+    kind?: string;
+}
+
+/** The bindings of one file: its exports, imports and source content. */
+export interface FileBindings {
+    /** Exports keyed by name. */
+    exports: Record<string, ExportInfo>;
+    /** Imports found in the file. */
+    imports: ImportInfo[];
+    /** The file's source content. */
+    content?: string;
+}
+
+/** A module in the dependency graph (the runtime `Module` shape). */
+export type GraphModule = Module;
+
+/** The dependency graph of a project. */
+export interface Graph {
+    /** relPath -> module. */
+    modules: Map<string, GraphModule>;
+    /** relPath -> file introspection. */
+    files: Map<string, FileIntrospection>;
+    /** relPath -> bindings. */
+    bindings: Map<string, FileBindings>;
+    /** exportName -> producers. */
+    byExport: Map<string, Array<{ module: string; type?: string; line?: number; source?: string }>>;
+}
+
+/** Context passed to a language primitive. */
+export interface ToolContext {
+    /** Absolute path of the file being introspected. */
+    absPath: string;
+    /** The file's source content. */
+    content: string;
+    /** Absolute path of the project root. */
+    projectRoot: string;
+    /** File extension (without the leading dot). */
+    ext: string;
+}
+
+/** A tool manifest describing an external tool invocation. */
+export interface ToolManifest {
+    /** Cache namespace for this tool. */
+    tool?: string;
+    /** 'file' | 'project'. */
+    scope?: string;
+    /** Builds the full argv array. */
+    command?: (ctx: ToolContext) => string[];
+    /** Maps raw stdout to the rarebert binding/declaration shape. */
+    parser?: (stdout: string, ctx: ToolContext) => unknown;
+    /** Probe — false degrades to an empty result. */
+    requires?: (ctx: ToolContext) => boolean;
+    /** Cache invalidation key. */
+    cacheKey?: (ctx: ToolContext) => string;
+    /** Timeout in seconds (default 30). */
+    timeout?: number;
+    /** Optional stdin content. */
+    stdin?: (ctx: ToolContext) => string | null;
+}
+
+/** A language primitive: either a function or a tool manifest. */
+export type Primitive = ((content: string, absPath: string) => unknown) | ToolManifest;
+
+/** One step of a dependency chain. */
+export interface ChainStep {
+    /** Project-relative path of the file. */
+    file: string;
+    /** The binding name at this step. */
+    name: string;
+    /** export | declaration | import | local-declaration | local-definition */
+    kind: string;
+    /** 1-indexed line number. */
+    line?: number;
+    /** Declaration kind, when known. */
+    declKind?: string;
+    /** Export type, when known. */
+    type?: string;
+    /** Import source specifier, when known. */
+    source?: string;
+    /** Resolved target path, when known. */
+    resolvedPath?: string | null;
+    /** Depth in the chain. */
+    depth?: number;
+}
+
+/** The result of a one-step dependency resolution. */
+export interface OneStepResult {
+    /** Imports the declaration depends on. */
+    fromImports: ImportRef[];
+    /** Sibling declarations the declaration depends on. */
+    fromDecls: Declaration[];
+    /** Names referenced but not resolvable. */
+    unresolved: string[];
+}
+
+/** The result of tracing a binding across the codebase. */
+export interface TraceResult {
+    /** The chain of steps. */
+    chain: ChainStep[];
+    /** Issues found along the way. */
+    issues: IntrospectionIssue[];
+}
 
 // ─── Path Resolution ──────────────────────────────────────────
 
@@ -49,7 +257,7 @@ import { store } from './runtime/core.ts';
  * absolute path on disk. Returns null for bare/external package specs
  * or unresolvable paths. Hoisted from bindings.ts.
  */
-function resolveImportPath(importerAbs, spec) {
+function resolveImportPath(importerAbs: string, spec: string): string | null {
     if (!spec.includes('/') && !spec.startsWith('.')) return null;
 
     const importerDir = path.dirname(importerAbs);
@@ -73,11 +281,11 @@ function resolveImportPath(importerAbs, spec) {
     return null;
 }
 
-function extOf(filePath) {
+function extOf(filePath: string): string {
     return path.extname(filePath).slice(1);
 }
 
-function readSource(absPath) {
+function readSource(absPath: string): string | null {
     try {
         return fs.readFileSync(absPath, 'utf-8');
     } catch {
@@ -100,7 +308,7 @@ function readSource(absPath) {
  * Invoke a language primitive, whether it's a function or a tool manifest.
  * Returns the primitive's result, or null/empty if not provided.
  */
-async function invokePrimitive(primitive, ctx) {
+async function invokePrimitive(primitive: Primitive, ctx: ToolContext): Promise<any> {
     if (typeof primitive === 'function') {
         return primitive(ctx.content, ctx.absPath);
     }
@@ -136,7 +344,7 @@ async function invokePrimitive(primitive, ctx) {
  * Failure semantics: tool failure never crashes analyze. On failure,
  * returns null and logs to stderr.
  */
-async function runTool(manifest, ctx) {
+async function runTool(manifest: ToolManifest, ctx: ToolContext): Promise<any> {
     const toolName = manifest.tool || 'unknown';
     const scope = manifest.scope || 'file';
     const timeoutMs = (manifest.timeout || 30) * 1000;
@@ -159,7 +367,9 @@ async function runTool(manifest, ctx) {
                 return null;
             }
         } catch (err) {
-            console.error(`introspect: ${toolName} requires() probe failed: ${err.message}`);
+            console.error(
+                `introspect: ${toolName} requires() probe failed: ${err instanceof Error ? err.message : String(err)}`
+            );
             return null;
         }
     }
@@ -215,7 +425,9 @@ async function runTool(manifest, ctx) {
     try {
         parsed = typeof manifest.parser === 'function' ? manifest.parser(stdout, ctx) : null;
     } catch (err) {
-        console.error(`introspect: ${toolName} parser failed: ${err.message}`);
+        console.error(
+            `introspect: ${toolName} parser failed: ${err instanceof Error ? err.message : String(err)}`
+        );
         store.setIntrospectCache(toolName, cacheKey, ctx.absPath, stdout, null);
         return null;
     }
@@ -226,7 +438,7 @@ async function runTool(manifest, ctx) {
     return parsed;
 }
 
-function defaultCacheKey(manifest, ctx) {
+function defaultCacheKey(manifest: ToolManifest, ctx: ToolContext): string {
     let mtime = '';
     try {
         mtime = fs.statSync(ctx.absPath).mtimeMs.toString();
@@ -289,7 +501,7 @@ function defaultCacheKey(manifest, ctx) {
  * @param {string} absPath - absolute path to the file
  * @returns {Promise<FileIntrospection>}
  */
-async function introspectFile(absPath) {
+async function introspectFile(absPath: string): Promise<FileIntrospection> {
     const ext = extOf(absPath);
     const content = readSource(absPath);
     const relPath = rarebert.relPath(absPath);
@@ -317,33 +529,39 @@ async function introspectFile(absPath) {
     const ctx = { absPath, content, projectRoot: rarebert.root, ext };
 
     // Extract bindings (exports + imports)
-    let bindings = { exports: {}, imports: [] };
+    let bindings: FileBindings = { exports: {}, imports: [] };
     if (lang) {
         try {
             const result = await invokePrimitive(lang.extractBindings, ctx);
             if (result) {
-                bindings = result;
+                bindings = result as FileBindings;
             }
         } catch (err) {
-            issues.push({ kind: 'extract-bindings-failed', message: err.message });
+            issues.push({
+                kind: 'extract-bindings-failed',
+                message: err instanceof Error ? err.message : String(err)
+            });
         }
     }
 
     // Extract all top-level declarations (exported or not)
-    let members = [];
+    let members: Declaration[] = [];
     if (lang) {
         try {
             const result = await invokePrimitive(lang.extractTopLevelMembers, ctx);
             if (result && Array.isArray(result)) {
-                members = result;
+                members = result as Declaration[];
             }
         } catch (err) {
-            issues.push({ kind: 'extract-members-failed', message: err.message });
+            issues.push({
+                kind: 'extract-members-failed',
+                message: err instanceof Error ? err.message : String(err)
+            });
         }
     }
 
     // Build import refs with resolved paths
-    const importRefs = (bindings.imports || []).map((imp) => {
+    const importRefs: ImportRef[] = (bindings.imports || []).map((imp: ImportInfo) => {
         const resolvedAbs = resolveImportPath(absPath, imp.source);
         const resolvedPath = resolvedAbs ? rarebert.relPath(resolvedAbs) : null;
         let resolvedExport = null;
@@ -357,7 +575,7 @@ async function introspectFile(absPath) {
             name: imp.binding || imp.localName || '',
             localName: imp.localName || imp.binding || '',
             source: imp.source,
-            line: imp.line,
+            line: imp.line ?? 0,
             kind: imp.kind || 'named',
             resolvedPath,
             resolvedExport
@@ -376,12 +594,14 @@ async function introspectFile(absPath) {
     }));
 
     // Build exports
-    const exportRefs = Object.entries(bindings.exports || {}).map(([name, info]) => ({
-        name,
-        type: info.type || 'named',
-        line: info.line || 0,
-        reexportSource: info.source || null
-    }));
+    const exportRefs: ExportRef[] = Object.entries(bindings.exports || {}).map(
+        ([name, info]: [string, ExportInfo]) => ({
+            name,
+            type: info.type || 'named',
+            line: info.line || 0,
+            reexportSource: info.source || null
+        })
+    );
 
     return {
         path: absPath,
@@ -413,7 +633,10 @@ async function introspectFile(absPath) {
  * @param {Object} opts - { codebaseScope: boolean }
  * @returns {Promise<Graph>}
  */
-async function buildGraph(seeds, opts = {}) {
+async function buildGraph(
+    seeds: string[],
+    opts: { codebaseScope?: boolean } = {}
+): Promise<Graph> {
     const codebaseScope = opts.codebaseScope || false;
 
     let modules;
@@ -424,8 +647,8 @@ async function buildGraph(seeds, opts = {}) {
         const allByPath = new Map(allModules.map((m) => [m.path, m]));
         const seedSet = new Set(seeds.map((s) => (path.isAbsolute(s) ? rarebert.relPath(s) : s)));
         // BFS import closure
-        const closure = new Set();
-        const queue = [];
+        const closure = new Set<string>();
+        const queue: GraphModule[] = [];
         for (const seed of seedSet) {
             const mod = allByPath.get(seed);
             if (mod) {
@@ -436,6 +659,7 @@ async function buildGraph(seeds, opts = {}) {
         const langCache = new Map();
         while (queue.length) {
             const mod = queue.shift();
+            if (!mod) continue;
             const ext = path.extname(mod.abs).toLowerCase();
             let lang = langCache.get(ext);
             if (lang === undefined) {
@@ -475,11 +699,14 @@ async function buildGraph(seeds, opts = {}) {
         modules = allModules.filter((m) => closure.has(m.path));
     }
 
-    const byPath = new Map(modules.map((m) => [m.path, m]));
-    const files = new Map();
-    const bindings = new Map();
-    const byExport = new Map();
-    const langCache = new Map();
+    const byPath = new Map<string, GraphModule>(modules.map((m) => [m.path, m]));
+    const files = new Map<string, FileIntrospection>();
+    const bindings = new Map<string, FileBindings>();
+    const byExport = new Map<
+        string,
+        Array<{ module: string; type?: string; line?: number; source?: string }>
+    >();
+    const langCache = new Map<string, Awaited<ReturnType<typeof languages.loadLanguage>> | null>();
 
     for (const mod of modules) {
         const ext = path.extname(mod.abs).toLowerCase();
@@ -503,10 +730,10 @@ async function buildGraph(seeds, opts = {}) {
             content = '';
         }
 
-        let b = null;
+        let b: FileBindings | null = null;
         if (lang && typeof lang.extractBindings === 'function') {
             try {
-                b = lang.extractBindings(content);
+                b = lang.extractBindings(content) as FileBindings;
             } catch {
                 b = null;
             }
@@ -517,9 +744,9 @@ async function buildGraph(seeds, opts = {}) {
         b.content = content;
         bindings.set(mod.path, b);
 
-        for (const [name, info] of Object.entries(b.exports || {})) {
+        for (const [name, info] of Object.entries(b.exports || {}) as Array<[string, ExportInfo]>) {
             if (!byExport.has(name)) byExport.set(name, []);
-            byExport.get(name).push({
+            byExport.get(name)!.push({
                 module: mod.path,
                 type: info.type,
                 line: info.line,
@@ -535,11 +762,14 @@ async function buildGraph(seeds, opts = {}) {
  * Compute the transitive import closure from seed modules.
  * Back-comat with check.ts resolveImportClosure.
  */
-async function resolveClosure(seeds, modules) {
-    const byPath = new Map(modules.map((m) => [m.path, m]));
-    const closure = new Set();
-    const queue = [];
-    const langCache = new Map();
+async function resolveClosure(
+    seeds: Array<{ path: string; rel: string }>,
+    modules: GraphModule[]
+): Promise<Set<string>> {
+    const byPath = new Map<string, GraphModule>(modules.map((m) => [m.path, m]));
+    const closure = new Set<string>();
+    const queue: GraphModule[] = [];
+    const langCache = new Map<string, Awaited<ReturnType<typeof languages.loadLanguage>> | null>();
 
     for (const seed of seeds) {
         const mod = byPath.get(seed.path) || byPath.get(seed.rel);
@@ -551,6 +781,7 @@ async function resolveClosure(seeds, modules) {
 
     while (queue.length) {
         const mod = queue.shift();
+        if (!mod) continue;
         const ext = path.extname(mod.abs).toLowerCase();
         let lang = langCache.get(ext);
         if (lang === undefined) {
@@ -599,7 +830,11 @@ async function resolveClosure(seeds, modules) {
  * @param {Graph} graph
  * @returns {{ fromImports: ImportRef[], fromDecls: Declaration[], unresolved: string[] }}
  */
-async function resolveOneStep(decl, file, graph) {
+async function resolveOneStep(
+    decl: Declaration,
+    file: FileIntrospection,
+    graph: Graph
+): Promise<OneStepResult> {
     if (!decl || !decl.lines) return { fromImports: [], fromDecls: [], unresolved: [] };
 
     // Build the set of known names: imports + sibling declarations
@@ -612,12 +847,12 @@ async function resolveOneStep(decl, file, graph) {
     }
 
     // Use the language's extractDeclarationReferences if available
-    let referenced = [];
+    let referenced: string[] = [];
     try {
         referenced = await languages.extractDeclarationReferences(
             decl,
-            file.imports.length > 0 ? readSource(file.path) : '',
-            knownNames,
+            file.imports.length > 0 ? (readSource(file.path) ?? '') : '',
+            new Set(knownNames),
             file.ext
         );
     } catch {
@@ -657,7 +892,7 @@ async function resolveOneStep(decl, file, graph) {
  * Handles short names like "languages" → "lib/languages.ts", bare
  * filenames like "languages.ts" → "lib/languages.ts", and full paths.
  */
-function resolveModulePathInGraph(modPath, modules) {
+function resolveModulePathInGraph(modPath: string, modules: Map<string, GraphModule>): string | null {
     if (modules.has(modPath)) return modPath;
     for (const key of modules.keys()) {
         const base = key.replace(/^.*\//, '');
@@ -682,13 +917,38 @@ function resolveModulePathInGraph(modPath, modules) {
  * @param {string} qualifiedName - "module::name" or just "name"
  * @returns {{ chain: Array, issues: Array }}
  */
-async function traceBinding(graph, qualifiedName) {
+async function traceBinding(graph: Graph, qualifiedName: string): Promise<TraceResult> {
     const t = new Trace(graph, qualifiedName);
     return t.forward();
 }
 
 class Trace {
-    constructor(graph, qualifiedName) {
+    /** The graph being traced. */
+    graph: Graph;
+    /** relPath -> module. */
+    modules: Map<string, GraphModule>;
+    /** relPath -> bindings. */
+    bindings: Map<string, FileBindings>;
+    /** exportName -> producers. */
+    byExport: Graph['byExport'];
+    /** relPath -> file introspection. */
+    files: Map<string, FileIntrospection>;
+    /** The qualified name being traced. */
+    qualifiedName: string;
+    /** Issues found while tracing. */
+    issues: IntrospectionIssue[];
+    /** The chain of steps. */
+    chain: ChainStep[];
+    /** Visited keys, for cycle detection. */
+    visited: Set<string>;
+    /** The name path after the module qualifier. */
+    namePath: string[];
+    /** The binding name being traced. */
+    targetName: string;
+    /** The module the binding lives in. */
+    targetModule: string | null;
+
+    constructor(graph: Graph, qualifiedName: string) {
         this.graph = graph;
         this.modules = graph.modules;
         this.bindings = graph.bindings;
@@ -709,7 +969,7 @@ class Trace {
         }
     }
 
-    resolveTarget() {
+    resolveTarget(): string | null {
         if (this.targetModule) return this.targetModule;
         const producers = this.byExport.get(this.targetName) || [];
         if (producers.length > 0) {
@@ -726,7 +986,7 @@ class Trace {
         return null;
     }
 
-    async forward() {
+    async forward(): Promise<TraceResult> {
         if (!this.targetModule) {
             this.targetModule = this.resolveTarget();
         }
@@ -743,12 +1003,13 @@ class Trace {
             return { chain: this.chain, issues: this.issues };
         }
 
-        const file = this.files.get(this.targetModule);
-        if (!file) {
+        const targetModule = this.targetModule;
+        const file = targetModule ? this.files.get(targetModule) : undefined;
+        if (!file || !targetModule) {
             this.issues.push({
                 kind: 'missing-module',
-                file: this.targetModule,
-                message: `module "${this.targetModule}" not in graph`
+                file: targetModule ?? undefined,
+                message: `module "${targetModule}" not in graph`
             });
             return { chain: this.chain, issues: this.issues };
         }
@@ -757,15 +1018,15 @@ class Trace {
         if (!outerDecl) {
             this.issues.push({
                 kind: 'unresolved-name',
-                file: this.targetModule,
-                message: `"${this.namePath[0]}" not found as a declaration in "${this.targetModule}"`
+                file: targetModule,
+                message: `"${this.namePath[0]}" not found as a declaration in "${targetModule}"`
             });
             return { chain: this.chain, issues: this.issues };
         }
 
-        this.visited.add(`${this.targetModule}::${this.namePath[0]}`);
+        this.visited.add(`${targetModule}::${this.namePath[0]}`);
         this.chain.push({
-            file: this.targetModule,
+            file: targetModule,
             name: this.namePath[0],
             kind: 'declaration',
             line: outerDecl.startLine,
@@ -774,11 +1035,11 @@ class Trace {
         });
 
         const content = readSource(file.path);
-        await this._walkLocal(this.targetModule, outerDecl, this.namePath.slice(1), 1, content);
+        await this._walkLocal(targetModule, outerDecl, this.namePath.slice(1), 1, content);
         return { chain: this.chain, issues: this.issues };
     }
 
-    async _walk(modPath, name, depth) {
+    async _walk(modPath: string, name: string, depth: number): Promise<void> {
         const key = `${modPath}::${name}`;
         if (this.visited.has(key)) {
             this.issues.push({
@@ -867,7 +1128,7 @@ class Trace {
                         depth: depth + 1
                     });
                     if (imp.resolvedPath) {
-                        await this._walk(imp.resolvedPath, imp.binding || imp.localName, depth + 2);
+                        await this._walk(imp.resolvedPath, imp.localName, depth + 2);
                     } else if (
                         imp.source &&
                         (imp.source.includes('/') || imp.source.startsWith('.'))
@@ -902,11 +1163,7 @@ class Trace {
                             depth: depth + 2
                         });
                         if (imp.resolvedPath) {
-                            await this._walk(
-                                imp.resolvedPath,
-                                imp.binding || imp.localName,
-                                depth + 3
-                            );
+                            await this._walk(imp.resolvedPath, imp.localName, depth + 3);
                         }
                     }
                 }
@@ -1000,10 +1257,25 @@ class Trace {
         });
     }
 
-    async _walkLocal(modPath, parentDecl, innerNames, depth, content) {
+    async _walkLocal(
+        modPath: string,
+        parentDecl: Declaration,
+        innerNames: string[],
+        depth: number,
+        content: string | null
+    ): Promise<void> {
         const file = this.files.get(modPath);
         const name = innerNames[0];
         const isLast = innerNames.length === 1;
+
+        if (!file) {
+            this.issues.push({
+                kind: 'missing-module',
+                file: modPath,
+                message: `module "${modPath}" not in graph`
+            });
+            return;
+        }
 
         let lang;
         try {
@@ -1020,7 +1292,7 @@ class Trace {
             return;
         }
 
-        const locals = lang.extractLocalMembers(parentDecl, content);
+        const locals = lang.extractLocalMembers(parentDecl, content ?? '');
         const local = locals.find((l) => l.name === name);
         if (!local) {
             this.issues.push({
@@ -1096,10 +1368,10 @@ class Trace {
                     depth: depth + 1
                 });
                 if (imp.resolvedPath) {
-                    const walkKey = `${imp.resolvedPath}::${imp.binding || imp.localName}`;
+                    const walkKey = `${imp.resolvedPath}::${imp.localName}`;
                     if (!this.visited.has(walkKey)) {
                         this.visited.add(walkKey);
-                        await this._walk(imp.resolvedPath, imp.binding || imp.localName, depth + 2);
+                        await this._walk(imp.resolvedPath, imp.localName, depth + 2);
                     }
                 }
                 continue;
@@ -1130,14 +1402,19 @@ class Trace {
         }
     }
 
-    usage() {
+    usage(): {
+        producers: Array<{ module: string; line?: number; type?: string; source?: string }>;
+        consumers: Array<{ module: string; line?: number; via: string }>;
+        reExportChains: Array<{ from: string; to: string; binding: string }>;
+        references: Array<Record<string, unknown>>;
+    } {
         const name = this.targetName;
-        const producers = [];
-        const consumers = [];
-        const reExportChains = [];
+        const producers: Array<{ module: string; line?: number; type?: string; source?: string }> = [];
+        const consumers: Array<{ module: string; line?: number; via: string }> = [];
+        const reExportChains: Array<{ from: string; to: string; binding: string }> = [];
 
-        const visited = new Set();
-        const resolveProducer = (relPath, info) => {
+        const visited = new Set<string>();
+        const resolveProducer = (relPath: string, info: ExportInfo) => {
             const key = `${relPath}:${name}`;
             if (visited.has(key)) return;
             visited.add(key);
@@ -1178,7 +1455,7 @@ class Trace {
 
         const producerSet = new Set(producers.map((p) => p.module));
         const reachableCache = new Set();
-        const isReachable = (relPath) => {
+        const isReachable = (relPath: string): boolean => {
             if (producerSet.has(relPath)) return true;
             if (reachableCache.has(relPath)) return false;
             reachableCache.add(relPath);
@@ -1237,7 +1514,7 @@ class Trace {
         return { producers, consumers, reExportChains, references };
     }
 
-    _resolveImportSource(mod, source) {
+    _resolveImportSource(mod: GraphModule | undefined, source: string): string | null {
         if (!mod) return null;
         const abs = resolveImportPath(mod.abs, source);
         if (!abs) return null;
@@ -1267,7 +1544,10 @@ class Trace {
  * @param {Object} opts - { oneline: boolean, oneStep: { fromImports, fromDecls } }
  * @returns {string}
  */
-function formatFileSummary(file, opts = {}) {
+function formatFileSummary(
+    file: FileIntrospection,
+    opts: { oneline?: boolean; oneStepResults?: Record<string, OneStepResult> } = {}
+): string {
     const { oneline = false, oneStepResults = {} } = opts;
 
     if (oneline) {
@@ -1317,10 +1597,10 @@ function formatFileSummary(file, opts = {}) {
     } else {
         for (const exp of file.exports) {
             const decl = file.declarations.find((d) => d.name === exp.name);
-            const imp = file.imports.find((i) => (i.localName || i.binding || '') === exp.name);
+            const imp = file.imports.find((i) => (i.localName || i.name || '') === exp.name);
             let info = '';
             if (imp) {
-                info = ` <- {${imp.localName || imp.binding}}<-${imp.source}`;
+                info = ` <- {${imp.localName || imp.name}}<-${imp.source}`;
             } else if (decl) {
                 const step = oneStepResults[decl.name];
                 const fromStr = step ? formatOneStep(step) : '(literal)';
@@ -1343,7 +1623,10 @@ function formatFileSummary(file, opts = {}) {
     return lines.join('\n');
 }
 
-function formatFileSummaryOneline(file, oneStepResults = {}) {
+function formatFileSummaryOneline(
+    file: FileIntrospection,
+    oneStepResults: Record<string, OneStepResult> = {}
+): string {
     const parts = [`module ${file.relPath.replace(/\.(mjs|js|ts|py)$/, '')}:`];
 
     // Import notation: {a}<-test
@@ -1366,7 +1649,7 @@ function formatFileSummaryOneline(file, oneStepResults = {}) {
     return parts.join(';');
 }
 
-function formatImportRef(imp) {
+function formatImportRef(imp: ImportRef): string {
     if (imp.kind === 'namespace' || imp.kind === 'star') {
         return imp.localName === imp.source ? `${imp.source}` : `${imp.localName}<-${imp.source}`;
     }
@@ -1380,7 +1663,7 @@ function formatImportRef(imp) {
     return `{${imp.name}}<-${imp.source}`;
 }
 
-function formatOneStep(step) {
+function formatOneStep(step: OneStepResult): string {
     const impStrs = step.fromImports.map((imp) => `{${imp.localName}}`);
     const declStrs = step.fromDecls.map((d) => d.name);
     const all = [...impStrs, ...declStrs];
@@ -1390,7 +1673,7 @@ function formatOneStep(step) {
     return all.length > 0 ? `{${all.join(',')}}` : '(literal)';
 }
 
-function formatOneStepShort(step) {
+function formatOneStepShort(step: OneStepResult): string {
     const impStrs = step.fromImports.map((imp) => `{${imp.localName}}`);
     const declStrs = step.fromDecls.map((d) => d.name);
     const all = [...impStrs, ...declStrs];
@@ -1403,7 +1686,7 @@ function formatOneStepShort(step) {
  * @param {{ chain: Array, issues: Array }} trace
  * @returns {string}
  */
-function formatTrace(trace) {
+function formatTrace(trace: TraceResult): string {
     const { chain, issues } = trace;
     const lines = [];
 
@@ -1454,7 +1737,11 @@ function formatTrace(trace) {
  * Back-compat wrapper for check.ts buildBindingGraph.
  * Takes an array of modules, returns { modules, bindings, byExport }.
  */
-async function buildBindingGraph(modules) {
+async function buildBindingGraph(modules: GraphModule[]): Promise<{
+    modules: Map<string, GraphModule>;
+    bindings: Map<string, FileBindings>;
+    byExport: Graph['byExport'];
+}> {
     const graph = await buildGraph(
         modules.map((m) => m.path),
         { codebaseScope: false }

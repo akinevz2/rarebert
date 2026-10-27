@@ -1,8 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
+import type { ChildProcess } from 'child_process';
 import crypto from 'crypto';
-import { rarebert, current, home } from './runtime/projects.ts';
+import { rarebert, current, home } from './runtime/Project.ts';
 import { opencode } from './opencode.ts';
 import { stripJsonc, models } from './models.ts';
 
@@ -26,7 +27,7 @@ const MAX_PORT_PROBES = 64;
  * fingerprint means attaching would silently send prompts to the wrong
  * provider/host (the bug that motivated this).
  */
-function configFingerprint(root) {
+function configFingerprint(root: string): string {
     const tryPaths = ['opencode.jsonc', 'opencode.json'];
     let cfg = null;
     for (const rel of tryPaths) {
@@ -53,7 +54,51 @@ function configFingerprint(root) {
     return crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 12);
 }
 
+/** The server info file's contents. */
+export interface ServerInfo {
+    /** The port the server listens on. */
+    port: number;
+    /** The server's base URL. */
+    url: string;
+    /** The server process id. */
+    pid?: number | null;
+    /** The project root the server was started for. */
+    root?: string;
+    /** Fingerprint of the opencode config the server was started with. */
+    fingerprint?: string;
+}
+
+/**
+ * `spawn()` reports failures through the 'error' event rather than a
+ * synchronous `.error` property, but the original code checked it
+ * defensively. Read it in a type-safe way so the check is preserved.
+ */
+function spawnError(child: ChildProcess): Error | undefined {
+    return (child as ChildProcess & { error?: Error }).error;
+}
+
+/** A spawned opencode child process. */
+export interface SpawnedChild {
+    /** The exit status, or null when the child is still running. */
+    status: number | null;
+    /** The child process, or null when the spawn failed. */
+    child: ChildProcess | null;
+}
+
 class Server {
+    /** Directory holding the server info file. */
+    dir: string;
+    /** Path of the server info file. */
+    file: string;
+    /** The default port. */
+    port: number;
+    /** The default host. */
+    host: string;
+    /** The project root this server belongs to. */
+    root: string;
+    /** Fingerprint of the opencode config. */
+    fingerprint: string;
+
     constructor() {
         this.dir = SERVER_DIR;
         this.file = SERVER_FILE;
@@ -63,7 +108,7 @@ class Server {
         this.fingerprint = configFingerprint(home.root);
     }
 
-    readInfo() {
+    readInfo(): ServerInfo | null {
         if (!fs.existsSync(this.file)) return null;
         try {
             const raw = fs.readFileSync(this.file, 'utf-8').trim();
@@ -82,7 +127,7 @@ class Server {
      * `getRunning()` can refuse to attach to a server that belongs to a
      * different project or a different config.
      */
-    writeInfo(port, url, pid = null) {
+    writeInfo(port: number, url: string, pid: number | null = null): void {
         fs.mkdirSync(this.dir, { recursive: true });
         fs.writeFileSync(
             this.file,
@@ -100,7 +145,7 @@ class Server {
         );
     }
 
-    clearInfo() {
+    clearInfo(): void {
         if (fs.existsSync(this.file)) fs.unlinkSync(this.file);
     }
 
@@ -111,7 +156,7 @@ class Server {
      * two projects share port 4096 and rarebert silently attaches to a
      * foreign server with a different baseURL/model.
      */
-    belongsHere(info) {
+    belongsHere(info: ServerInfo | null): boolean {
         if (!info) return false;
         if (info.root && info.root !== this.root) return false;
         if (info.fingerprint && info.fingerprint !== this.fingerprint) return false;
@@ -122,7 +167,7 @@ class Server {
         return true;
     }
 
-    probe(url, port) {
+    probe(url: string, port: number): boolean {
         const probeScript = `
 const net = require('net');
 const m = ${JSON.stringify(url)}.match(/^https?:\\/\\/([^:/]+):(\\d+)/);
@@ -154,7 +199,7 @@ socket.connect(p, host);
      * instead of hardcoding port 4096, each invocation climbs until it finds
      * a free one and records it in .opencode/server.
      */
-    findFreePort(startPort = DEFAULT_PORT) {
+    findFreePort(startPort = DEFAULT_PORT): number | null {
         for (let i = 0; i < MAX_PORT_PROBES; i++) {
             const port = startPort + i;
             if (!this.probe(this.url(port), port)) return port;
@@ -169,7 +214,7 @@ socket.connect(p, host);
      * belongs to a different project — in which case the caller should
      * start a fresh server (see findFreePort) rather than silently attach.
      */
-    getRunning() {
+    getRunning(): ServerInfo | null {
         const info = this.readInfo();
         if (!info) return null;
         if (!this.probe(info.url, info.port)) return null;
@@ -187,23 +232,35 @@ socket.connect(p, host);
         return info;
     }
 
-    stop(pid = null) {
+    stop(pid: number | null = null): void {
         const info = pid ? { pid } : this.getRunning();
         if (info && info.pid) {
             try {
                 process.kill(info.pid, 'SIGTERM');
             } catch (err) {
-                console.error(`Failed to kill server process ${info.pid}: ${err.message}`);
+                console.error(
+                    `Failed to kill server process ${info.pid}: ${err instanceof Error ? err.message : String(err)}`
+                );
             }
         }
         this.clearInfo();
     }
 
-    url(port) {
+    url(port: number): string {
         return `http://${this.host}:${port}`;
     }
 
-    startFullTUI({ cwd, model, port = null, prompt = null } = {}) {
+    startFullTUI({
+        cwd,
+        model,
+        port = null,
+        prompt = null
+    }: {
+        cwd: string;
+        model: string;
+        port?: number | null;
+        prompt?: string | null;
+    }): Promise<number> {
         const err = models.validateModel(model);
         if (err) {
             console.error(`implement: model error — ${err}`);
@@ -227,19 +284,20 @@ socket.connect(p, host);
 
         return new Promise((resolve) => {
             const child = spawn(bin, args, { stdio: 'inherit', cwd, env });
-            if (child.error) {
-                console.error(`Failed to launch opencode: ${child.error.message}`);
+            const spawnErr = spawnError(child);
+            if (spawnErr) {
+                console.error(`Failed to launch opencode: ${spawnErr.message}`);
                 this.clearInfo();
                 return resolve(1);
             }
 
             this.writeInfo(port, this.url(port), child.pid);
 
-            child.on('exit', (code) => {
+            child.on('exit', (code: number | null) => {
                 this.clearInfo();
                 resolve(code ?? 0);
             });
-            child.on('error', (err) => {
+            child.on('error', (err: Error) => {
                 console.error(`opencode server error: ${err.message}`);
                 this.clearInfo();
                 resolve(1);
@@ -259,7 +317,15 @@ socket.connect(p, host);
      *   Resolves with the server info on success, or null if the server
      *   did not become reachable within `timeout` ms.
      */
-    startHeadless({ port = null, model = null, timeout = 10000 } = {}) {
+    startHeadless({
+        port = null,
+        model = null,
+        timeout = 10000
+    }: { port?: number | null; model?: string | null; timeout?: number } = {}): Promise<{
+        url: string;
+        port: number;
+        pid: number;
+    } | null> {
         if (port == null) {
             port = this.findFreePort(DEFAULT_PORT);
             if (port == null) {
@@ -284,11 +350,14 @@ socket.connect(p, host);
                 cwd: current.root
             });
         } catch (err) {
-            console.error(`Failed to launch opencode serve: ${err.message}`);
+            console.error(
+                `Failed to launch opencode serve: ${err instanceof Error ? err.message : String(err)}`
+            );
             return Promise.resolve(null);
         }
-        if (child.error) {
-            console.error(`Failed to launch opencode serve: ${child.error.message}`);
+        const serveErr = spawnError(child);
+        if (serveErr) {
+            console.error(`Failed to launch opencode serve: ${serveErr.message}`);
             return Promise.resolve(null);
         }
 
@@ -300,7 +369,7 @@ socket.connect(p, host);
         const deadline = Date.now() + timeout;
         return new Promise((resolve) => {
             const tryProbe = () => {
-                if (this.probe(url, port)) return resolve({ url, port, pid: child.pid });
+                if (this.probe(url, port)) return resolve({ url, port, pid: child.pid ?? 0 });
                 if (Date.now() >= deadline) {
                     console.error(
                         `server: headless server did not become reachable on ${url} within ${timeout}ms`
@@ -314,7 +383,7 @@ socket.connect(p, host);
         });
     }
 
-    attachFull({ url, port } = {}) {
+    attachFull({ url, port }: { url: string; port: number }): number {
         const bin = opencode.resolve();
         const args = ['attach', url, '-u', 'opencode', '-p', String(port)];
         console.log(`$ opencode ${args.join(' ')}`);
@@ -322,29 +391,48 @@ socket.connect(p, host);
         return result.status ?? 0;
     }
 
-    spawnAttach({ url, port, mini = false } = {}) {
+    spawnAttach({
+        url,
+        port,
+        mini = false
+    }: { url: string; port: number; mini?: boolean }): SpawnedChild {
         const bin = opencode.resolve();
         const args = ['attach', url];
         if (mini) args.push('--mini');
         args.push('-u', 'opencode', '-p', String(port));
         console.log(`$ opencode ${args.join(' ')}`);
         const child = spawn(bin, args, { stdio: 'inherit' });
-        if (child.error) {
-            console.error(`Failed to launch opencode attach: ${child.error.message}`);
+        const attachErr = spawnError(child);
+        if (attachErr) {
+            console.error(`Failed to launch opencode attach: ${attachErr.message}`);
             return { status: 1, child: null };
         }
         return { status: null, child };
     }
 
-    spawnMini({ url, port } = {}) {
+    spawnMini({ url, port }: { url: string; port: number }): SpawnedChild {
         return this.spawnAttach({ url, port, mini: true });
     }
 
-    spawnFull({ url, port } = {}) {
+    spawnFull({ url, port }: { url: string; port: number }): SpawnedChild {
         return this.spawnAttach({ url, port, mini: false });
     }
 
-    submitInstruction({ url, port, prompt, file, model = null, auto = true } = {}) {
+    submitInstruction({
+        url,
+        port,
+        prompt,
+        file,
+        model = null,
+        auto = true
+    }: {
+        url: string;
+        port: number;
+        prompt?: string;
+        file?: string | string[];
+        model?: string | null;
+        auto?: boolean;
+    }): SpawnedChild {
         const bin = opencode.resolve();
         const args = ['run'];
         if (prompt) args.push(prompt);
@@ -359,20 +447,22 @@ socket.connect(p, host);
             `$ opencode ${args.slice(0, Math.min(args.length, 3)).join(' ')} ... --attach ${url}`
         );
         const child = spawn(bin, args, { cwd: current.root, stdio: 'ignore' });
-        if (child.error) {
-            console.error(`Failed to launch opencode run: ${child.error.message}`);
+        const runErr = spawnError(child);
+        if (runErr) {
+            console.error(`Failed to launch opencode run: ${runErr.message}`);
             return { status: 1, child: null };
         }
         return { status: null, child };
     }
 
-    attachFullAsync({ url, port } = {}) {
+    attachFullAsync({ url, port }: { url: string; port: number }): SpawnedChild {
         const bin = opencode.resolve();
         const args = ['attach', url, '-u', 'opencode', '-p', String(port)];
         console.log(`$ opencode ${args.join(' ')}`);
         const child = spawn(bin, args, { stdio: 'inherit' });
-        if (child.error) {
-            console.error(`Failed to launch opencode: ${child.error.message}`);
+        const fullErr = spawnError(child);
+        if (fullErr) {
+            console.error(`Failed to launch opencode: ${fullErr.message}`);
             return { status: 1, child: null };
         }
         return { status: null, child };
@@ -387,13 +477,14 @@ socket.connect(p, host);
      * @param {{ url: string, port: number }} opts
      * @returns {{ status: number|null, child: import('child_process').ChildProcess|null }}
      */
-    startAttachableTUI({ url, port } = {}) {
+    startAttachableTUI({ url, port }: { url: string; port: number }): SpawnedChild {
         const bin = opencode.resolve();
         const args = ['attach', url, '-u', 'opencode', '-p', String(port)];
         console.log(`$ opencode ${args.join(' ')}`);
         const child = spawn(bin, args, { stdio: 'inherit' });
-        if (child.error) {
-            console.error(`Failed to launch opencode TUI: ${child.error.message}`);
+        const tuiErr = spawnError(child);
+        if (tuiErr) {
+            console.error(`Failed to launch opencode TUI: ${tuiErr.message}`);
             return { status: 1, child: null };
         }
         return { status: null, child };
@@ -410,7 +501,19 @@ socket.connect(p, host);
      * @param {{ url: string, port: number, prompt: string, file?: string|string[], model?: string }} opts
      * @returns {{ status: number, stdout: string }}
      */
-    submitPromptToForegroundTUI({ url, port, prompt, file, model } = {}) {
+    submitPromptToForegroundTUI({
+        url,
+        port,
+        prompt,
+        file,
+        model
+    }: {
+        url: string;
+        port: number;
+        prompt?: string;
+        file?: string | string[];
+        model?: string;
+    }): { status: number; stdout: string } {
         const bin = opencode.resolve();
         const args = ['run'];
         if (prompt) args.push(prompt);
@@ -445,7 +548,7 @@ socket.connect(p, host);
         };
     }
 
-    attachMini({ url, port } = {}) {
+    attachMini({ url, port }: { url: string; port: number }): number {
         const bin = opencode.resolve();
         const args = ['attach', url, '--mini', '-u', 'opencode', '-p', String(port)];
         console.log(`$ opencode ${args.join(' ')}`);
@@ -453,7 +556,21 @@ socket.connect(p, host);
         return result.status ?? 0;
     }
 
-    runInteractive({ url, port, file, prompt, model, continueSession = true } = {}) {
+    runInteractive({
+        url,
+        port,
+        file,
+        prompt,
+        model,
+        continueSession = true
+    }: {
+        url: string;
+        port: number;
+        file?: string | string[];
+        prompt?: string;
+        model?: string;
+        continueSession?: boolean;
+    }): SpawnedChild {
         const bin = opencode.resolve();
         const args = [
             'run',
@@ -475,21 +592,34 @@ socket.connect(p, host);
             `$ opencode ${args.slice(0, Math.min(args.length, 3)).join(' ')} ... --attach ${url}`
         );
         const child = spawn(bin, args, { cwd: current.root, stdio: 'inherit' });
-        if (child.error) {
-            console.error(`Failed to launch opencode: ${child.error.message}`);
+        const interactiveErr = spawnError(child);
+        if (interactiveErr) {
+            console.error(`Failed to launch opencode: ${interactiveErr.message}`);
             return { status: 1, child: null };
         }
         return { status: null, child };
     }
 
-    isLocalUrl(url) {
+    isLocalUrl(url: string): boolean {
         const host = String(url)
             .replace(/^https?:\/\//i, '')
             .split(':')[0];
         return host === DEFAULT_HOST || host === 'localhost' || host === '127.0.0.1';
     }
 
-    attachToServer({ url, port, prompt, model, auto = false } = {}) {
+    attachToServer({
+        url,
+        port,
+        prompt,
+        model,
+        auto = false
+    }: {
+        url: string;
+        port: number;
+        prompt?: string;
+        model?: string | null;
+        auto?: boolean;
+    }): { status: number; stdout: string } {
         const bin = opencode.resolve();
         const message = prompt ?? '';
         const args = ['run'];
@@ -511,7 +641,14 @@ socket.connect(p, host);
         };
     }
 
-    runHeadless({ prompt, model, auto = true } = {}) {
+    runHeadless({
+        prompt,
+        model,
+        auto = true
+    }: { prompt?: string; model?: string | null; auto?: boolean } = {}): {
+        status: number;
+        stdout: string;
+    } {
         const bin = opencode.resolve();
         const message = prompt ?? '';
         const args = ['run'];
@@ -539,12 +676,20 @@ socket.connect(p, host);
         prompt,
         model = null,
         auto = false
-    } = {}) {
+    }: {
+        project?: typeof current;
+        url?: string;
+        port?: number;
+        prompt?: string;
+        model?: string | null;
+        auto?: boolean;
+    } = {}): Promise<{ status: number; stdout: string }> {
         const err = models.validateModel(model);
         if (err) {
             console.error(`implement: model error — ${err}`);
-            return 1;
+            return { status: 1, stdout: '' };
         }
+        const modelId = model ?? undefined;
         const running = this.getRunning();
 
         if (running) {
@@ -552,28 +697,28 @@ socket.connect(p, host);
                 url: running.url,
                 port: running.port,
                 prompt,
-                model,
+                model: modelId,
                 auto
             });
         }
 
         if (url && !this.isLocalUrl(url)) {
-            return this.attachToServer({ url, port, prompt, model, auto });
+            return this.attachToServer({ url, port, prompt, model: modelId, auto });
         }
 
         if (auto) {
             console.log(`server: no running local server; running headless (opencode run --auto)`);
-            return this.runHeadless({ prompt, model, auto });
+            return this.runHeadless({ prompt, model: modelId, auto });
         }
 
         console.log(`server: no running local server; starting full TUI on port ${port}`);
         return {
-            status: await this.startFullTUI({ cwd: current.root, model, port }),
+            status: await this.startFullTUI({ cwd: current.root, model: modelId ?? '', port }),
             stdout: ''
         };
     }
 
-    cwdForModule(rel) {
+    cwdForModule(rel: string): string {
         if (!rel) return current.root;
         const abs = path.join(current.root, rel);
         const dir = path.dirname(abs);

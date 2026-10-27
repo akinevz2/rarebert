@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { home } from './runtime/projects.ts';
+import { home } from './runtime/Project.ts';
 import { store } from './runtime/core.ts';
 
 const CONFIG_TRY_PATHS = ['opencode.jsonc', 'opencode.json'];
@@ -11,7 +11,7 @@ const DEFAULT_MODEL = 'ollama/glm-5.2:cloud';
  * `}` or `]`) so node's strict JSON.parse accepts opencode.jsonc files.
  * Best-effort: doesn't handle comments inside string literals.
  */
-function stripJsonc(raw) {
+function stripJsonc(raw: string): string {
     let out = '';
     let i = 0;
     const n = raw.length;
@@ -55,7 +55,42 @@ function stripJsonc(raw) {
     return out.replace(/,\s*([}\]])/g, '$1');
 }
 
+
+/** A provider entry in the opencode config. */
+export interface ModelProvider {
+    /** The provider's base URL. */
+    baseURL?: string;
+    /** The provider's options (may hold `baseURL`). */
+    options?: { baseURL?: string; [key: string]: unknown };
+    /** The models this provider exposes, keyed by model id. */
+    models?: Record<string, { name?: string; [key: string]: unknown }>;
+}
+
+/** The parsed opencode config. */
+export interface ModelConfig {
+    /** The default model id ('provider/model'). */
+    model?: string;
+    /** The configured providers, keyed by provider name. */
+    provider?: Record<string, ModelProvider>;
+    [key: string]: unknown;
+}
+
+/** A model offered by a provider. */
+export interface ModelEntry {
+    /** The full model id ('provider/model'). */
+    id: string;
+    /** The model's display name. */
+    name: string;
+    /** Whether this is the configured default. */
+    isDefault: boolean;
+}
+
 class Models {
+    /** The directory holding the opencode config. */
+    configDir: string;
+    /** The model id used when the config declares none. */
+    defaultModelFallback: string;
+
     constructor() {
         this.configDir = home.root;
         this.defaultModelFallback = DEFAULT_MODEL;
@@ -65,7 +100,7 @@ class Models {
      * Resolve the opencode config file path (opencode.jsonc preferred,
      * opencode.json fallback). Returns null when none exists.
      */
-    configPath() {
+    configPath(): string | null {
         for (const rel of CONFIG_TRY_PATHS) {
             const abs = path.join(this.configDir, rel);
             if (fs.existsSync(abs)) return abs;
@@ -73,7 +108,7 @@ class Models {
         return null;
     }
 
-    readConfig() {
+    readConfig(): ModelConfig {
         const abs = this.configPath();
         if (!abs) return {};
         try {
@@ -88,14 +123,15 @@ class Models {
         }
     }
 
-    list(config) {
-        const models = [];
+    list(config: ModelConfig): ModelEntry[] {
+        const models: ModelEntry[] = [];
         const defaultModel = config.model;
         const providers = config.provider || {};
         for (const [providerName, provider] of Object.entries(providers)) {
-            for (const modelId of Object.keys(provider.models || {})) {
+            const providerModels = provider.models || {};
+            for (const modelId of Object.keys(providerModels)) {
                 const fullId = `${providerName}/${modelId}`;
-                const meta = provider.models[modelId] || {};
+                const meta = providerModels[modelId] || {};
                 models.push({
                     id: fullId,
                     name: meta.name || modelId,
@@ -115,7 +151,7 @@ class Models {
      * the source of truth because opencode does not reliably honor the
      * `model` field in its config.
      */
-    lastChosenModel() {
+    lastChosenModel(): string {
         try {
             const stored = store.getLastModel(home.root);
             if (stored) return stored;
@@ -134,14 +170,14 @@ class Models {
      * SQLite store or interactive prompts. Returns DEFAULT_MODEL if no
      * config or providers exist.
      */
-    defaultModel() {
+    defaultModel(): string {
         const cfg = this.readConfig();
         if (cfg.model && typeof cfg.model === 'string') return cfg.model;
         const providers = cfg.provider || {};
         const entries = Object.entries(providers);
         if (entries.length === 0) return this.defaultModelFallback;
         const [providerName, provider] = entries[0];
-        const modelIds = Object.keys(provider.models || {});
+        const modelIds = Object.keys(provider?.models || {});
         if (modelIds.length === 0) return this.defaultModelFallback;
         return `${providerName}/${modelIds[0]}`;
     }
@@ -152,7 +188,7 @@ class Models {
      * found. Used by ide.spawnHeadless and server.startFullTUI to fail
      * early with a clear message before launching opencode.
      */
-    validateModel(modelId) {
+    validateModel(modelId: string | null | undefined): string | null {
         if (!modelId || typeof modelId !== 'string') {
             return 'No model specified.';
         }
@@ -182,7 +218,10 @@ class Models {
      * the caller owns any prompt construction (lib purity: no prompts
      * are created inside lib/).
      */
-    modelChoices(models) {
+    modelChoices(models: ModelEntry[]): {
+        choices: Array<{ name: string; message: string }>;
+        defaultIndex: number;
+    } {
         const choices = models.map((m) => ({
             name: m.id,
             message: `${m.name}${m.isDefault ? ' (default)' : ''}`
@@ -201,7 +240,10 @@ class Models {
      * the script layer (see scripts/implement.ts#selectModel) — lib/
      * never constructs a prompt.
      */
-    async resolve(arg, env = process.env) {
+    async resolve(
+        arg?: string,
+        env: NodeJS.ProcessEnv = process.env
+    ): Promise<string> {
         if (arg) return arg;
         if (env.MODEL) return env.MODEL;
         const modelId = this.lastChosenModel();
@@ -215,7 +257,7 @@ class Models {
      * no prompts, no TTY checks. Returns the last-chosen model from the
      * store if set, otherwise the config-derived default.
      */
-    resolveDefault() {
+    resolveDefault(): string {
         const lastChosen = this.lastChosenModel();
         if (lastChosen) return lastChosen;
         return this.defaultModel();
@@ -228,7 +270,7 @@ class Models {
      * `model` field in its config, so we keep the preference in rarebert.db.
      * Silently skips if the store is unavailable or the model is unchanged.
      */
-    persistDefault(modelId) {
+    persistDefault(modelId: string | null | undefined): void {
         if (!modelId) return;
         try {
             const current = store.getLastModel(home.root);

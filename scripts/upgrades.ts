@@ -2,7 +2,7 @@
 
 import fs from 'fs';
 import { git } from '../lib/git.ts';
-import { CLI } from '../lib/module.ts';
+import { CLI, defineMeta } from '../lib/runtime/CLI.ts';
 import { exit } from '../lib/core.ts';
 
 const MODULE_EXT = new Set(['.ts', '.mjs', '.js', '.py']);
@@ -206,7 +206,7 @@ function printSummary(buckets, inventory, base) {
     }
 }
 
-const meta = {
+const meta = defineMeta({
     name: 'upgrades',
     description:
         'Compare local tree against origin/main: report added/modified/deleted files, identify added modules, and itemise newly-added methods per module',
@@ -214,7 +214,7 @@ const meta = {
     options: [
         { flag: '--base <ref>', description: 'base ref to diff against (default: origin/main)' }
     ]
-};
+});
 
 export { meta };
 
@@ -237,4 +237,4 @@ export default new CLI(
         return exit(0);
     },
     meta
-).supportsDirectRunning(import.meta.url);
+).supportsDirectRunning();

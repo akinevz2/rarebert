@@ -1,6 +1,7 @@
 import path from 'path';
 import { spawn, spawnSync } from 'child_process';
-import { current } from './runtime/projects.ts';
+import type { ChildProcess } from 'child_process';
+import { current } from './runtime/Project.ts';
 import { opencode } from './opencode.ts';
 import { server } from './server.ts';
 import { backend } from './backend.ts';
@@ -30,7 +31,63 @@ import { exit } from './runtime/core.ts';
  * Meta suggestion: { retryOnFailure: false, cleanup: 'terminateChildProcess' }
  */
 
+
+/** Options accepted by `spawnEditor`. */
+export interface SpawnEditorOptions {
+    /** The working directory for the editor process. */
+    cwd?: string;
+}
+
+/** Options accepted by `spawnTui`. */
+export interface SpawnTuiOptions {
+    /** The working directory for the opencode process. */
+    cwd?: string;
+    /** The port to serve on (a free port is chosen when omitted). */
+    port?: number | null;
+    /** An initial prompt to pass to opencode. */
+    prompt?: string | null;
+}
+
+/** Options accepted by `spawnHeadless`. */
+export interface SpawnHeadlessOptions {
+    /** The working directory for the opencode process. */
+    cwd?: string;
+    /** The output format passed to opencode. */
+    format?: string;
+}
+
+/** The result of spawning a foreground TUI. */
+export interface SpawnedTui {
+    /** The exit status, or null while the child is running. */
+    status: number | null;
+    /** The child process handle, when one is available. */
+    child: ChildProcess | null;
+    /** A promise resolving to the final exit code. */
+    done: Promise<number> | null;
+}
+
+/** The result of a headless opencode run. */
+export interface HeadlessResult {
+    /** The exit status. */
+    status: number;
+    /** The captured stdout. */
+    stdout: string;
+}
+
+/** The resolved editor binary and its arguments. */
+export interface ResolvedEditor {
+    /** The editor binary. */
+    bin: string;
+    /** The editor's base arguments. */
+    baseArgs: string[];
+    /** 'code' for the VS Code CLI, 'generic' otherwise. */
+    kind: 'code' | 'generic';
+}
+
 class Ide {
+    /** The project root the IDE primitives operate on. */
+    root: string;
+
     constructor() {
         this.root = current.root;
     }
@@ -43,7 +100,7 @@ class Ide {
      * graphical editors can run alongside the opencode TUI without TTY
      * contention.
      */
-    isTerminalEditor() {
+    isTerminalEditor(): boolean {
         return backend.getEditorType() === 'terminal';
     }
 
@@ -60,7 +117,10 @@ class Ide {
      * The caller decides whether to await the child (awaitChild) or
      * let it race another process (raceChildren).
      */
-    spawnEditor(file, options = {}) {
+    spawnEditor(
+        file: string | string[],
+        options: SpawnEditorOptions = {}
+    ): ChildProcess | null {
         const envEditor = process.env.EDITOR || 'nano';
         const [editor, ...maybeArgs] = envEditor.split(/\s+/).filter(Boolean);
         if (!editor) return null;
@@ -71,8 +131,9 @@ class Ide {
         const args = [...maybeArgs, ...editorFlags, ...paths];
         const stdio = this.isTerminalEditor() ? 'inherit' : 'ignore';
         const child = spawn(editor, args, { stdio, cwd: options.cwd || this.root });
-        if (child.error) {
-            console.error(`Failed to launch $EDITOR: ${child.error.message}`);
+        const spawnErr = (child as ChildProcess & { error?: Error }).error;
+        if (spawnErr) {
+            console.error(`Failed to launch $EDITOR: ${spawnErr.message}`);
             return null;
         }
         return child;
@@ -87,7 +148,7 @@ class Ide {
      * `opts.cwd` defaults to current.root; `opts.prompt` is forwarded
      * as `--prompt`; `opts.port` defaults to a free port.
      */
-    spawnTui(model, options = {}) {
+    spawnTui(model: string, options: SpawnTuiOptions = {}): SpawnedTui {
         const cwd = options.cwd || this.root;
         const port = options.port ?? null;
         const result = server.startFullTUI({
@@ -114,7 +175,11 @@ class Ide {
      * exits. Returns { status, stdout }. stdio is captured (no TTY);
      * stderr is inherited for error visibility.
      */
-    spawnHeadless(prompt, model, options = {}) {
+    spawnHeadless(
+        prompt: string,
+        model: string,
+        options: SpawnHeadlessOptions = {}
+    ): HeadlessResult {
         const err = models.validateModel(model);
         if (err) {
             console.error(`implement: model error — ${err}`);
@@ -140,12 +205,12 @@ class Ide {
      * cleanly via signal). Resolves immediately if the child is null
      * or already exited. Never rejects.
      */
-    awaitChild(child) {
+    awaitChild(child: ChildProcess | null): Promise<number> {
         if (!child) return Promise.resolve(0);
         if (child.exitCode !== null) return Promise.resolve(child.exitCode);
         if (child.signalCode !== null) return Promise.resolve(0);
         return new Promise((resolve) => {
-            child.once('exit', (code) => resolve(code ?? 0));
+            child.once('exit', (code: number | null) => resolve(code ?? 0));
             child.once('error', () => resolve(1));
         });
     }
@@ -155,12 +220,16 @@ class Ide {
      * the first to exit. Losers are left running — the caller decides
      * whether to stopChild them. Never rejects.
      */
-    raceChildren(children) {
-        const valid = children.filter(Boolean);
+    raceChildren(
+        children: Array<ChildProcess | null>
+    ): Promise<{ child: ChildProcess | null; code: number; index: number }> {
+        const valid = children.filter((c): c is ChildProcess => c !== null);
         if (valid.length === 0) return Promise.resolve({ child: null, code: 0, index: -1 });
         return new Promise((resolve) => {
             valid.forEach((child, index) => {
-                child.once('exit', (code) => resolve({ child, code: code ?? 0, index }));
+                child.once('exit', (code: number | null) =>
+                    resolve({ child, code: code ?? 0, index })
+                );
                 child.once('error', () => resolve({ child, code: 1, index }));
             });
         });
@@ -172,13 +241,13 @@ class Ide {
      * Resolves with the exit code. Never rejects. No-op if already
      * exited.
      */
-    stopChild(child, timeoutMs = 5000) {
+    stopChild(child: ChildProcess | null, timeoutMs = 5000): Promise<number> {
         if (!child || child.killed || child.exitCode !== null || child.signalCode !== null) {
             return Promise.resolve(child?.exitCode ?? 0);
         }
 
-        let settleExit;
-        const exited = new Promise((resolve) => {
+        let settleExit!: (value: number) => void;
+        const exited = new Promise<number>((resolve) => {
             settleExit = resolve;
         });
         const settle = () => settleExit(child.exitCode ?? 0);
@@ -235,7 +304,7 @@ class Ide {
      * $EDITOR or $VISUAL may be set to 'code' with flags like '--wait';
      * we detect this so the `-g` goto syntax is used instead of `+line`.
      */
-    resolveEditor() {
+    resolveEditor(): ResolvedEditor {
         const candidates = [process.env.VSCODE_BIN, process.env.VISUAL, process.env.EDITOR];
         for (const candidate of candidates) {
             if (!candidate) continue;
@@ -253,9 +322,15 @@ class Ide {
      * blocks until the user closes the tab (`--wait` for VS Code). When
      * false, launches and returns immediately (fire-and-forget).
      */
-    openAtLine(filePath, line, column, wait) {
+    openAtLine(
+        filePath: string,
+        line: number,
+        column?: number,
+        wait?: boolean
+    ): void {
         const editor = this.resolveEditor();
-        let bin, args;
+        let bin: string;
+        let args: string[];
 
         if (editor.kind === 'code') {
             const gotoArg = `${filePath}:${line}:${column || 1}`;
@@ -277,7 +352,7 @@ class Ide {
         if (result.error) {
             console.error(`ide: failed to launch editor: ${result.error.message}`);
             console.error(`  Tried: ${bin} ${args.join(' ')}`);
-            return exit('editor launch failed');
+            exit('editor launch failed');
         }
     }
 }

@@ -11,11 +11,39 @@
 // Note: Node ESM has no directory imports, so the explicit ./index.ts
 // specifier is the barrel — `import '../lib'` will not resolve.
 //
-// Re-export order matters: module.ts first so the Module/CLI/TUI class
+// Re-export order matters: runtime first so the Module/CLI/TUI class
 // chain is fully evaluated before Interface constructions elsewhere.
 // ---------------------------------------------------------------------------
 
-export { Module, CLI, TUI, Interface, Arguments, AbortError } from './runtime/module.ts';
+// Runtime — one class per PascalCase file (Module → CLI → TUI/Interface).
+export { Module } from './runtime/Module.ts';
+export { CLI, Arguments } from './runtime/CLI.ts';
+export type {
+    MainCallback,
+    ModuleMeta,
+    OptionSpec,
+    ArgSpec,
+    // typed-arguments seam (zod engine)
+    Args,
+    Positional,
+    OptsOf,
+    ParsedInvocation
+} from './runtime/CLI.ts';
+export { TUI, Interface } from './runtime/TUI.ts';
+export {
+    // terminal helpers & abort machinery (free functions from Module.ts)
+    isInteractive,
+    truncate,
+    onAbort,
+    installSignalHandlers,
+    abort,
+    nonInteractive,
+    ok,
+    fail,
+    runInteractively
+} from './runtime/Module.ts';
+
+// Runtime core — signals & exit machinery (the canonical home).
 export {
     ExitSignal,
     HelpRequestedSignal,
@@ -26,16 +54,20 @@ export {
     EXIT_FAIL,
     EXIT_ABORT
 } from './runtime/core.ts';
+
 export { Git } from './git.ts';
-export { Backend } from './backend.ts';
-export { Project } from './runtime/projects.ts';
-export { Languages, Language, JsonTemplateLanguage } from './runtime/languages.ts';
-export { Memo, Memory } from './memo.ts';
-export { Models } from './models.ts';
-export { Editor } from './editor.ts';
-export { Ide } from './ide.ts';
-export { Opencode } from './opencode.ts';
-export { Server } from './server.ts';
-export { Template } from './supports/template.ts';
-export { Libs } from './runtime/libs.ts';
-export { Trace } from './introspect.ts';
+export { memo } from './memo.ts';
+// Memo classes are exported directly from lib/memo.ts (see that module).
+
+export { Project, ProjectFolder, home, rarebert } from './runtime/Project.ts';
+export { Language, JsonTemplateLanguage, Languages, languages } from './runtime/Language.ts';
+
+// Source-graph dependency primitives (reusable DAG math for memo + future tools).
+export {
+    parseModuleImports,
+    buildImportGraph,
+    computeChainDepths,
+    compareDagGroups,
+    stronglyConnectedComponents
+} from './depgraph.ts';
+export type { GraphNode, ImportGraph } from './depgraph.ts';

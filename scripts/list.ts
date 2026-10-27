@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import { CLI } from '../lib/runtime/module.ts';
+import { CLI, defineMeta } from '../lib/runtime/CLI.ts';
 import { exit } from '../lib/runtime/core.ts';
-import { home } from '../lib/runtime/projects.ts';
+import { home } from '../lib/runtime/Project.ts';
 
-const meta = {
+const meta = defineMeta({
     name: 'list',
     description: 'List rarebert modules across all discovered project folders',
     usage: 'node index.js list [--lib|--src|--scripts|--supports]',
@@ -14,7 +14,7 @@ const meta = {
         { flag: '--scripts', description: 'list only scripts/ modules' },
         { flag: '--supports', description: 'list only lib/supports/ modules' }
     ]
-};
+});
 
 /**
  * List rarebert modules across all discovered project folders.
@@ -49,4 +49,4 @@ export default new CLI(
         return exit(0);
     },
     meta
-).supportsDirectRunning(import.meta.url);
+).supportsDirectRunning();

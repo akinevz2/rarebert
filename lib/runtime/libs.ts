@@ -1,9 +1,31 @@
 import fs from 'fs';
 import path from 'path';
-import { rarebert } from './projects.ts';
-import { languages } from './languages.ts';
+import { rarebert } from './Project.ts';
+import type { Project } from './Project.ts';
+import { languages } from './Language.ts';
+
+/** A project library discovered under `lib/<lang>/`. */
+export interface ProjectLib {
+    name: string;
+    lang: string;
+    ext: string;
+    dir: string;
+}
 
 class Libs {
+    /** The current project (cwd-scoped). */
+    project: Project;
+    /** Absolute path of the project root. */
+    root: string;
+    /** Absolute path of the project's scripts folder. */
+    scriptsDir: string;
+    /** Absolute path of the project's src folder. */
+    srcDir: string;
+    /** Absolute path of the project's lib folder. */
+    libDir: string;
+    /** Absolute path of the project's supports folder. */
+    supportsDir: string;
+
     constructor() {
         this.project = rarebert;
         this.root = rarebert.root;
@@ -13,16 +35,16 @@ class Libs {
         this.supportsDir = rarebert.supportsDir;
     }
 
-    getExtension(name) {
+    getExtension(name: string): string {
         const ext = path.extname(name).toLowerCase();
         return languages.isSupported(ext) ? ext : '.ts';
     }
 
-    projectLibDir(lang) {
+    projectLibDir(lang: string): string {
         return path.join(this.libDir, lang);
     }
 
-    findLibraries(libDir = this.libDir, ext = '.ts') {
+    findLibraries(libDir: string = this.libDir, ext = '.ts'): string[] {
         if (!fs.existsSync(libDir)) return [];
         return fs
             .readdirSync(libDir)
@@ -30,7 +52,7 @@ class Libs {
             .map((f) => f.replace(ext, ''));
     }
 
-    findProjectLibs(lang) {
+    findProjectLibs(lang: string): string[] {
         const dir = this.projectLibDir(lang);
         const ext = `.${lang}`;
         if (!fs.existsSync(dir)) return [];
@@ -40,8 +62,8 @@ class Libs {
             .map((f) => f.replace(ext, ''));
     }
 
-    findAllProjectLibs() {
-        const result = [];
+    findAllProjectLibs(): ProjectLib[] {
+        const result: ProjectLib[] = [];
         for (const lang of languages.list()) {
             for (const name of this.findProjectLibs(lang)) {
                 result.push({ name, lang, ext: `.${lang}`, dir: this.projectLibDir(lang) });
@@ -54,18 +76,23 @@ class Libs {
      * Relative import prefix for a constituent project rel path
      * (e.g. 'scripts', 'lib', '.', 'lib/supports'), pointing at lib/.
      */
-    importPrefixFor(rel) {
+    importPrefixFor(rel: string): string {
         if (rel === '.' || rel === '') return './lib/';
         if (rel === 'lib') return './';
         if (rel === 'lib/supports') return '../';
         return '../lib/';
     }
 
-    libImportPath(rel) {
+    libImportPath(rel: string): string {
         return `${this.importPrefixFor(rel)}core.ts`;
     }
 
-    libPeerImports(libDir, rel, ext = '.ts', excludeName = null) {
+    libPeerImports(
+        libDir: string,
+        rel: string,
+        ext = '.ts',
+        excludeName: string | null = null
+    ): string {
         const frameworkPeers = this.findLibraries(libDir, ext).filter((l) => l !== excludeName);
         const prefix = this.importPrefixFor(rel);
         const frameworkImports = frameworkPeers
@@ -83,7 +110,7 @@ class Libs {
         return frameworkImports ? `${frameworkImports}\n${projectImports}` : projectImports;
     }
 
-    ensureCoreLib(libDir = this.libDir, moduleName = 'core') {
+    ensureCoreLib(libDir: string = this.libDir, moduleName = 'core'): string {
         const libPath = path.join(libDir, `${moduleName}.ts`);
         if (!fs.existsSync(libPath)) {
             const header = `// Shared utilities for ${moduleName}\n// Add shared functions here for use by other modules\n`;
@@ -93,7 +120,7 @@ class Libs {
         return libPath;
     }
 
-    ensureProjectLibDir(lang) {
+    ensureProjectLibDir(lang: string): string {
         const dir = this.projectLibDir(lang);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
@@ -107,9 +134,14 @@ class Libs {
         return dir;
     }
 
-    async generateBoilerplate(rel, moduleName, ext = '.ts', libDir = this.libDir) {
+    async generateBoilerplate(
+        rel: string,
+        moduleName: string,
+        ext = '.ts',
+        libDir: string = this.libDir
+    ): Promise<string> {
         const coreImport = this.libImportPath(rel);
-        const cliImport = `${this.importPrefixFor(rel)}runtime/module.ts`;
+        const cliImport = `${this.importPrefixFor(rel)}runtime/Module.ts`;
         const excludeName = rel === 'lib' ? moduleName : null;
         const libImports = this.libPeerImports(libDir, rel, ext, excludeName);
         return (
@@ -127,7 +159,7 @@ class Libs {
      * `directory` (a key like 'scripts'/'lib' or a rel path like
      * 'lib/supports'/'.'). Returns the absolute path of the new file.
      */
-    async createModule(directory, moduleName, ext = '.ts') {
+    async createModule(directory: string, moduleName: string, ext = '.ts'): Promise<string> {
         const project =
             rarebert.discover().find((p) => p.key === directory || p.rel === directory) || null;
         const rel = project ? project.rel : 'scripts';
@@ -146,13 +178,13 @@ class Libs {
         return modulePath;
     }
 
-    dirForDirectory(directory) {
+    dirForDirectory(directory: string): string {
         const project =
             rarebert.discover().find((p) => p.key === directory || p.rel === directory) || null;
         return project ? project.dir : directory;
     }
 
-    relPath(absPath) {
+    relPath(absPath: string): string {
         return path.relative(this.root, absPath);
     }
 }

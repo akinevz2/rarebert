@@ -16,27 +16,159 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { languages } from './runtime/languages.ts';
-import { rarebert } from './runtime/projects.ts';
-import { listAllModules } from './runtime/module.ts';
+import { languages } from './runtime/Language.ts';
+import { rarebert } from './runtime/Project.ts';
+import { listAllModules } from './runtime/discovery.ts';
 import { git } from './git.ts';
-import { memo } from './memo.ts';
+import { memo, memoEntryKey } from './memo.ts';
 import { opencode } from './opencode.ts';
 import { resolveImportPath } from './introspect.ts';
 
 const REFACTOR_NOTES_REF = 'refs/notes/refactor';
 
+
+/** An export entry in the binding registry. */
+export interface BindingExport {
+    /** 1-indexed line number of the export. */
+    line?: number;
+    /** named | default | reexport | type */
+    type?: string;
+    /** Source specifier when this is a re-export. */
+    source?: string;
+}
+
+/** An import entry in the binding registry. */
+export interface BindingImport {
+    /** The imported binding name. */
+    binding?: string;
+    /** Local alias. */
+    localName?: string;
+    /** The import source specifier. */
+    source: string;
+    /** 1-indexed line number. */
+    line?: number;
+    /** Import kind. */
+    kind?: string;
+    /** Project-relative path of the resolved target, or null. */
+    resolvedPath?: string | null;
+}
+
+/** One file's entry in the binding registry. */
+export interface RegistryEntry {
+    /** Exports keyed by name. */
+    exports: Record<string, BindingExport>;
+    /** Imports found in the file. */
+    imports: BindingImport[];
+}
+
+/** The binding registry: project-relative path -> the file's bindings. */
+export type BindingRegistry = Record<string, RegistryEntry>;
+
+/** A refactor selection: which bindings move, and where. */
+export interface RefactorSelection {
+    /** move | rename | extract */
+    op: string;
+    /** The binding names affected. */
+    bindings: string[];
+    /** The source file (project-relative). */
+    from: string;
+    /** The target file or new name (project-relative), when applicable. */
+    to?: string;
+}
+
+/** One import that would break under a proposed refactor. */
+export interface BlastRadiusEntry {
+    /** The file holding the import. */
+    file: string;
+    /** 1-indexed line number. */
+    line?: number;
+    /** The imported binding. */
+    binding?: string;
+    /** The current import source. */
+    currentSource: string;
+    /** The current resolved target path. */
+    currentResolvedPath: string | null;
+    /** Always true — the entry exists because the import would break. */
+    wouldBreak: boolean;
+    /** The suggested replacement import, when one can be derived. */
+    suggestedFix: { newSource: string; newBinding?: string } | null;
+}
+
+/** The result of a what-if blast-radius analysis. */
+export interface BlastRadius {
+    /** The analyzed selection. */
+    selection: RefactorSelection;
+    /** The files that would be affected. */
+    affectedFiles: string[];
+    /** The individual breaking imports. */
+    blastRadius: BlastRadiusEntry[];
+}
+
+/** One broken import found by the damage detector. */
+export interface DamageEntry {
+    /** The file holding the broken import. */
+    file: string;
+    /** 1-indexed line number. */
+    line?: number;
+    /** The imported binding. */
+    binding?: string;
+    /** The import source. */
+    source: string;
+    /** A human-readable description of the breakage. */
+    issue: string;
+    /** Where the binding moved to, when it could be located. */
+    relocatedTo: { file: string; type?: string } | null;
+}
+
+/** The damage report produced by detectDamage(). */
+export interface DamageReport {
+    /** The entry point that was analysed. */
+    entry: string;
+    /** The git ref the baseline was read from. */
+    baselineRef: string;
+    /** When the baseline snapshot was taken. */
+    snapshotTimestamp: number;
+    /** The files containing broken imports. */
+    damagedFiles: string[];
+    /** The individual broken imports. */
+    damage: DamageEntry[];
+}
+
+/** A refactor snapshot stored as a git note. */
+export interface RefactorSnapshot {
+    /** The git ref the snapshot is pinned to. */
+    baselineRef: string;
+    /** The commit hash the snapshot was taken at. */
+    baselineSha: string | null;
+    /** When the snapshot was taken. */
+    timestamp: number;
+    /** The entry point that was analysed. */
+    entry: string;
+    /** The binding registry at snapshot time. */
+    registry: BindingRegistry;
+    /** The memo state at snapshot time. */
+    memoState: Record<string, string[]>;
+}
+
+/** A memo generated for a damaged module. */
+export interface GeneratedMemo {
+    /** The module the memo belongs to. */
+    module: string;
+    /** The memo text. */
+    memo: string;
+}
+
 /**
  * Get the language extension (without leading dot) for a file path.
  */
-function extOf(filePath) {
+function extOf(filePath: string): string {
     return path.extname(filePath).slice(1);
 }
 
 /**
  * Read a file's source safely. Returns null if the file cannot be read.
  */
-function readSource(absPath) {
+function readSource(absPath: string): string | null {
     try {
         return fs.readFileSync(absPath, 'utf-8');
     } catch {
@@ -52,7 +184,7 @@ function readSource(absPath) {
  * @param {string} absPath — absolute path to the module file
  * @returns {Promise<{exports: object, imports: object[]}>}
  */
-async function extractBindingsForFile(absPath) {
+async function extractBindingsForFile(absPath: string): Promise<RegistryEntry> {
     const ext = extOf(absPath);
     if (!ext) return { exports: {}, imports: [] };
     const content = readSource(absPath);
@@ -84,7 +216,7 @@ async function extractBindingsForFile(absPath) {
  * @param {string} entryFile — absolute or rarebert-relative path to the entry module
  * @returns {Promise<object>} binding registry
  */
-async function resolveBindings(entryFile) {
+async function resolveBindings(entryFile: string): Promise<BindingRegistry> {
     const entryAbs = path.isAbsolute(entryFile) ? entryFile : rarebert.absPath(entryFile);
 
     // If the entry is a directory, resolve bindings for ALL modules
@@ -93,10 +225,10 @@ async function resolveBindings(entryFile) {
         return resolveAllBindings();
     }
 
-    const visited = new Set();
-    const registry = {};
+    const visited = new Set<string>();
+    const registry: BindingRegistry = {};
 
-    async function visit(absPath) {
+    async function visit(absPath: string): Promise<void> {
         const rel = rarebert.relPath(absPath);
         if (visited.has(rel)) return;
         visited.add(rel);
@@ -104,7 +236,7 @@ async function resolveBindings(entryFile) {
         const { exports, imports } = await extractBindingsForFile(absPath);
 
         // Resolve import sources to absolute paths and add resolvedPath.
-        const importRecords = imports.map((imp) => {
+        const importRecords: BindingImport[] = imports.map((imp: BindingImport) => {
             const resolvedAbs = resolveImportPath(absPath, imp.source);
             return {
                 ...imp,
@@ -134,7 +266,7 @@ async function resolveBindings(entryFile) {
  * @param {object} registry — binding registry from resolveBindings
  * @returns {boolean}
  */
-function isResolvable(imp, registry) {
+function isResolvable(imp: BindingImport, registry: BindingRegistry): boolean {
     if (!imp.resolvedPath) return false;
     const target = registry[imp.resolvedPath];
     if (!target) return false;
@@ -155,7 +287,7 @@ function isResolvable(imp, registry) {
 
     // Named import: target must export a binding with this name.
     if (imp.kind === 'named') {
-        return imp.binding in target.exports;
+        return (imp.binding ?? '') in target.exports;
     }
 
     return false;
@@ -172,7 +304,11 @@ function isResolvable(imp, registry) {
  * @param {object} current — current registry
  * @returns {{ file: string, type: string } | null}
  */
-function findRelocation(bindingName, baseline, current) {
+function findRelocation(
+    bindingName: string,
+    baseline: BindingRegistry,
+    current: BindingRegistry
+): { file: string; type?: string } | null {
     for (const [file, info] of Object.entries(current)) {
         if (bindingName in info.exports) {
             // Check if this binding was in the baseline at a different file.
@@ -207,13 +343,13 @@ function findRelocation(bindingName, baseline, current) {
  *   to: string — target file (rarebert-relative, optional for rename)
  * @returns {{ selection, affectedFiles, blastRadius }}
  */
-function whatIf(registry, selection) {
-    const blastRadius = [];
+function whatIf(registry: BindingRegistry, selection: RefactorSelection): BlastRadius {
+    const blastRadius: BlastRadiusEntry[] = [];
 
     for (const [file, info] of Object.entries(registry)) {
         for (const imp of info.imports) {
             // Does this import reference one of the selected bindings?
-            const bindingMatches = selection.bindings.includes(imp.binding);
+            const bindingMatches = selection.bindings.includes(imp.binding ?? '');
             const sourceMatches = imp.resolvedPath === selection.from;
 
             if (!bindingMatches && !sourceMatches) continue;
@@ -224,7 +360,7 @@ function whatIf(registry, selection) {
                 line: imp.line,
                 binding: imp.binding,
                 currentSource: imp.source,
-                currentResolvedPath: imp.resolvedPath,
+                currentResolvedPath: imp.resolvedPath ?? null,
                 wouldBreak: true,
                 suggestedFix: suggestFix(imp, selection)
             });
@@ -245,7 +381,10 @@ function whatIf(registry, selection) {
  * @param {object} selection — { op, bindings, from, to }
  * @returns {object|null} — { newSource, newBinding } or null
  */
-function suggestFix(imp, selection) {
+function suggestFix(
+    imp: BindingImport,
+    selection: RefactorSelection
+): { newSource: string; newBinding?: string } | null {
     if (selection.op === 'move' || selection.op === 'extract') {
         if (!selection.to) return null;
         // The binding moves to a new file; update the import source.
@@ -278,7 +417,7 @@ function suggestFix(imp, selection) {
  * @param {string} baselineRef — git ref whose refactor note holds the baseline (default: HEAD)
  * @returns {Promise<object>} damage report
  */
-async function detectDamage(entryFile, baselineRef = 'HEAD') {
+async function detectDamage(entryFile: string, baselineRef = 'HEAD'): Promise<DamageReport> {
     const snapshot = loadSnapshot(baselineRef);
     if (!snapshot) {
         throw new Error(
@@ -288,7 +427,7 @@ async function detectDamage(entryFile, baselineRef = 'HEAD') {
 
     const currentRegistry = await resolveBindings(entryFile);
     const baseline = snapshot.registry;
-    const damage = [];
+    const damage: DamageEntry[] = [];
 
     for (const [file, info] of Object.entries(baseline)) {
         for (const imp of info.imports) {
@@ -296,7 +435,7 @@ async function detectDamage(entryFile, baselineRef = 'HEAD') {
             const isStillResolvable = isResolvable(imp, currentRegistry);
 
             if (wasResolvable && !isStillResolvable) {
-                const relocated = findRelocation(imp.binding, baseline, currentRegistry);
+                const relocated = findRelocation(imp.binding ?? '', baseline, currentRegistry);
                 damage.push({
                     file,
                     line: imp.line,
@@ -326,10 +465,10 @@ async function detectDamage(entryFile, baselineRef = 'HEAD') {
  * identify which pre-snapshot memos are stale (and should be --drop'd)
  * versus which are still relevant.
  */
-function captureMemoState() {
-    const state = {};
+function captureMemoState(): Record<string, string[]> {
+    const state: Record<string, string[]> = {};
     for (const m of memo.loadAllMemos()) {
-        state[m.module.path] = [...memos.content];
+        state[m.module.path] = [...m.memos];
     }
     return state;
 }
@@ -348,7 +487,7 @@ function captureMemoState() {
  * @param {string} ref — git ref to attach the note to (default: HEAD)
  * @returns {Promise<object>} the snapshot that was stored
  */
-async function saveSnapshot(entryFile, ref = 'HEAD') {
+async function saveSnapshot(entryFile: string, ref = 'HEAD'): Promise<RefactorSnapshot> {
     // Ensure the working tree is clean so the baseline is pinned to a
     // committed state. A snapshot on a dirty tree is meaningless — the
     // note is attached to a commit, but the bindings were resolved from
@@ -382,7 +521,7 @@ async function saveSnapshot(entryFile, ref = 'HEAD') {
  * @param {string} ref — git ref whose refactor note holds the baseline (default: HEAD)
  * @returns {object|null} the snapshot object, or null if no note exists
  */
-function loadSnapshot(ref = 'HEAD') {
+function loadSnapshot(ref = 'HEAD'): RefactorSnapshot | null {
     const note = git.notesShow(ref, REFACTOR_NOTES_REF);
     if (!note) return null;
     try {
@@ -407,7 +546,7 @@ function loadSnapshot(ref = 'HEAD') {
  * @param {string} ref — git ref to check (default: HEAD)
  * @returns {boolean} true if a snapshot note exists on ref or an ancestor
  */
-function isSnapshotInProgress(ref = 'HEAD') {
+function isSnapshotInProgress(ref = 'HEAD'): boolean {
     // Check the given ref first.
     if (loadSnapshot(ref)) return true;
 
@@ -427,15 +566,15 @@ function isSnapshotInProgress(ref = 'HEAD') {
  *
  * @returns {Promise<object>} binding registry for all project modules
  */
-async function resolveAllBindings() {
+async function resolveAllBindings(): Promise<BindingRegistry> {
     const modules = listAllModules();
-    const registry = {};
+    const registry: BindingRegistry = {};
 
     for (const mod of modules) {
         const rel = mod.path;
         if (rel in registry) continue;
         const { exports, imports } = await extractBindingsForFile(mod.abs);
-        const importRecords = imports.map((imp) => {
+        const importRecords: BindingImport[] = imports.map((imp: BindingImport) => {
             const resolvedAbs = resolveImportPath(mod.abs, imp.source);
             return {
                 ...imp,
@@ -459,7 +598,7 @@ async function resolveAllBindings() {
  * @param {string} [model] — optional model override
  * @returns {string} opencode's text response
  */
-function runOpencode(prompt, model) {
+function runOpencode(prompt: string, model?: string): string {
     const bin = opencode.resolve();
     const args = ['run', prompt, '--auto', '--format', 'json'];
     if (model) args.push('-m', model);
@@ -479,7 +618,7 @@ function runOpencode(prompt, model) {
 
     // Parse JSON event stream — extract text parts from the response.
     // The format is newline-delimited JSON objects with a "type" field.
-    const textParts = [];
+    const textParts: string[] = [];
     for (const line of (result.stdout || '').split('\n')) {
         if (!line.trim()) continue;
         try {
@@ -505,17 +644,20 @@ function runOpencode(prompt, model) {
  * @param {string} [model] — optional model override for opencode
  * @returns {Promise<Array<{module: string, memo: string}>>} generated memos
  */
-async function generateDamageMemos(damageReport, model) {
+async function generateDamageMemos(
+    damageReport: DamageReport,
+    model?: string
+): Promise<GeneratedMemo[]> {
     if (!damageReport.damage || damageReport.damage.length === 0) return [];
 
     // Group damage by file so we can generate one memo per affected module.
-    const byFile = {};
+    const byFile: Record<string, DamageEntry[]> = {};
     for (const d of damageReport.damage) {
         if (!byFile[d.file]) byFile[d.file] = [];
         byFile[d.file].push(d);
     }
 
-    const generated = [];
+    const generated: GeneratedMemo[] = [];
 
     for (const [file, damages] of Object.entries(byFile)) {
         const damageLines = damages
@@ -556,7 +698,7 @@ async function generateDamageMemos(damageReport, model) {
  * @param {object} selection — the selection that was analyzed
  * @returns {void}
  */
-function recordBlastRadiusMemo(blastRadius, selection) {
+function recordBlastRadiusMemo(blastRadius: BlastRadius, selection: RefactorSelection): void {
     if (!blastRadius.blastRadius || blastRadius.blastRadius.length === 0) {
         const memoText = `What-if (${selection.op} ${selection.bindings.join(', ')} from ${selection.from}): no affected files — safe to proceed.`;
         memo.remember(selection.from, memoText);
@@ -592,7 +734,10 @@ function recordBlastRadiusMemo(blastRadius, selection) {
  * @param {Array<{module: string, memo: string}>} newMemos — memos generated by generateDamageMemos
  * @returns {Promise<Array<{module: string, dropped: number, added: number}>>} cleanup summary
  */
-async function cleanupMemos(baselineRef = 'HEAD~1', newMemos = []) {
+async function cleanupMemos(
+    baselineRef = 'HEAD~1',
+    newMemos: GeneratedMemo[] = []
+): Promise<Array<{ module: string; dropped: number; added: number }>> {
     const snapshot = loadSnapshot(baselineRef);
     if (!snapshot || !snapshot.memoState) {
         console.error(
@@ -604,7 +749,7 @@ async function cleanupMemos(baselineRef = 'HEAD~1', newMemos = []) {
 
     const baselineMemos = snapshot.memoState;
     const newMemoModules = new Set(newMemos.map((m) => m.module));
-    const summary = [];
+    const summary: Array<{ module: string; dropped: number; added: number }> = [];
 
     // For each module that had pre-snapshot memos AND is in the new-memo
     // set (i.e. was affected by the refactor), drop the stale entries.
@@ -617,9 +762,9 @@ async function cleanupMemos(baselineRef = 'HEAD~1', newMemos = []) {
         // Find indices of stale pre-snapshot memos that are still present.
         // A stale memo is one that existed in the baseline AND still exists
         // unchanged in the current sidecar (it hasn't been updated).
-        const staleIndices = [];
+        const staleIndices: number[] = [];
         for (let i = 0; i < current.length; i++) {
-            if (oldMemos.includes(current[i])) {
+            if (oldMemos.some((old) => memoEntryKey(old) === memoEntryKey(current[i]))) {
                 staleIndices.push(i);
             }
         }

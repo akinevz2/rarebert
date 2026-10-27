@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { home } from './projects.ts';
+import { home } from './Project.ts';
 
 // ---------------------------------------------------------------------------
 // Makefile generation — the Makefile is a generated artifact, never a
@@ -24,7 +24,7 @@ const EXTRA_TARGETS = {
     test: 'node --test'
 };
 
-function buildPreamble(targetNames) {
+function buildPreamble(targetNames: string[]): string {
     // `list` is hardcoded here as the default goal, but scripts/list.ts
     // also generates a `list` target in the body — emit the hardcoded one
     // only when discovery didn't produce it, or make warns about the
@@ -43,8 +43,8 @@ function buildPreamble(targetNames) {
     return preamble.join('\n');
 }
 
-function buildBody(names) {
-    const blocks = [];
+function buildBody(names: string[]): string {
+    const blocks: string[] = [];
     for (const name of names) {
         blocks.push(`${name}:\n\tnode index.js ${name}`);
     }

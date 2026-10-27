@@ -7,13 +7,19 @@
     "rootDir": "./",
     "strict": true,
     "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node", "bun-types"]
   },
   "include": [
-    "lib/*.ts",
-    "scripts/*.ts"
+    "lib/**/*.ts",
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "launch.ts"
   ],
   "exclude": [
     "node_modules",

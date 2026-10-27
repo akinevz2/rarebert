@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
 import { editor } from '../lib/editor.ts';
-import { CLI } from '../lib/runtime/module.ts';
+import { CLI, defineMeta } from '../lib/runtime/CLI.ts';
 import { exit } from '../lib/core.ts';
-import { refreshMakefile } from '../lib/makefile.ts';
+import { refreshMakefile } from '../lib/runtime/makefile.ts';
 
-const meta = {
+const meta = defineMeta({
     name: 'reload',
     description: 'Rebuild Makefile as a pure index of node index.js <name> targets',
     usage: 'node index.js reload [--forget]',
     options: [{ flag: '--forget', description: 'also delete .last-module after refreshing' }]
-};
+});
 
 export { meta };
 
@@ -37,4 +37,4 @@ export default new CLI(
         return exit(0);
     },
     meta
-).supportsDirectRunning(import.meta.url);
+).supportsDirectRunning();
