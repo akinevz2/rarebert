@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "outDir": "./dist",
+    "rootDir": "./",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node", "bun-types"]
+  },
+  "include": [
+    "lib/**/*.ts",
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "launch.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

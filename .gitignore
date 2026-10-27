@@ -34,6 +34,7 @@ dist-ssr
 .cache/
 *.memo
 *.mjs.
+*.ts.
 *.js.
 
 # Academic report working tree (managed by scripts/article.mjs)
