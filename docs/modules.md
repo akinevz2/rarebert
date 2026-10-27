@@ -4,13 +4,13 @@ A **module** is a single file inside one of a project's **folders**.
 The rarebert repository is one project, and it exposes five
 constituent folders that modules live in:
 
-| project    | folder          | extensions    | contents                                  |
-| ---------- | --------------- | ------------- | ----------------------------------------- |
-| `root`     | `./`            | `.mjs`, `.js` | the CLI entrypoint (`index.js`)           |
-| `scripts`  | `scripts/`      | `.mjs`, `.js` | CLI commands (`add`, `edit`, `commit`, …) |
-| `lib`      | `lib/`          | `.mjs`, `.js` | the framework runtime (`core.mjs`, …)     |
-| `supports` | `lib/supports/` | `.js`         | per-language template modules             |
-| `src`      | `src/`          | `.py`         | project code run via `make run`           |
+| project    | folder          | extensions    | contents                                        |
+| ---------- | --------------- | ------------- | ----------------------------------------------- |
+| `root`     | `./`            | `.ts`         | the Bunli entry point (`launch.ts`)             |
+| `scripts`  | `scripts/`      | `.ts`         | CLI commands (`memo`, `edit`, `check`, `list`, …) |
+| `lib`      | `lib/`          | `.ts`         | the framework runtime (`core.ts`, …)            |
+| `supports` | `lib/supports/` | `.js`, `.ts`  | per-language template modules                   |
+| `src`      | `src/`          | `.py`         | project code                                    |
 
 Nothing else in the tree is a module. `opencode.json`, `Makefile`, `AGENTS.md`
 and the per-language library folders under `lib/{lang}/` are resources, not
@@ -18,33 +18,62 @@ modules.
 
 ## Design Language: CLI vs TUI Modules
 
-Every runnable module (files in `scripts/*.mjs`) should export a default
-instance of either the `CLI` class or the `TUI` class from `lib/module.mjs`.
+Every runnable module (files in `scripts/*.ts`) should export a default
+instance of either the `CLI` class or the `TUI` class from
+`lib/runtime/CLI.ts` / `lib/runtime/TUI.ts` (runtime) — or the
+compatibility shims `lib/module.ts` / `lib/core.ts` for tests.
 
 ### The Correct Shape
 
-```js
-export default new CLI('foo.mjs', main, meta).supportsDirectRunning(import.meta.url);
+```ts
+export default new CLI('foo.ts', main, meta).supportsDirectRunning();
 // or
-export default new TUI('foo.mjs', main, meta).supportsDirectRunning(import.meta.url);
+export default new TUI('foo.ts', main, meta).supportsDirectRunning();
 ```
 
-The `.supportsDirectRunning(import.meta.url)` call is **required** for modules
-that can be run directly via `node scripts/foo.mjs` (as opposed to only through
-`node index.js foo`).
+`.supportsDirectRunning` is **deprecated and currently a no-op**: direct
+execution (`bun scripts/foo.ts`) was retired with the Bunli migration.
+Modules run exclusively through the Bunli entry (launch.ts), which resolves
+the module by name (or via `exec <path-ref>`), preloads its memo trail
+(`memo.loadForRun`), and runs it through `core.run()`. The no-arg call is
+kept for shape compatibility; prefer dropping it.
+
+### The `meta` object
+
+Metas are declared with `defineMeta` (from `lib/runtime/CLI.ts` — the
+barrel re-exports it):
+
+```ts
+const meta = defineMeta({ ... });
+```
+
+The generic-`const` modifier keeps flag string literals (`'--trace <name>'`)
+narrow so `OptsOf<typeof meta>` / `Args<typeof meta>` derive real typed
+keys. Declaring with a plain `satisfies ModuleMeta` instead widens every
+flag property to `string` and collapses the derived opts object into an
+index signature — don't.
 
 ### The `main` Callback
 
-The `main` argument to `CLI` or `TUI` is an async function with signature:
+The `main` argument to `CLI` or `TUI` is an async function. Inline mains
+(declared directly inside `new CLI('foo.ts', (opts, positional) => ...)`)
+are contextually typed by the engine; standalone mains annotate their
+parameters explicitly:
 
-```js
-async (opts, positional) => { ... }
+```ts
+async function main(args: Args<typeof meta>, positional: Positional<typeof meta>) {
+    ...
+}
 ```
 
 Where:
 
-- `opts` is the parsed options object from Commander flags
-- `positional` is the array of positional arguments
+- `opts` is an `Arguments` instance — an `Array` subclass of the
+  positionals with the schema-validated option values merged on top
+  (camelCase keys, `--no-x` negation defaults applied). Unknown tokens
+  land verbatim in `positional` when the meta sets
+  `allowUnknownOption: true`
+- `positional` is the plain array of positional / passthrough arguments
 
 **Design Principle:** The `main` method should be as simple as possible.
 Ideally, declare it as a `CLI` (to support non-interactive environments), with
@@ -78,8 +107,7 @@ async function main(opts, positional) {
     return exit(
         0,
         new TUI(
-            'foo.mjs',
-            async (opts, positional) => {
+            'foo.ts',            async (opts, positional) => {
                 // Interactive workflow here
             },
             meta
@@ -106,7 +134,7 @@ Use `CLI` (or elevate from `CLI`) when:
 - The module can work headlessly in CI/CD
 - A simple flag can control behavior (`--force`, `--yes`, etc.)
 
-**Example pattern** (from `scripts/install.mjs`):
+**Example pattern** (from a CLI-first module's decision tree):
 
 ```js
 // CLI-convertible: --force allows non-interactive overwrite
@@ -115,7 +143,7 @@ if (force || !isNonEmpty) {
 }
 
 // Elevate to TUI for confirmation prompt
-return exit(0, new TUI('install.mjs', async () => {
+return exit(0, new TUI('edit.ts', async () => {
     const overwrite = await cli.confirm(...);
     // ...
 }));
@@ -124,12 +152,12 @@ return exit(0, new TUI('install.mjs', async () => {
 ### Note on API Stability
 
 At the moment, only `exit()` and the main callback signature are finalized.
-The shapes of `run()`, `_wrap()`, `execute()`, `createCommand()`, and other
+The shapes of `run()`, `wrap()`, `execute()`, `parseModuleArgv()`, and other
 Module methods may evolve as the codebase develops.
 
 ## Discovery
 
-All module discovery goes through `lib/projects.mjs`:
+All module discovery goes through `lib/runtime/Project.ts`:
 
 - `project.discover()` returns the constituent folder descriptors
   (`{ key, rel, dir, label, exts }`). Each descriptor is the _interface_ used
@@ -138,14 +166,14 @@ All module discovery goes through `lib/projects.mjs`:
   `{ name, path }` entries (root-relative paths).
 - `project.projectByKey(key)` looks up a single constituent folder.
 
-`lib/modules.mjs` wraps the scan results in `Module` objects:
+`lib/runtime/Module.ts` wraps the scan results in `Module` objects:
 
 ```js
 new Module(project, file);
 ```
 
 `project` is a constituent descriptor from `discover()` and `file` is the
-module's filename (e.g. `'add.mjs'`). The constructor derives everything else
+module's filename (e.g. `'add.ts'`). The constructor derives everything else
 from the folder + filename — the absolute path is computed internally and
 never supplied by the caller:
 
@@ -153,9 +181,9 @@ never supplied by the caller:
 class Module {
     constructor(project, file) {
         this.project = project; // { key, rel, dir, label, exts }
-        this.file = file; // 'add.mjs'
+        this.file = file; // 'add.ts'
         this.name = 'add'; // basename without extension
-        this.ext = '.mjs'; // file extension
+        this.ext = '.ts'; // file extension
         this.abs = path.join(project.dir, file); // internal
         this.path = rarebert.relPath(this.abs); // root-relative
         this.dir = project.rel; // 'scripts'
@@ -163,7 +191,8 @@ class Module {
 }
 ```
 
-`listAllModules()` in `lib/modules.mjs` is the registry every command uses. It
+`listAllModules()` in `lib/runtime/discovery.ts` is the registry every
+command uses. It
 walks every constituent folder from `discover()`, scans it with
 `discoverModules()`, and builds a `Module` for each file.
 
@@ -171,47 +200,55 @@ walks every constituent folder from `discover()`, scans it with
 
 Modules are loaded as regular source files:
 
-- **scripts/ and lib/** are Node.js ES modules imported via their absolute
-  path (`import('file://…')`), dispatched by name from `index.js`.
+- **scripts/ and lib/** are Bun/TypeScript ES modules imported via their
+  absolute path, dispatched by name through the Bunli entry (`launch.ts`).
 - **src/** are Python programs run as subprocesses (`python3`).
-- **supports/** are `.js` template modules imported by `lib/languages.mjs`.
+- **supports/** are template modules imported by `lib/runtime/Language.ts`.
 
-`node index.js <name>` resolves a module by name or path through
-`discoverModules()` and calls its exported `main()`.
+`bun launch.ts <name>` resolves a module by name or path through
+`discoverModules()`, preloads its memo trail, and runs its exported `main()`
+through `core.run()`. `bun launch.ts exec <path-ref>` runs a module by
+path reference.
 
 ## The Generated Makefile
 
 The root `Makefile` is a **generated artifact** — it is never written to
 directly. It is produced by the project itself:
 
-- `make reload` (→ `scripts/reload.mjs` → `lib/makefile.mjs#refreshMakefile`)
-  regenerates the file from two inputs:
+- `make reload` (→ `scripts/reload.ts` →
+  `lib/runtime/makefile.ts#refreshMakefile`) regenerates the file from two
+  inputs:
     1. **Discovery** — every module found in `scripts/` becomes one
-       `node index.js <name>` target, wired into `.PHONY`.
-    2. **The template** — `EXTRA_TARGETS` in `lib/makefile.mjs` holds the
-       non-module targets (`deps`, `test`) that discovery cannot derive.
+       `bun launch.ts <name>` target, wired into `.PHONY`.
+    2. **The template** — `EXTRA_TARGETS` in `lib/runtime/makefile.ts` holds
+       the non-module targets (`deps`, `test`) that discovery cannot derive.
 - The file is a _pure index_: no logic, no variables, no hand-maintained
-  recipes. Anything not expressible as `node index.js <name>` or a one-line
+  recipes. Anything not expressible as `bun launch.ts <name>` or a one-line
   extra target belongs in a lib/ module, not in the Makefile.
+
+> **2026-10-23 status:** the Makefile is currently stale (targets call the
+> removed `node index.js`) and `scripts/reload.ts` is a stub pending
+> reimplementation — do not run `make` targets until the generator is rebuilt.
 
 **Rule: do not edit the Makefile by hand.** Any hand-added target or tweak
 is silently dropped the next time `make reload` runs. To add or change a
 target:
 
-1. scaffold a `scripts/<name>.mjs` module (it gets a target automatically), or
-2. add an entry to `EXTRA_TARGETS` in `lib/makefile.mjs`, then
+1. scaffold a `scripts/<name>.ts` module (it gets a target automatically), or
+2. add an entry to `EXTRA_TARGETS` in `lib/runtime/makefile.ts`, then
 3. run `make reload` and commit the regenerated file.
 
 ## Memos
 
 Each module can own a memo sidecar at `<abs>.` (the absolute path plus a `.`
-suffix) written by `lib/memo.mjs`. Because modules are identified
+suffix) written by `lib/memo.ts`. Because modules are identified
 root-relative through the registry, memo files stay stable across the
 path-based interface.
 
 ## Runtime
 
-`Runtime` (defined in `lib/core.mjs`) replaces the former single-shot
+`Runtime` (defined in `lib/runtime/Runtime.ts`, with `run()`/`exit()` in
+`lib/runtime/core.ts`) replaces the former single-shot
 `executeAndExit` pattern with a recursive execution loop. It is the
 core orchestrator that drives module execution, handles submodule
 escalation (the elevation pattern), and manages producedValue display.
@@ -244,7 +281,7 @@ way to run a module through the Runtime system.
 return exit(
     0,
     new TUI(
-        'foo.mjs',
+        'foo.ts',
         async (opts, positional) => {
             // interactive workflow
         },

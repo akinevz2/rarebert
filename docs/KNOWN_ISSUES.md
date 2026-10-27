@@ -1,7 +1,107 @@
 # Known Issues
 
 Outstanding tasks for the rarebert codebase, gathered from conversation
-history and memo sidecars. Last updated: 2026-08-19.
+history and memo sidecars. Last updated: 2026-10-27.
+
+> **2026-10-27 status note — TypeScript migration + language framework.**
+> `lib/` is fully `.ts` and typechecks clean under `strict` (remaining tsc
+> debt is implicit-any in legacy `scripts/`). The four language-support
+> modules (`lib/supports/lang*.js`) load again after the
+> `../languages.mjs` → `../runtime/Language.ts` import fix; `analyze`
+> reports real bindings and `check` integrity now surfaces pre-existing
+> reference mismatches that were vacuously green before.
+
+## 0. Class-based file resolution in lib/ (raw strings → Module/Project)
+
+**Status:** Partially tightened (2026-10-27, memo/depgraph + dispatch boundary);
+the remaining sweep is not started.
+
+**Directive:** library modules must resolve files through the runtime
+abstractions (`Module`, `Project`, `rarebert`, `Language`) — not raw path
+strings, ad-hoc stub objects, or hand-rolled resolution heuristics. New code
+must follow this; existing call sites are tracked here for tightening.
+
+**Sub-directive — whole-object passing:** never pass dismembered property
+pairs (`script.path`, `script.name`, …) across a boundary; introduce the
+typed class (e.g. `Script`, lib/runtime/Script.ts) and pass the whole
+object. Done in the current sweep: `Project.resolveModuleRef` returns
+`Script`; `Dispatcher.runModule`/`makeRunner`/`wrapModuleCommand` take
+`Script`; `memo.loadForRun(script: Script)` stores the whole ref
+(`Memory.runScript`) and `_isTrailRelevant` resolves the running module
+from it.
+
+Concrete residue to rewrite:
+
+- `lib/memo.ts` — stringly-typed module references throughout:
+  - `remember(moduleRef: string)`, `loadMemos(moduleRef: string)`,
+    `loadMemosByPath(modulePath: string)`, `forgetByPath(moduleRelPath: string)`,
+    `memoFilePathFor(moduleRef: string)` — each re-resolves by
+    path/endsWith/name heuristics instead of receiving a `Module`
+    (which already carries `path`/`abs`/`name`/`memoFile()`).
+  - Sidecar path math duplicated as `rarebert.absPath(rel) + SUFFIX`
+    instead of `Module.memoFile()` (e.g. `forgetByPath`, `_relatedMemos`,
+    `loadAllMemos`, `applyDrop`'s `resolved.sidecar`).
+  - `_isTrailRelevant` hand-constructs `scripts/${runScriptName}.ts` —
+    DONE (2026-10-27): `Memory.runScript` holds the whole `Script` and the
+    running module resolves via `byPath.get(runScript.path)`.
+  - `recallImports(callerRef: string)` accepts abs path or file:// URL
+    strings; should receive the running `Module` (currently receives
+    `script.abs` from the `Script` object — partially tightened).
+- `lib/depgraph.ts` — `GraphNode { path, abs }` is deliberately a minimal
+  structural subset so it stays decoupled from `Module`; if `Module` gains
+  the graph responsibilities this widens naturally, but the string keys
+  (`importsOf`/`importersOf` maps) are path-string based by design and
+  remain the one sanctioned raw-string surface.
+- `lib/introspect.ts`, `scripts/check.ts`, `scripts/analyze.ts` — callers
+  pass `mod.abs`/`mod.path` strings into resolution helpers
+  (`resolveImportPath`, `introspectFile`); tighten to `Module`-consumers
+  alongside the same sweep.
+
+## 0b. Rich memos (pinned for after the refactor merges to main)
+
+**Status:** Pinned 2026-10-27 — not started. Deliberately out of scope for
+the current memo-algorithm milestone.
+
+**Goal:** unify memo content into a single `content` array that holds BOTH
+human read-writeable string memos AND pre-definable / reusable memo shapes
+— structured tuples interleaved with plain strings. Motivating shapes:
+
+- line-reference tuples: "see line N for issue kind X" (e.g. a diagnostic
+  finding anchored to a source line);
+- code-smell tuples: smell kind + line number (+ optional symbol);
+- other recurring tuple kinds produced by tooling (diagnostic memos
+  currently encode this as flat strings like `line ?: ...` — the broken
+  `--document` placeholders are the cautionary example).
+
+Machinery sketch:
+
+- A **shape registry**: named, reusable memo shapes with a kind id, a
+  field tuple, and a renderer — definable per language/project so new
+  shapes can be produced by the agent later (same philosophy as the
+  language-support framework: scaffolding a shape extends every consumer).
+- Sidecar `content` entries become `string | ShapeEntry`; consumers
+  (`loadMemosWithTimestamps`, the DAG print, `--oldest`, `--commit`
+  snapshots) must handle both — the loader already half-anticipates this
+  (`typeof c === 'object'` fallback in `loadMemosWithTimestamps`).
+- Rendering: the DAG print renders shape entries through the shape's
+  formatter (interleaved with plain memos); aging/dedup rules may differ
+  per shape (e.g. line-anchored diagnostics expire when the line moves —
+  detectable via `analyze` source maps).
+- Migration: existing string memos stay as-is (backward compatible);
+  diagnostic memos (`line ?:`, `undefined-reference:`) are transient and
+  get dropped once the underlying issue is fixed, per the AGENTS.md memo
+  convention.
+
+> **2026-10-23 status note — Bunli migration + module slim-down.** The entry
+> is now the Bunli thin router (`launch.ts`): direct execution
+> (`node index.js`, `supportsDirectRunning`) is gone, and `.mjs` artifacts
+> were replaced by their `.ts` descendants. Sections referencing
+> `article`/`commit`/`diff`/`implement`/`present`/`trail`/`undo` describe
+> code that was **removed** (recoverable from git history); sections
+> referencing `add`/`install`/`languages`/`onboard`/`project`/`run`/
+> `status`/`update` describe **stubs** with documented headers. `make`
+> targets are stale (`node index.js` no longer exists) until a future
+> milestone implements `reload`.
 
 ## 1. Execution-loop refactor (runModule / ExitSignal / handleResult)
 
@@ -40,18 +140,20 @@ Type-aware process termination (the single exit point at the boundary):
 - `exit(result)` → thin wrapper: `return this.handleResult(result, [])`
 - `executeAndExit(args)` → `const result = await this.execute(args); const code = await this.handleResult(result, args); this.terminate(code);`
 
-### 1d. Rename underscore methods
+### 1d. Rename underscore methods — DONE (2026-10)
 
-All underscore methods in `lib/module.mjs` have no external callers. Rename:
-- `_flagString` → `flagString` (Module class + cli singleton)
-- `_typeParser` → `typeParser` (Module class + cli singleton)
-- `_wrap` → `wrap` (CLI class)
-- `_buildActionHandler` → `buildActionHandler` (CLI class)
-- `_parseArgv` → `parseArgv` (CLI class)
-- `_validateArgs` → `validateArgs` (module-level function)
-- `_terminate` → `terminate` (Module class)
+All underscore methods in the legacy `lib/module.mjs` have been renamed in the
+TypeScript runtime (`lib/runtime/`):
+- `flagString` (CLI instance method)
+- `typeParser` (CLI static method)
+- `wrap` (CLI instance method)
+- `parseArgv` (CLI instance method)
+- `validateArgs` (module-level function in core.ts)
+- `terminate` (Module instance method)
 
-Update the comment on line 393 that references `CLI._wrap` → `CLI.wrap`.
+The `cli` singleton was deleted entirely — its helpers are free functions
+in `lib/runtime/Module.ts` (`isInteractive`, `nonInteractive`, `abort`,
+`onAbort`, `runInteractively`, `truncate`, `ok`, `fail`).
 
 ### 1e. Simplify `ExitSignal.complete()` in `lib/core.mjs`
 
@@ -406,10 +508,10 @@ directly.
 *function* (no `.execute`), so Runtime could not loop. Now wrapped:
 `new Runtime({ execute: (args) => runModule(args[0], args.slice(1)) })`.
 
-All CLI/Module underscore methods (`_wrap`, `_flagString`, `_typeParser`,
-`_buildActionHandler`, `_parseArgv`, `_validateArgs`) were removed;
-`CLI.execute` delegates to `Runtime.createRunner` and the `cli` singleton /
-`Module` class delegate flag/type/command/help parsing to `Runtime.*` statics.
+All CLI/Module underscore methods were removed or renamed to public API;
+`CLI.wrap`, `CLI.parseArgv`, `CLI.typeParser`, `CLI.flagString`,
+`CLI.createCommand` are public methods on the `CLI` class in
+`lib/runtime/CLI.ts`. The `cli` singleton was deleted.
 
 **Verification:** 127 tests pass, 0 fail. `node index.js open` no longer
 exits 0 silently (it now runs and reports non-TTY correctly).

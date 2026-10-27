@@ -1,3 +1,0 @@
-# Rarebert opencode configuration (exclude sensitive config files from repo)
-node_modules/
-.bun.lock
