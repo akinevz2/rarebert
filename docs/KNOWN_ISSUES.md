@@ -57,6 +57,51 @@ Concrete residue to rewrite:
   (`resolveImportPath`, `introspectFile`); tighten to `Module`-consumers
   alongside the same sweep.
 
+## 0c. API-shape & idiom sweep findings (2026-10-27 — report, not yet actioned)
+
+**Sweep total:** 48 `TODO(whole-object): … — see §lib-classes` markers inline
+across 12 files (lib/memo.ts 11, scripts/check.ts 9, scripts/analyze.ts 8,
+lib/introspect.ts 7, lib/editor.ts 3, lib/bindings.ts 2, lib/server.ts 2,
+scripts/memo.ts 2, launch.ts 1, lib/runtime/discovery.ts 1,
+lib/depgraph.ts 1, scripts/open.ts 1).
+
+Key findings awaiting the refactor sweep:
+
+- **Double assertions** (`as unknown as X`) suggesting wrong types upstream:
+  check.ts buildBindingGraph casts (1099, 1166) — type the return as `Graph`
+  upstream; discovery.ts:226 nonInteractive cast; TUI.ts:188; Project.ts
+  enquirer cast — fix `lib/types/enquirer.d.ts` (missing `Select` typing).
+- **`any` in exported signatures**: Language.ts abstract methods +
+  `LanguageImpl = any`; introspect `invokePrimitive`/`runTool`; CLI
+  `Arguments extends Array<any>`, `main as any`; Module `main` + index
+  signature; TUI internals; memo comparators/mappers.
+- **Non-null assertions → guard clauses**: memo.ts:519 `readFileSync(file!)`
+  (sibling guards!); depgraph.ts:105–106 `get()!` invariants; CLI.ts:279.
+- **Duplicated helpers to collapse**: `camelCase` (launch.ts vs CLI.ts — they
+  DIFFER on digit handling); `extOf`/`readSource` (bindings vs introspect);
+  `resolveImportSource` (check) vs `resolveImportPath` (introspect) — same
+  name, DIFFERENT candidate lists; `traceBinding` (check) ≈ introspect
+  Trace.usage; `moduleChoices` vs `buildModuleChoices`; `findDirectoryTarget`
+  ≈ `rarebert.projectByKey`; memo's two sidecar-timestamp mappers +
+  `_moduleLastModified` ≈ `_readSidecarLastModified`; opencode-config read
+  ×3 (backend/models/server); `groupArgs` vs the engine's
+  `parseModuleArgv` (memo duplicates tokenization the zod engine owns —
+  candidate: `ParsedInvocation.positionalGroups()`).
+- **Type-shape upgrades**: branded `ModuleRef` union for memo's
+  stringly-typed refs; string-literal unions for binding `kind`;
+  `MemoDag` → plain `{ groups, totalCycles, cycles }` object;
+  `ResolvedTarget.abs?` two-shapes-in-one; `SpawnedTui` → discriminated
+  union.
+- **Null-handling inconsistencies**: Project.ts:450 dead `??`;
+  Module.ts fallback `allFolders[0]` conflates no-match with root;
+  `scripts/open.ts:37` / `edit.ts` use `promptModule()` result without a
+  null check while the parallel `resolveModule` path checks (latent crash);
+  server.ts:674 dead `project` param.
+
+**Suppressed circularity** (documented, do not annotate): Store↔Project cycle
+blocks passing `home` whole into store APIs; depgraph path-string keys are
+the sanctioned raw-string surface (§0).
+
 ## 0b. Rich memos (pinned for after the refactor merges to main)
 
 **Status:** Pinned 2026-10-27 — not started. Deliberately out of scope for
